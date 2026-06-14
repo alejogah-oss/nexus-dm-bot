@@ -11,7 +11,6 @@ import requests
 import anthropic
 from datetime import datetime
 from dotenv import load_dotenv
-from meta_publisher import upload_image_to_facebook
 
 load_dotenv()
 
@@ -22,7 +21,7 @@ INVENTORY_URL = "https://tucarroconalejo.com/api.php?action=list"
 LOG_PATH      = os.path.join(os.path.dirname(__file__), "marketplace_log.json")
 DEALER_URL    = "https://tucarroconalejo.com/"
 DEALER_ADDR   = {
-    "addr1": "2200 N State Rd 7",
+    "street_address": "2200 N State Rd 7",
     "city": "Hollywood",
     "region": "FL",
     "postal_code": "33021",
@@ -44,17 +43,17 @@ ESTRUCTURA:
 3. Nota de precio: "El precio indicado es el down payment estimado, no el precio total del vehículo."
 4. CTA: "¿Tienes preguntas? Escríbeme aquí o llama al (954) 310-6671 — soy Alejo y te atiendo personalmente."
 
-REGLAS: NUNCA menciones precio total ni mensualidades. Sin Markdown. Solo texto limpio."""
+REGLAS: NUNCA menciones precio total ni mensualidades. Sin Markdown de ningún tipo — sin #, *, **, guiones al inicio, ni listas. Solo texto limpio en párrafos. Empieza directamente con el gancho, sin título ni encabezado."""
 
 _BODY_STYLE = {
-    "4Runner": "SUV", "RAV4": "SUV", "Highlander": "SUV",
-    "Grand Highlander": "SUV", "Sequoia": "SUV", "Corolla Cross": "SUV",
-    "bZ": "SUV", "C-HR": "SUV", "Land Cruiser": "SUV",
-    "Camry": "Sedan", "Corolla": "Sedan", "Crown": "Sedan",
-    "Tacoma": "Truck", "Tundra": "Truck",
-    "Sienna": "Minivan",
-    "GR Supra": "Coupe", "GR86": "Coupe",
-    "Prius": "Hatchback",
+    "4Runner": "suv", "RAV4": "suv", "Highlander": "suv",
+    "Grand Highlander": "suv", "Sequoia": "suv", "Corolla Cross": "suv",
+    "bZ": "suv", "C-HR": "suv", "Land Cruiser": "suv",
+    "Camry": "sedan", "Corolla": "sedan", "Crown": "sedan",
+    "Tacoma": "pickup_truck", "Tundra": "pickup_truck",
+    "Sienna": "minivan",
+    "GR Supra": "coupe", "GR86": "coupe",
+    "Prius": "hatchback",
 }
 
 _FUEL = {"bZ": "electric", "Prius": "hybrid"}
@@ -79,19 +78,56 @@ def _make_key(v: dict) -> str:
 
 
 def _upload_b64_image(b64_data: str) -> str | None:
+    """Returns temp local path to decoded image — catalog API fetches via URL we host."""
     try:
         if "base64," in b64_data:
             b64_data = b64_data.split("base64,")[1]
         img_bytes = base64.b64decode(b64_data)
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
             f.write(img_bytes)
-            tmp_path = f.name
-        url = upload_image_to_facebook(tmp_path)
-        os.unlink(tmp_path)
-        return url
+            return f.name  # caller is responsible for unlinking
     except Exception as e:
-        print(f"  ⚠️  Image error: {e}")
+        print(f"  ⚠️  Image decode error: {e}")
         return None
+
+
+def _get_fb_image_url(b64_data: str) -> tuple[str | None, str | None]:
+    """Upload base64 image to Facebook Page photos. Returns (cdn_url, photo_id)."""
+    try:
+        tmp_path = _upload_b64_image(b64_data)
+        if not tmp_path:
+            return None, None
+
+        PAGE_TOKEN = os.getenv("META_PAGE_ACCESS_TOKEN")
+        PAGE_ID = os.getenv("META_PAGE_ID")
+
+        with open(tmp_path, "rb") as f:
+            resp = requests.post(
+                f"{GRAPH_BASE}/{PAGE_ID}/photos",
+                data={"published": "false", "access_token": PAGE_TOKEN},
+                files={"source": f},
+                timeout=30,
+            )
+        os.unlink(tmp_path)
+
+        result = resp.json()
+        if "id" not in result:
+            print(f"  ⚠️  Photo upload error: {result}")
+            return None, None
+
+        photo_id = result["id"]
+        # Get CDN URL
+        r2 = requests.get(
+            f"{GRAPH_BASE}/{photo_id}",
+            params={"fields": "images", "access_token": PAGE_TOKEN},
+            timeout=15,
+        )
+        data = r2.json()
+        cdn_url = data.get("images", [{}])[0].get("source") if "images" in data else None
+        return cdn_url, photo_id
+    except Exception as e:
+        print(f"  ⚠️  Image upload error: {e}")
+        return None, None
 
 
 def fetch_unique_inventory() -> list[dict]:
@@ -123,62 +159,83 @@ def generate_description(v: dict) -> str:
     return resp.content[0].text.strip()
 
 
-def _publish_to_catalog(v: dict, description: str, img_url: str | None) -> str | None:
-    down_payment_cents = round(v["price"] * 0.20) * 100
-    title = f"{v['yr']} Toyota {v['model']} {v['trim']} — {v['color']}"
+def _publish_to_catalog(v: dict, description: str, img_b64: str | None) -> str | None:
+    down_payment = round(v["price"] * 0.20)
+    title = f"{v['yr']} Toyota {v['model']} {v.get('trim','')} — {v['color']}"
+    vehicle_id = v.get("vin") or v.get("stock") or _make_key(v).replace("|", "-")
 
-    data = {
+    cdn_url, _ = _get_fb_image_url(img_b64) if img_b64 else (None, None)
+
+    item_data = {
+        "vehicle_id":       vehicle_id,
+        "vin":              v.get("vin", ""),
         "availability":     "in stock",
-        "condition":        "new",
-        "currency":         "USD",
+        "condition":        "excellent",
         "description":      description,
         "make":             "Toyota",
         "model":            v["model"],
         "title":            title,
         "trim":             v.get("trim", ""),
-        "year":             str(v["yr"]),
+        "year":             v["yr"],              # integer
         "exterior_color":   v["color"],
-        "price":            str(down_payment_cents),
+        "price":            f"{down_payment} USD",
         "state_of_vehicle": "new",
         "vehicle_type":     "car_truck",
-        "vin":              v.get("vin", ""),
         "url":              DEALER_URL,
-        "mileage":          json.dumps({"value": 0, "unit": "MI"}),
+        "mileage":          {"value": 0, "unit": "KM"},
         "body_style":       _body_style(v["model"]),
         "fuel_type":        _fuel_type(v["model"]),
         "transmission":     "automatic",
-        "address":          json.dumps(DEALER_ADDR),
+        "address":          "2200 N State Rd 7, Hollywood, FL 33021, US",
     }
-    if img_url:
-        data["image_url[0]"] = img_url
+    if cdn_url:
+        item_data["image"] = cdn_url
+
+    batch_payload = {
+        "allow_upsert": True,
+        "item_type": "VEHICLE",
+        "requests": [{"method": "CREATE", "retailer_id": vehicle_id, "data": item_data}],
+    }
 
     resp = requests.post(
-        f"{GRAPH_BASE}/{CATALOG_ID}/vehicles",
+        f"{GRAPH_BASE}/{CATALOG_ID}/items_batch",
         params={"access_token": CATALOG_TOKEN},
-        data=data,
+        json=batch_payload,
         timeout=30,
     )
     result = resp.json()
-    if "id" in result:
-        return result["id"]
+    if "handles" in result:
+        return result["handles"][0]  # handle = submission ID
     print(f"  ⚠️  Catalog error: {result}")
     return None
 
 
-def _update_price(listing_id: str, down_payment_cents: int):
+def _update_price(listing_id: str, down_payment: int):
+    """Update price for an existing listing via items_batch."""
     requests.post(
-        f"{GRAPH_BASE}/{listing_id}",
+        f"{GRAPH_BASE}/{CATALOG_ID}/items_batch",
         params={"access_token": CATALOG_TOKEN},
-        data={"price": str(down_payment_cents)},
+        json={
+            "allow_upsert": True,
+            "item_type": "VEHICLE",
+            "requests": [{"method": "UPDATE", "retailer_id": listing_id,
+                          "data": {"price": f"{down_payment} USD"}}],
+        },
         timeout=15,
     )
 
 
-def mark_sold(listing_id: str):
+def mark_sold(retailer_id: str):
+    """Mark a vehicle as sold via items_batch UPDATE."""
     requests.post(
-        f"{GRAPH_BASE}/{listing_id}",
+        f"{GRAPH_BASE}/{CATALOG_ID}/items_batch",
         params={"access_token": CATALOG_TOKEN},
-        data={"availability": "out of stock"},
+        json={
+            "allow_upsert": True,
+            "item_type": "VEHICLE",
+            "requests": [{"method": "UPDATE", "retailer_id": retailer_id,
+                          "data": {"availability": "not available"}}],
+        },
         timeout=15,
     )
 
@@ -221,11 +278,12 @@ def sync():
         if key not in log["by_key"]:
             print(f"  + {key}")
             description = generate_description(v)
-            img_url = _upload_b64_image(v["img"]) if v.get("img") else None
-            listing_id = _publish_to_catalog(v, description, img_url)
-            if listing_id:
-                log["by_key"][key] = listing_id
-                log["by_listing_id"][listing_id] = {
+            handle = _publish_to_catalog(v, description, v.get("img"))
+            # retailer_id = VIN or stock — used for future updates/deletes
+            retailer_id = v.get("vin") or v.get("stock") or key.replace("|", "-")
+            if handle:
+                log["by_key"][key] = retailer_id
+                log["by_listing_id"][retailer_id] = {
                     "key": key,
                     "model": v["model"],
                     "trim": v.get("trim", ""),
@@ -240,20 +298,20 @@ def sync():
             else:
                 errors += 1
         else:
-            listing_id = log["by_key"][key]
-            stored = log["by_listing_id"].get(listing_id, {})
+            retailer_id = log["by_key"][key]
+            stored = log["by_listing_id"].get(retailer_id, {})
             if stored.get("price") != v["price"]:
                 print(f"  ↑ Price: {key} ${stored.get('price', 0):,} → ${v['price']:,}")
-                _update_price(listing_id, down_payment * 100)
+                _update_price(retailer_id, down_payment)
                 stored["price"] = v["price"]
                 stored["down_payment"] = down_payment
-                log["by_listing_id"][listing_id] = stored
+                log["by_listing_id"][retailer_id] = stored
                 updated += 1
 
-    for listing_id, info in log["by_listing_id"].items():
+    for retailer_id, info in list(log["by_listing_id"].items()):
         if info.get("status") == "active" and info["key"] not in current_keys:
             print(f"  ✗ Sold: {info['key']}")
-            mark_sold(listing_id)
+            mark_sold(retailer_id)
             info["status"] = "sold"
             sold_count += 1
 
