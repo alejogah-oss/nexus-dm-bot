@@ -111,8 +111,40 @@ def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
     push_hot_lead(sender_id, platform, history)
 
 
-# In-memory conversation store (use Redis/DB in production)
+# In-memory conversation stores
 _conversations: dict[str, list] = {}
+_mp_conversations: dict[str, list] = {}  # Marketplace threads (separate namespace)
+
+
+def _marketplace_voice(car: dict) -> str:
+    """Dynamic system prompt injected with the specific car the buyer messaged from."""
+    return f"""Eres el asistente de Alejo, asesor Toyota en Hollywood Toyota, Florida.
+El cliente te escribió desde un listing de Facebook Marketplace sobre este vehículo específico:
+
+VEHÍCULO: {car['yr']} Toyota {car['model']} {car.get('trim', '')} — {car['color']}
+DOWN PAYMENT ESTIMADO: ${car['down_payment']:,}
+VIN: {car.get('vin', 'disponible al visitar')}
+
+TU OBJETIVO PRINCIPAL: Que el cliente venga al dealer a ver el carro.
+Dirección: 2200 N State Rd 7, Hollywood, FL 33021
+
+FLUJO:
+Msg 1 → Confirma el carro que vio + invita a verlo en persona esta semana
+Msg 2 → Si duda, maneja la objeción con calidez + vuelve a invitar
+Msg 3 → Si sigue dudando, ofrece una llamada con Alejo directo
+Msg 4+ → Si rechaza 2+ veces la visita, acepta con gracia y agrega [SHOWROOM_DECLINED]
+
+SEÑALES DE HOT LEAD (agrega [HOT LEAD] en tu respuesta):
+- Dice "voy", "esta semana", "mañana", "cuándo puedo ir"
+- Da su número de teléfono
+- Pregunta por financiamiento específico
+
+REGLAS ABSOLUTAS:
+- NUNCA des precio total ni mensualidades
+- NUNCA prometas crédito garantizado
+- Siempre ofrece contacto: (954) 310-6671 o DM directo
+- Máximo 3 oraciones por respuesta — breve y cálido
+- Sin Markdown"""
 
 
 WELCOME_MESSAGE = (
@@ -132,6 +164,61 @@ def handle_get_started(sender_id: str, platform: str = "facebook"):
         send_facebook_reply(sender_id, WELCOME_MESSAGE)
     _conversations[sender_id] = []
     print(f"[{platform.upper()}] {sender_id[:10]}... → GET_STARTED bienvenida enviada")
+
+
+def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: str = "facebook") -> str:
+    """
+    Handles DMs from Marketplace listings. Knows the specific car,
+    pushes for showroom visit, detects HOT LEAD and SHOWROOM_DECLINED.
+    """
+    history = _mp_conversations.get(sender_id, [])
+
+    if not history:
+        intro = (
+            f"¡Hola! Vi que te interesa el {car['yr']} Toyota {car['model']} "
+            f"{car.get('trim', '')} en {car['color']} 🙌 "
+            f"Es un carro increíble — ¿cuándo puedes venir a verlo en persona? "
+            f"Estamos en Hollywood Toyota, 2200 N State Rd 7."
+        )
+        if platform == "instagram":
+            send_instagram_reply(sender_id, intro)
+        else:
+            send_facebook_reply(sender_id, intro)
+        history.append({"role": "assistant", "content": intro})
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=200,
+        system=_marketplace_voice(car),
+        messages=history + [{"role": "user", "content": text}],
+    )
+
+    reply = response.content[0].text
+    is_hot = "[HOT LEAD]" in reply
+    is_declined = "[SHOWROOM_DECLINED]" in reply
+    clean_reply = reply.replace("[HOT LEAD]", "").replace("[SHOWROOM_DECLINED]", "").strip()
+
+    history.append({"role": "user", "content": text})
+    history.append({"role": "assistant", "content": clean_reply})
+    _mp_conversations[sender_id] = history[-16:]
+
+    if platform == "instagram":
+        send_instagram_reply(sender_id, clean_reply)
+    else:
+        send_facebook_reply(sender_id, clean_reply)
+
+    if is_hot:
+        print(f"\n🔥 MARKETPLACE HOT LEAD — {platform.upper()} | {sender_id[:12]}...")
+        push_hot_lead(sender_id, platform, history)
+
+    if is_declined:
+        print(f"\n📋 SHOWROOM DECLINED — {platform.upper()} | {sender_id[:12]}...")
+        print(f"   Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']}")
+        print(f"   Alejo debe contactar personalmente al (954) 310-6671")
+        push_hot_lead(sender_id, platform, history)
+
+    print(f"[MP-{platform.upper()}] {sender_id[:10]}... → replied | hot={is_hot} | declined={is_declined}")
+    return clean_reply
 
 
 def handle_message(sender_id: str, message_text: str, platform: str = "facebook") -> str:

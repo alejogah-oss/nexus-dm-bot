@@ -6,8 +6,9 @@ import os
 
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
-from dm_bot import handle_message, handle_get_started
+from dm_bot import handle_message, handle_get_started, handle_marketplace_message
 from comment_bot import handle_facebook_comment, handle_instagram_comment
+from marketplace_agent import get_car_by_listing_id
 
 load_dotenv()
 
@@ -66,8 +67,21 @@ def receive_webhook():
 
             message = event.get("message", {})
             text = message.get("text", "")
-            if text:
-                handle_message(sender_id, text, platform="facebook")
+            if not text:
+                continue
+
+            # Check if message came from a Marketplace listing
+            listing_id = (
+                event.get("referral", {}).get("product", {}).get("id") or
+                message.get("referral", {}).get("product", {}).get("id")
+            )
+            if listing_id:
+                car = get_car_by_listing_id(listing_id)
+                if car:
+                    handle_marketplace_message(sender_id, text, car, platform="facebook")
+                    continue
+
+            handle_message(sender_id, text, platform="facebook")
 
         # Instagram DMs + comentarios
         for change in entry.get("changes", []):
