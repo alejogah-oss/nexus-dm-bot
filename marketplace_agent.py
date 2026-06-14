@@ -186,7 +186,7 @@ def _publish_to_catalog(v: dict, description: str, img_b64: str | None) -> str |
         "body_style":       _body_style(v["model"]),
         "fuel_type":        _fuel_type(v["model"]),
         "transmission":     "automatic",
-        "address":          "2200 N State Rd 7, Hollywood, FL 33021, US",
+        "address":          "Hollywood, FL, US",
     }
     if cdn_url:
         item_data["image"] = cdn_url
