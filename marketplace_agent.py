@@ -160,7 +160,7 @@ def generate_description(v: dict) -> str:
 
 
 def _publish_to_catalog(v: dict, description: str, img_b64: str | None) -> str | None:
-    down_payment = round(v["price"] * 0.20)
+    down_payment = round(v["price"] * 0.20 / 100) * 100
     title = f"{v['yr']} Toyota {v['model']} {v.get('trim','')} — {v['color']}"
     vehicle_id = v.get("vin") or v.get("stock") or _make_key(v).replace("|", "-")
 
@@ -273,7 +273,7 @@ def sync():
     published = updated = sold_count = errors = 0
 
     for key, v in current_keys.items():
-        down_payment = round(v["price"] * 0.20)
+        down_payment = round(v["price"] * 0.20 / 100) * 100
 
         if key not in log["by_key"]:
             print(f"  + {key}")
