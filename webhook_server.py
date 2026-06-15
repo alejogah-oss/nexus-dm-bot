@@ -173,6 +173,18 @@ def _fuel_type(model):
     return "GASOLINE"
 
 
+def _load_model_descriptions() -> dict:
+    path = os.path.join(os.path.dirname(__file__), "model_descriptions.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+_MODEL_DESCRIPTIONS = _load_model_descriptions()
+
+
 def _fetch_unique_inventory():
     r = req_lib.get(_INVENTORY_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
     vehicles = r.json()["vehicles"]
@@ -232,7 +244,7 @@ def vehicles_csv():
             model = raw_model if raw_model.lower() != "toyota" else v.get("trim", "")
             trim = v.get("trim", "") if raw_model.lower() != "toyota" else ""
             title = f"{v['yr']} Toyota {model} {trim} - {v['color']}".strip()
-            desc = (
+            desc = _MODEL_DESCRIPTIONS.get(model) or (
                 f"{v['yr']} Toyota {model} {trim} en {v['color']}. "
                 f"Vehiculo nuevo disponible en Hollywood Toyota, FL. "
                 f"El precio indicado es el down payment estimado (15%-25% del valor total segun tu credito). "
