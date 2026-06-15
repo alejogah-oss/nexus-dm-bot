@@ -1,10 +1,14 @@
 """Webhook server — receives Facebook & Instagram DM + comment events."""
+import base64
+import csv
 import hashlib
 import hmac
+import io
 import json
 import os
 
-from flask import Flask, request, jsonify
+import requests as req_lib
+from flask import Flask, request, jsonify, Response
 from dotenv import load_dotenv
 from dm_bot import handle_message, handle_get_started, handle_marketplace_message
 from comment_bot import handle_facebook_comment, handle_instagram_comment
@@ -133,6 +137,123 @@ def receive_webhook():
 @app.get("/health")
 def health():
     return jsonify({"status": "ok", "bot": "nexus-tucarroconalejo"})
+
+
+# ── VEHICLE FEED ──────────────────────────────────────────────────────────────
+_INVENTORY_URL = "https://tucarroconalejo.com/api.php?action=list"
+_DEALER = {"addr1": "2200 N State Rd 7", "city": "Hollywood",
+           "region": "FL", "postal_code": "33021", "country": "US"}
+_LAT, _LNG = "26.0219", "-80.1942"
+_BODY_STYLES = {
+    "4Runner": "SUV", "RAV4": "SUV", "Highlander": "SUV",
+    "Grand Highlander": "SUV", "Sequoia": "SUV", "Corolla Cross": "SUV",
+    "bZ": "SUV", "C-HR": "SUV", "Land Cruiser": "SUV",
+    "Camry": "SEDAN", "Corolla": "SEDAN", "Crown": "SEDAN",
+    "Tacoma": "PICKUP_TRUCK", "Tundra": "PICKUP_TRUCK",
+    "Sienna": "MINIVAN", "GR Supra": "COUPE", "GR86": "COUPE",
+    "Prius": "HATCHBACK",
+}
+
+
+def _body_style(model):
+    for k, v in _BODY_STYLES.items():
+        if k.lower() in model.lower():
+            return v
+    return "SUV"
+
+
+def _fuel_type(model):
+    m = model.lower()
+    if "bz" in m or "electric" in m:
+        return "ELECTRIC"
+    if "plug-in hybrid" in m:
+        return "PLUG_IN_HYBRID"
+    if "hybrid" in m:
+        return "HYBRID"
+    return "GASOLINE"
+
+
+def _fetch_unique_inventory():
+    r = req_lib.get(_INVENTORY_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+    vehicles = r.json()["vehicles"]
+    seen, unique = set(), []
+    for v in vehicles:
+        key = f"{v['yr']}|{v['model']}|{v.get('trim','')}|{v['color']}"
+        if key not in seen:
+            seen.add(key)
+            unique.append(v)
+    return unique
+
+
+@app.get("/feed/image/<vehicle_id>")
+def vehicle_image(vehicle_id):
+    """Sirve la foto de un vehículo como JPEG desde el inventario."""
+    try:
+        vehicles = _fetch_unique_inventory()
+        vehicle = next(
+            (v for v in vehicles
+             if v.get("vin") == vehicle_id or v.get("stock") == vehicle_id),
+            None,
+        )
+        if not vehicle:
+            return "Vehicle not found", 404
+        img_data = vehicle.get("img", "")
+        if not img_data:
+            return "No image", 404
+        if "base64," in img_data:
+            img_data = img_data.split("base64,")[1]
+        return Response(base64.b64decode(img_data), mimetype="image/jpeg")
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
+@app.get("/feed/vehicles.csv")
+def vehicles_csv():
+    """Genera el CSV de inventario para Facebook Vehicle Catalog."""
+    try:
+        vehicles = _fetch_unique_inventory()
+        output = io.StringIO()
+        w = csv.writer(output)
+        w.writerow([
+            "vehicle_id", "title", "description", "availability", "condition",
+            "price", "image[0].url", "url", "body_style", "make", "model",
+            "year", "state_of_vehicle", "mileage.unit", "mileage.value",
+            "address.addr1", "address.city", "address.region",
+            "address.postal_code", "address.country",
+            "latitude", "longitude", "exterior_color", "trim",
+            "fuel_type", "transmission", "vin",
+        ])
+        for v in vehicles:
+            vid = v.get("vin") or v.get("stock", "")
+            if not vid:
+                continue
+            down = round(v["price"] * 0.20 / 100) * 100
+            title = f"{v['yr']} Toyota {v['model']} {v.get('trim','')} - {v['color']}".strip()
+            desc = (
+                f"{v['yr']} Toyota {v['model']} {v.get('trim','')} en {v['color']}. "
+                f"Vehículo nuevo disponible en Hollywood Toyota, FL. "
+                f"El precio indicado es el down payment estimado (15%-25% del valor total según tu crédito). "
+                f"Escríbeme o llama al (954) 310-6671 — soy Alejo, te atiendo personalmente."
+            )
+            w.writerow([
+                vid, title, desc, "IN STOCK", "EXCELLENT",
+                f"{down} USD",
+                f"https://bot.tucarroconalejo.com/feed/image/{vid}",
+                "https://tucarroconalejo.com/",
+                _body_style(v["model"]), "Toyota", v["model"],
+                v["yr"], "NEW", "MI", 0,
+                _DEALER["addr1"], _DEALER["city"], _DEALER["region"],
+                _DEALER["postal_code"], _DEALER["country"],
+                _LAT, _LNG, v["color"], v.get("trim", ""),
+                _fuel_type(v["model"]), "AUTOMATIC", v.get("vin", ""),
+            ])
+        return Response(
+            output.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": "attachment; filename=vehicles.csv"},
+        )
+    except Exception as e:
+        return f"Error generando CSV: {e}", 500
 
 
 if __name__ == "__main__":
