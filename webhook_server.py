@@ -228,28 +228,32 @@ def vehicles_csv():
             if not vid:
                 continue
             down = round(v["price"] * 0.20 / 100) * 100
-            title = f"{v['yr']} Toyota {v['model']} {v.get('trim','')} - {v['color']}".strip()
+            raw_model = v["model"]
+            model = raw_model if raw_model.lower() != "toyota" else v.get("trim", "")
+            trim = v.get("trim", "") if raw_model.lower() != "toyota" else ""
+            title = f"{v['yr']} Toyota {model} {trim} - {v['color']}".strip()
             desc = (
-                f"{v['yr']} Toyota {v['model']} {v.get('trim','')} en {v['color']}. "
-                f"Vehículo nuevo disponible en Hollywood Toyota, FL. "
-                f"El precio indicado es el down payment estimado (15%-25% del valor total según tu crédito). "
-                f"Escríbeme o llama al (954) 310-6671 — soy Alejo, te atiendo personalmente."
+                f"{v['yr']} Toyota {model} {trim} en {v['color']}. "
+                f"Vehiculo nuevo disponible en Hollywood Toyota, FL. "
+                f"El precio indicado es el down payment estimado (15%-25% del valor total segun tu credito). "
+                f"Escribeme o llama al (954) 310-6671 - soy Alejo, te atiendo personalmente."
             )
             w.writerow([
                 vid, title, desc, "IN STOCK", "EXCELLENT",
                 f"{down} USD",
                 f"https://bot.tucarroconalejo.com/feed/image/{vid}",
                 "https://tucarroconalejo.com/",
-                _body_style(v["model"]), "Toyota", v["model"],
+                _body_style(model), "Toyota", model,
                 v["yr"], "NEW", "MI", 0,
                 _DEALER["addr1"], _DEALER["city"], _DEALER["region"],
                 _DEALER["postal_code"], _DEALER["country"],
-                _LAT, _LNG, v["color"], v.get("trim", ""),
-                _fuel_type(v["model"]), "AUTOMATIC", v.get("vin", ""),
+                _LAT, _LNG, v["color"], trim,
+                _fuel_type(model), "AUTOMATIC", v.get("vin", ""),
             ])
+        csv_bytes = "﻿" + output.getvalue()  # UTF-8 BOM so Excel/browsers read accents correctly
         return Response(
-            output.getvalue(),
-            mimetype="text/csv",
+            csv_bytes.encode("utf-8"),
+            mimetype="text/csv; charset=utf-8",
             headers={"Content-Disposition": "attachment; filename=vehicles.csv"},
         )
     except Exception as e:
