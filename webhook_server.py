@@ -149,7 +149,7 @@ _BODY_STYLES = {
     "Grand Highlander": "SUV", "Sequoia": "SUV", "Corolla Cross": "SUV",
     "bZ": "SUV", "C-HR": "SUV", "Land Cruiser": "SUV",
     "Camry": "SEDAN", "Corolla": "SEDAN", "Crown": "SEDAN",
-    "Tacoma": "PICKUP_TRUCK", "Tundra": "PICKUP_TRUCK",
+    "Tacoma": "PICKUP", "Tundra": "PICKUP",
     "Sienna": "MINIVAN", "GR Supra": "COUPE", "GR86": "COUPE",
     "Prius": "HATCHBACK",
 }
