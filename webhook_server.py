@@ -244,7 +244,7 @@ def vehicles_csv():
             "address.addr1", "address.city", "address.region",
             "address.postal_code", "address.country",
             "latitude", "longitude", "exterior_color", "trim",
-            "fuel_type", "transmission", "vin",
+            "fuel_type", "transmission",
         ])
         for v in vehicles:
             vid = v.get("vin") or v.get("stock", "")
@@ -271,7 +271,7 @@ def vehicles_csv():
                 _DEALER["addr1"], _DEALER["city"], _DEALER["region"],
                 _DEALER["postal_code"], _DEALER["country"],
                 _LAT, _LNG, v["color"], trim,
-                _fuel_type(model), "AUTOMATIC", v.get("vin", ""),
+                _fuel_type(model), "AUTOMATIC",
             ])
         csv_bytes = "﻿" + output.getvalue()  # UTF-8 BOM so Excel/browsers read accents correctly
         return Response(
