@@ -141,7 +141,7 @@ def health():
 
 # ── VEHICLE FEED ──────────────────────────────────────────────────────────────
 _INVENTORY_URL = "https://tucarroconalejo.com/api.php?action=list"
-_DEALER = {"addr1": "", "city": "Hollywood",
+_DEALER = {"addr1": "2200 N State Rd 7", "city": "Hollywood",
            "region": "FL", "postal_code": "33021", "country": "US"}
 _LAT, _LNG = "26.0219", "-80.1942"
 _BODY_STYLES = {
