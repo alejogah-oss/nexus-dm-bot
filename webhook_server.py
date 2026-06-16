@@ -262,10 +262,10 @@ def vehicles_csv():
                 f"Escribeme o llama al (954) 310-6671 - soy Alejo, te atiendo personalmente."
             )
             w.writerow([
-                vid, title, desc, "IN STOCK", "EXCELLENT",
-                f"{down} USD",
+                vid, title, desc, "IN STOCK", "NEW",
+                f"{v['price']} USD",
                 f"https://bot.tucarroconalejo.com/feed/image/{vid}",
-                "https://tucarroconalejo.com/",
+                f"https://tucarroconalejo.com/?stock={vid}",
                 _body_style(model), "Toyota", model,
                 v["yr"], "NEW", "MI", 0,
                 _DEALER["addr1"], _DEALER["city"], _DEALER["region"],
@@ -273,9 +273,8 @@ def vehicles_csv():
                 _LAT, _LNG, v["color"], trim,
                 _fuel_type(model), "AUTOMATIC",
             ])
-        csv_bytes = "﻿" + output.getvalue()  # UTF-8 BOM so Excel/browsers read accents correctly
         return Response(
-            csv_bytes.encode("utf-8"),
+            output.getvalue().encode("utf-8"),
             mimetype="text/csv; charset=utf-8",
             headers={"Content-Disposition": "attachment; filename=vehicles.csv"},
         )
