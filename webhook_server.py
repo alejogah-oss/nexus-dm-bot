@@ -196,9 +196,15 @@ def _get_model_description(model: str) -> str | None:
     return None
 
 
-def _fetch_unique_inventory():
+def _fetch_all_inventory():
+    """Returns every vehicle from the API — used for Marketplace catalog (all VINs)."""
     r = req_lib.get(_INVENTORY_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-    vehicles = r.json()["vehicles"]
+    return r.json()["vehicles"]
+
+
+def _fetch_unique_inventory():
+    """Returns one vehicle per yr/model/trim/color combo — used for social posts."""
+    vehicles = _fetch_all_inventory()
     seen, unique = set(), []
     for v in vehicles:
         key = f"{v['yr']}|{v['model']}|{v.get('trim','')}|{v['color']}"
@@ -212,7 +218,7 @@ def _fetch_unique_inventory():
 def vehicle_image(vehicle_id):
     """Sirve la foto de un vehículo como JPEG desde el inventario."""
     try:
-        vehicles = _fetch_unique_inventory()
+        vehicles = _fetch_all_inventory()
         vehicle = next(
             (v for v in vehicles
              if v.get("vin") == vehicle_id or v.get("stock") == vehicle_id),
@@ -234,7 +240,7 @@ def vehicle_image(vehicle_id):
 def vehicles_csv():
     """Genera el CSV de inventario para Facebook Vehicle Catalog."""
     try:
-        vehicles = _fetch_unique_inventory()
+        vehicles = _fetch_all_inventory()
         output = io.StringIO()
         w = csv.writer(output)
         w.writerow([
