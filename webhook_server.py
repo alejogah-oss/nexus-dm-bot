@@ -238,8 +238,8 @@ def vehicles_csv():
         output = io.StringIO()
         w = csv.writer(output)
         w.writerow([
-            "vehicle_id", "title", "description", "availability", "condition",
-            "price", "image[0].url", "url", "body_style", "make", "model",
+            "id", "title", "description", "availability", "condition",
+            "price", "image_link", "link", "body_style", "make", "model",
             "year", "state_of_vehicle", "mileage.unit", "mileage.value",
             "address.addr1", "address.city", "address.region",
             "address.postal_code", "address.country",
