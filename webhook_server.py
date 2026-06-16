@@ -262,7 +262,7 @@ def vehicles_csv():
                 f"Escribeme o llama al (954) 310-6671 - soy Alejo, te atiendo personalmente."
             )
             w.writerow([
-                vid, title, desc, "IN STOCK", "NEW",
+                f"{vid}-2026", title, desc, "IN STOCK", "NEW",
                 f"{v['price']} USD",
                 f"https://bot.tucarroconalejo.com/feed/image/{vid}",
                 f"https://tucarroconalejo.com/?stock={vid}",
