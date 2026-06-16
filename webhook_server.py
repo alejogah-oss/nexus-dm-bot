@@ -240,7 +240,7 @@ def vehicle_image(vehicle_id):
 def vehicles_csv():
     """Genera el CSV de inventario para Facebook Vehicle Catalog."""
     try:
-        vehicles = _fetch_all_inventory()
+        vehicles = _fetch_unique_inventory()
         output = io.StringIO()
         w = csv.writer(output)
         w.writerow([
