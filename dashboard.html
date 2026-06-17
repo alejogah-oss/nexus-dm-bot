@@ -7,278 +7,364 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'Inter',sans-serif; background:#0d0d0d; color:#fff; min-height:100vh; padding:24px; }
-.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:28px; }
+body { font-family:'Inter',sans-serif; background:#0d0d0d; color:#fff; min-height:100vh; padding:20px 24px 40px; }
+
+/* ── Header ── */
+.header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
 .header h1 { font-size:22px; font-weight:700; }
 .header h1 span { color:#CC0000; }
 .badge { background:#1a1a1a; border:1px solid #333; padding:6px 14px; border-radius:20px; font-size:12px; color:#aaa; }
-.live-dot { width:8px; height:8px; background:#22c55e; border-radius:50%; display:inline-block; margin-right:6px; animation:pulse 2s infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-
-/* Goal banner */
-.goal-banner { background:linear-gradient(135deg,#1a0000,#2a0000); border:1px solid #CC0000; border-radius:12px; padding:20px 24px; margin-bottom:24px; display:flex; align-items:center; gap:24px; }
-.goal-text h2 { font-size:14px; color:#aaa; font-weight:500; margin-bottom:4px; }
-.goal-text .big { font-size:36px; font-weight:700; color:#fff; }
-.goal-text .sub { font-size:13px; color:#aaa; margin-top:2px; }
-.goal-bar-wrap { flex:1; }
-.goal-bar-label { display:flex; justify-content:space-between; font-size:12px; color:#aaa; margin-bottom:6px; }
-.goal-bar-bg { background:#1f1f1f; border-radius:8px; height:12px; overflow:hidden; }
-.goal-bar-fill { background:linear-gradient(90deg,#CC0000,#FF4444); height:100%; border-radius:8px; transition:width 0.8s ease; }
-.goal-pct { font-size:20px; font-weight:700; color:#CC0000; margin-left:16px; white-space:nowrap; }
-
-/* Grid cards */
-.grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
-.card { background:#141414; border:1px solid #222; border-radius:12px; padding:18px 20px; }
-.card .label { font-size:12px; color:#666; font-weight:500; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
-.card .value { font-size:28px; font-weight:700; }
-.card .sub { font-size:12px; color:#555; margin-top:4px; }
-.card.red { border-color:#CC000044; }
-.card.red .value { color:#CC0000; }
-.card.green .value { color:#22c55e; }
-.card.gold .value { color:#FFD700; }
-
-/* Parrilla */
-.section-title { font-size:14px; font-weight:600; color:#aaa; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; }
-.parrilla { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-bottom:24px; }
-.day-card { background:#141414; border:1px solid #222; border-radius:10px; padding:12px 8px; text-align:center; }
-.day-card.active { border-color:#CC0000; background:#1a0000; }
-.day-card.today { border-color:#FFD700; background:#1a1500; }
-.day-card .day-name { font-size:10px; color:#555; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
-.day-card .day-time { font-size:11px; color:#888; margin-top:4px; }
-.day-card .day-type { font-size:11px; font-weight:600; }
-.day-card.active .day-type { color:#FF6666; }
-.day-card.today .day-type { color:#FFD700; }
-.day-card .day-type.none { color:#333; }
-.pill { display:inline-block; padding:3px 8px; border-radius:10px; font-size:10px; font-weight:600; }
-.pill-red { background:#CC000033; color:#FF6666; }
-.pill-blue { background:#0066CC33; color:#66AAFF; }
-.pill-gold { background:#FFD70033; color:#FFD700; }
-.pill-green { background:#22c55e33; color:#22c55e; }
-
-/* Posts log */
-.posts-table { width:100%; border-collapse:collapse; }
-.posts-table th { text-align:left; font-size:11px; color:#555; font-weight:500; text-transform:uppercase; letter-spacing:0.5px; padding:8px 12px; border-bottom:1px solid #1f1f1f; }
-.posts-table td { padding:10px 12px; border-bottom:1px solid #1a1a1a; font-size:13px; }
-.posts-table tr:last-child td { border-bottom:none; }
-.posts-table tr:hover td { background:#161616; }
-.type-badge { padding:3px 10px; border-radius:12px; font-size:11px; font-weight:600; }
-
-.no-data { text-align:center; padding:40px; color:#333; font-size:14px; }
-.refresh { background:#CC0000; color:#fff; border:none; padding:8px 18px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
+.live-dot { width:8px; height:8px; background:#22c55e; border-radius:50%; display:inline-block; margin-right:6px; animation:blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.refresh { background:#CC0000; color:#fff; border:none; padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
 .refresh:hover { background:#AA0000; }
 
-/* Marketplace Analytics */
-.mp-banner { background:linear-gradient(135deg,#0d1a00,#152800); border:1px solid #4a9a0044; border-radius:12px; padding:18px 22px; margin-bottom:16px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
-.mp-banner .trophy { font-size:32px; }
-.mp-banner .mp-info h3 { font-size:13px; color:#88cc44; font-weight:600; text-transform:uppercase; letter-spacing:0.6px; }
-.mp-banner .mp-info .mp-car { font-size:18px; font-weight:700; margin:2px 0; }
-.mp-banner .mp-info .mp-sub { font-size:12px; color:#666; }
-.mp-banner .mp-kpis { display:flex; gap:18px; margin-left:auto; flex-wrap:wrap; }
-.mp-kpi { text-align:center; }
-.mp-kpi .kv { font-size:22px; font-weight:700; }
-.mp-kpi .kl { font-size:10px; color:#555; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
-.mp-kpi.fire .kv { color:#FF6666; }
-.mp-kpi.green .kv { color:#22c55e; }
-.mp-kpi.gold .kv { color:#FFD700; }
+/* ── Tabs ── */
+.tabs { display:flex; gap:4px; background:#111; padding:4px; border-radius:12px; margin-bottom:24px; width:fit-content; }
+.tab { padding:9px 22px; border-radius:9px; font-size:13px; font-weight:600; cursor:pointer; color:#555;
+       border:none; background:transparent; transition:all 0.18s; white-space:nowrap; }
+.tab:hover { color:#aaa; }
+.tab.active { background:#1c1c1c; color:#fff; border:1px solid #2a2a2a; box-shadow:0 1px 4px #0005; }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
 
-.mp-table-wrap { background:#141414; border:1px solid #222; border-radius:12px; overflow:hidden; margin-bottom:24px; }
+/* ── Shared ── */
+.section-title { font-size:13px; font-weight:600; color:#777; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; }
+.no-data { text-align:center; padding:36px; color:#333; font-size:13px; }
+.pill { display:inline-block; padding:3px 8px; border-radius:10px; font-size:10px; font-weight:600; }
+.pill-red   { background:#CC000033; color:#FF6666; }
+.pill-blue  { background:#0066CC33; color:#66AAFF; }
+.pill-gold  { background:#FFD70033; color:#FFD700; }
+.pill-green { background:#22c55e33; color:#22c55e; }
+
+/* ── TAB 1: Publicaciones ── */
+.goal-banner { background:linear-gradient(135deg,#1a0000,#2a0000); border:1px solid #CC000055;
+               border-radius:12px; padding:18px 22px; margin-bottom:20px;
+               display:flex; align-items:center; gap:22px; }
+.goal-text h2 { font-size:13px; color:#aaa; font-weight:500; margin-bottom:4px; }
+.goal-text .big { font-size:34px; font-weight:700; }
+.goal-text .sub { font-size:12px; color:#aaa; margin-top:2px; }
+.goal-bar-wrap { flex:1; }
+.goal-bar-label { display:flex; justify-content:space-between; font-size:11px; color:#666; margin-bottom:6px; }
+.goal-bar-bg { background:#1f1f1f; border-radius:6px; height:10px; overflow:hidden; }
+.goal-bar-fill { background:linear-gradient(90deg,#CC0000,#FF4444); height:100%; border-radius:6px; transition:width 0.8s ease; }
+.goal-pct { font-size:20px; font-weight:700; color:#CC0000; margin-left:14px; white-space:nowrap; }
+
+.stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+.stat-card { background:#141414; border:1px solid #222; border-radius:12px; padding:16px 18px; }
+.stat-card .label { font-size:11px; color:#555; font-weight:500; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:7px; }
+.stat-card .value { font-size:26px; font-weight:700; }
+.stat-card .sub   { font-size:11px; color:#444; margin-top:4px; }
+.stat-card.red  .value { color:#CC0000; }
+.stat-card.green .value { color:#22c55e; }
+.stat-card.gold  .value { color:#FFD700; }
+
+.parrilla { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; margin-bottom:22px; }
+.day-card { background:#141414; border:1px solid #222; border-radius:10px; padding:11px 6px; text-align:center; }
+.day-card.active { border-color:#CC000066; background:#1a0000; }
+.day-card.today  { border-color:#FFD700; background:#1a1500; }
+.day-card .day-name { font-size:10px; color:#444; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+.day-card .day-type.none { color:#2a2a2a; font-size:11px; }
+.day-card .day-time { font-size:10px; color:#666; margin-top:4px; }
+
+.table-box { background:#141414; border:1px solid #222; border-radius:12px; overflow:hidden; }
+.data-table { width:100%; border-collapse:collapse; }
+.data-table th { text-align:left; font-size:11px; color:#444; font-weight:500; text-transform:uppercase;
+                 letter-spacing:0.5px; padding:10px 14px; border-bottom:1px solid #1e1e1e; }
+.data-table td { padding:10px 14px; border-bottom:1px solid #191919; font-size:13px; }
+.data-table tr:last-child td { border-bottom:none; }
+.data-table tr:hover td { background:#161616; }
+
+/* ── TAB 2: Marketplace ── */
+.mp-kpi-row { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:20px; }
+.mp-kpi-card { background:#141414; border:1px solid #222; border-radius:12px; padding:16px 18px; text-align:center; }
+.mp-kpi-card .kv { font-size:28px; font-weight:700; margin-bottom:4px; }
+.mp-kpi-card .kl { font-size:11px; color:#555; text-transform:uppercase; letter-spacing:0.5px; }
+.mp-kpi-card.fire  .kv { color:#FF6666; }
+.mp-kpi-card.green .kv { color:#22c55e; }
+.mp-kpi-card.gold  .kv { color:#FFD700; }
+.mp-kpi-card.blue  .kv { color:#66AAFF; }
+
+.top-banner { background:linear-gradient(135deg,#0d1a00,#182800); border:1px solid #4a9a0044;
+              border-radius:12px; padding:18px 22px; margin-bottom:20px;
+              display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.top-banner .trophy { font-size:30px; }
+.top-banner .info h3 { font-size:11px; color:#6bbc20; font-weight:700; text-transform:uppercase; letter-spacing:0.7px; }
+.top-banner .info .car { font-size:17px; font-weight:700; margin:3px 0; }
+.top-banner .info .sub { font-size:12px; color:#555; }
+
+.mp-table-wrap { background:#141414; border:1px solid #222; border-radius:12px; overflow:hidden; }
 .mp-table { width:100%; border-collapse:collapse; }
-.mp-table th { text-align:left; font-size:11px; color:#555; font-weight:500; text-transform:uppercase; letter-spacing:0.5px; padding:10px 14px; border-bottom:1px solid #1f1f1f; }
-.mp-table th.right { text-align:right; }
-.mp-table td { padding:10px 14px; border-bottom:1px solid #1a1a1a; font-size:13px; vertical-align:middle; }
+.mp-table th { text-align:left; font-size:11px; color:#444; font-weight:500; text-transform:uppercase;
+               letter-spacing:0.5px; padding:10px 14px; border-bottom:1px solid #1e1e1e; }
+.mp-table th.r { text-align:right; }
+.mp-table td { padding:10px 14px; border-bottom:1px solid #191919; font-size:13px; vertical-align:middle; }
 .mp-table tr:last-child td { border-bottom:none; }
 .mp-table tr:hover td { background:#161616; }
 .mp-table tr.top-row td { background:#0d1a00; }
-.score-bar-bg { background:#1f1f1f; border-radius:4px; height:6px; width:80px; display:inline-block; vertical-align:middle; }
-.score-bar-fill { background:linear-gradient(90deg,#4a9a00,#88cc44); height:100%; border-radius:4px; }
+.bar-wrap { display:flex; align-items:center; gap:8px; }
+.bar-bg { background:#1f1f1f; border-radius:4px; height:6px; width:80px; }
+.bar-fill { background:linear-gradient(90deg,#3d8000,#6bbc20); height:100%; border-radius:4px; }
 .badge-hot { background:#CC000033; color:#FF6666; font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; }
-.badge-new { background:#0066CC22; color:#66AAFF; font-size:10px; font-weight:600; padding:2px 7px; border-radius:10px; }
-.rank-num { font-size:12px; color:#333; font-weight:700; width:24px; }
-.rank-num.top { color:#FFD700; }
+.zero { color:#2d2d2d; }
 
-/* Citas */
-.appt-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; margin-bottom:24px; }
+/* ── TAB 3: Citas ── */
+.appt-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:14px; }
 .appt-card { background:#141414; border:1px solid #222; border-radius:12px; padding:16px 18px; position:relative; }
 .appt-card.confirmed { border-color:#22c55e44; }
 .appt-card.pending   { border-color:#FFD70044; }
-.appt-card.cancelled { border-color:#33333366; opacity:0.5; }
-.appt-status { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:8px; }
+.appt-id { position:absolute; top:11px; right:13px; font-size:10px; color:#2a2a2a; font-family:monospace; }
+.appt-status { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:7px; }
 .appt-card.confirmed .appt-status { color:#22c55e; }
 .appt-card.pending   .appt-status { color:#FFD700; }
-.appt-card.cancelled .appt-status { color:#555; }
-.appt-name  { font-size:15px; font-weight:700; margin-bottom:2px; }
-.appt-car   { font-size:12px; color:#888; margin-bottom:10px; }
-.appt-date  { display:flex; align-items:center; gap:6px; font-size:13px; color:#ccc; margin-bottom:4px; }
-.appt-phone { font-size:12px; color:#666; margin-bottom:12px; }
-.appt-actions { display:flex; gap:8px; }
-.btn-confirm { background:#22c55e22; color:#22c55e; border:1px solid #22c55e55; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; }
-.btn-confirm:hover { background:#22c55e44; }
-.btn-cancel  { background:#CC000022; color:#FF6666; border:1px solid #CC000055; padding:5px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; }
-.btn-cancel:hover  { background:#CC000044; }
-.appt-id { position:absolute; top:12px; right:14px; font-size:10px; color:#333; font-family:monospace; }
+.appt-name { font-size:15px; font-weight:700; margin-bottom:2px; }
+.appt-car  { font-size:12px; color:#777; margin-bottom:10px; }
+.appt-row  { font-size:13px; color:#bbb; margin-bottom:4px; }
+.appt-phone { font-size:12px; color:#555; margin-bottom:12px; }
+.appt-actions { display:flex; gap:8px; margin-top:12px; }
+.btn-ok  { background:#22c55e18; color:#22c55e; border:1px solid #22c55e44; padding:6px 14px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; }
+.btn-ok:hover  { background:#22c55e30; }
+.btn-no  { background:#CC000018; color:#FF6666; border:1px solid #CC000044; padding:6px 14px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; }
+.btn-no:hover  { background:#CC000030; }
+
+@media (max-width:640px) {
+  body { padding:14px; }
+  .stats-grid { grid-template-columns:1fr 1fr; }
+  .parrilla { grid-template-columns:repeat(4,1fr); }
+  .mp-kpi-row { grid-template-columns:1fr 1fr; }
+  .tabs { width:100%; }
+  .tab { flex:1; text-align:center; padding:9px 10px; font-size:12px; }
+}
 </style>
 </head>
 <body>
 
+<!-- Header fijo -->
 <div class="header">
   <h1>NEXUS <span>@tucarroconalejo</span></h1>
   <div style="display:flex;gap:10px;align-items:center">
     <span class="badge"><span class="live-dot"></span>Sistema activo</span>
-    <button class="refresh" onclick="loadData()">↻ Actualizar</button>
+    <button class="refresh" onclick="refreshAll()">↻</button>
   </div>
 </div>
 
-<!-- Meta 10K -->
-<div class="goal-banner">
-  <div class="goal-text">
-    <h2>Meta mensual</h2>
-    <div class="big" id="reach-count">0</div>
-    <div class="sub">usuarios alcanzados este mes</div>
-  </div>
-  <div class="goal-bar-wrap">
-    <div class="goal-bar-label">
-      <span>0</span>
-      <span>Meta: 10,000</span>
+<!-- Pestañas -->
+<div class="tabs">
+  <button class="tab" id="tab-pub"     onclick="switchTab('publicaciones')">📱 Publicaciones</button>
+  <button class="tab" id="tab-mp"      onclick="switchTab('marketplace')">🚗 Marketplace</button>
+  <button class="tab" id="tab-citas"   onclick="switchTab('citas')">📅 Citas</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 1: PUBLICACIONES
+═══════════════════════════════════════════ -->
+<div class="tab-panel" id="panel-publicaciones">
+
+  <!-- Meta mensual -->
+  <div class="goal-banner">
+    <div class="goal-text">
+      <h2>Meta mensual</h2>
+      <div class="big" id="reach-count">0</div>
+      <div class="sub">usuarios alcanzados este mes</div>
     </div>
-    <div class="goal-bar-bg">
-      <div class="goal-bar-fill" id="goal-bar" style="width:0%"></div>
+    <div class="goal-bar-wrap">
+      <div class="goal-bar-label"><span>0</span><span>Meta: 10,000</span></div>
+      <div class="goal-bar-bg"><div class="goal-bar-fill" id="goal-bar" style="width:0%"></div></div>
+    </div>
+    <div class="goal-pct" id="goal-pct">0%</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card red">
+      <div class="label">Posts este mes</div>
+      <div class="value" id="posts-month">0</div>
+      <div class="sub">Meta: 20 posts/mes</div>
+    </div>
+    <div class="stat-card green">
+      <div class="label">Esta semana</div>
+      <div class="value" id="posts-week">0</div>
+      <div class="sub">Meta: 5 posts/semana</div>
+    </div>
+    <div class="stat-card gold">
+      <div class="label">Entregas / NCD</div>
+      <div class="value" id="entregas-count">0</div>
+      <div class="sub">New Car Day + Entrega</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Próximo post</div>
+      <div class="value" style="font-size:17px" id="next-post">—</div>
+      <div class="sub" id="next-time">—</div>
     </div>
   </div>
-  <div class="goal-pct" id="goal-pct">0%</div>
-</div>
 
-<!-- Stats -->
-<div class="grid">
-  <div class="card red">
-    <div class="label">Posts este mes</div>
-    <div class="value" id="posts-month">0</div>
-    <div class="sub">Meta: 20 posts/mes</div>
+  <!-- Parrilla -->
+  <div class="section-title">Parrilla semanal</div>
+  <div class="parrilla" id="parrilla"></div>
+
+  <!-- Historial -->
+  <div class="section-title">Historial de publicaciones</div>
+  <div class="table-box">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Fecha</th><th>Tipo</th><th>Modelo</th>
+          <th>Promo</th><th>Facebook</th><th>Instagram</th>
+        </tr>
+      </thead>
+      <tbody id="posts-body">
+        <tr><td colspan="6" class="no-data">Cargando...</td></tr>
+      </tbody>
+    </table>
   </div>
-  <div class="card green">
-    <div class="label">Publicados esta semana</div>
-    <div class="value" id="posts-week">0</div>
-    <div class="sub">Meta: 5 posts/semana</div>
+
+</div><!-- /tab publicaciones -->
+
+<!-- ══════════════════════════════════════════
+     TAB 2: MARKETPLACE
+═══════════════════════════════════════════ -->
+<div class="tab-panel" id="panel-marketplace">
+
+  <!-- KPIs globales -->
+  <div class="mp-kpi-row">
+    <div class="mp-kpi-card">
+      <div class="kv" id="mp-listings">44</div>
+      <div class="kl">Listings activos</div>
+    </div>
+    <div class="mp-kpi-card green">
+      <div class="kv" id="mp-total-msg">0</div>
+      <div class="kl">Mensajes recibidos</div>
+    </div>
+    <div class="mp-kpi-card fire">
+      <div class="kv" id="mp-total-hl">0</div>
+      <div class="kl">Hot Leads</div>
+    </div>
+    <div class="mp-kpi-card gold">
+      <div class="kv" id="mp-conv">0%</div>
+      <div class="kl">Tasa conversión</div>
+    </div>
+    <div class="mp-kpi-card blue">
+      <div class="kv" id="mp-total-appts">0</div>
+      <div class="kl">Citas desde MP</div>
+    </div>
   </div>
-  <div class="card gold">
-    <div class="label">Entregas publicadas</div>
-    <div class="value" id="entregas-count">0</div>
-    <div class="sub">New Car Day + Entrega</div>
+
+  <!-- Banner: el más efectivo -->
+  <div class="top-banner" id="mp-banner" style="display:none;">
+    <div class="trophy">🏆</div>
+    <div class="info">
+      <h3>Listing más efectivo</h3>
+      <div class="car" id="mp-top-car">—</div>
+      <div class="sub" id="mp-top-sub">—</div>
+    </div>
   </div>
-  <div class="card">
-    <div class="label">Próximo post</div>
-    <div class="value" style="font-size:18px" id="next-post">—</div>
-    <div class="sub" id="next-time">—</div>
+
+  <!-- Tabla rankeada -->
+  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+    <span>Ranking de efectividad</span>
+    <span id="mp-subtitle" style="font-size:11px;color:#444;font-weight:400;text-transform:none;letter-spacing:0;"></span>
   </div>
-</div>
-
-<!-- Parrilla -->
-<div class="section-title">Parrilla semanal</div>
-<div class="parrilla" id="parrilla"></div>
-
-<!-- Marketplace Analytics -->
-<div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
-  <span>🚗 Efectividad de listings Marketplace</span>
-  <span id="mp-subtitle" style="font-size:12px;color:#555;font-weight:400;text-transform:none;letter-spacing:0;"></span>
-</div>
-
-<!-- Banner: el más efectivo -->
-<div class="mp-banner" id="mp-banner" style="display:none;">
-  <div class="trophy">🏆</div>
-  <div class="mp-info">
-    <h3>Listing más efectivo</h3>
-    <div class="mp-car" id="mp-top-car">—</div>
-    <div class="mp-sub" id="mp-top-sub">—</div>
+  <div class="mp-table-wrap">
+    <table class="mp-table">
+      <thead>
+        <tr>
+          <th style="width:32px">#</th>
+          <th>Vehículo</th>
+          <th class="r">Mensajes</th>
+          <th class="r">Hot Leads</th>
+          <th class="r">Citas</th>
+          <th class="r">Declinados</th>
+          <th class="r">Conv%</th>
+          <th>Score</th>
+          <th>Último contacto</th>
+        </tr>
+      </thead>
+      <tbody id="mp-tbody">
+        <tr><td colspan="9" class="no-data">Cargando...</td></tr>
+      </tbody>
+    </table>
   </div>
-  <div class="mp-kpis">
-    <div class="mp-kpi fire"><div class="kv" id="mp-total-hl">0</div><div class="kl">Hot Leads</div></div>
-    <div class="mp-kpi green"><div class="kv" id="mp-total-msg">0</div><div class="kl">Mensajes</div></div>
-    <div class="mp-kpi gold"><div class="kv" id="mp-conv">0%</div><div class="kl">Conversión</div></div>
-    <div class="mp-kpi"><div class="kv" id="mp-total-appts">0</div><div class="kl">Citas</div></div>
+
+</div><!-- /tab marketplace -->
+
+<!-- ══════════════════════════════════════════
+     TAB 3: CITAS
+═══════════════════════════════════════════ -->
+<div class="tab-panel" id="panel-citas">
+
+  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <span>Citas agendadas</span>
+    <span id="appt-count" style="font-size:11px;color:#444;font-weight:400;text-transform:none;letter-spacing:0;"></span>
   </div>
-</div>
+  <div class="appt-grid" id="appt-grid">
+    <div style="color:#333;font-size:14px;padding:20px 0;">Cargando...</div>
+  </div>
 
-<!-- Tabla de listings -->
-<div class="mp-table-wrap">
-  <table class="mp-table">
-    <thead>
-      <tr>
-        <th style="width:28px">#</th>
-        <th>Vehículo</th>
-        <th class="right">Mensajes</th>
-        <th class="right">Hot Leads</th>
-        <th class="right">Citas</th>
-        <th class="right">Declinados</th>
-        <th class="right">Conv%</th>
-        <th>Efectividad</th>
-        <th>Último contacto</th>
-      </tr>
-    </thead>
-    <tbody id="mp-tbody">
-      <tr><td colspan="9" class="no-data">Cargando...</td></tr>
-    </tbody>
-  </table>
-</div>
-
-<!-- Citas -->
-<div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
-  <span>📅 Citas agendadas</span>
-  <span id="appt-count" style="font-size:12px;color:#555;font-weight:400;text-transform:none;letter-spacing:0;"></span>
-</div>
-<div class="appt-grid" id="appt-grid">
-  <div style="color:#333;font-size:14px;padding:20px 0;">Cargando citas...</div>
-</div>
-
-<!-- Posts recientes -->
-<div class="section-title">Historial de publicaciones</div>
-<div style="background:#141414;border:1px solid #222;border-radius:12px;overflow:hidden;">
-  <table class="posts-table">
-    <thead>
-      <tr>
-        <th>Fecha</th>
-        <th>Tipo</th>
-        <th>Modelo</th>
-        <th>Promo</th>
-        <th>Facebook ID</th>
-        <th>Instagram ID</th>
-      </tr>
-    </thead>
-    <tbody id="posts-body">
-      <tr><td colspan="6" class="no-data">Cargando...</td></tr>
-    </tbody>
-  </table>
-</div>
+</div><!-- /tab citas -->
 
 <script>
-const PARRILLA_DEF = [
-  { day: "Lun", type: "inventory",   time: "12:00pm", label: "Inventory",    pill: "pill-blue" },
-  { day: "Mar", type: "entrega",     time: "8:00pm",  label: "Entrega/NCD",  pill: "pill-red" },
-  { day: "Mié", type: "tips",        time: "8:00pm",  label: "Tips",         pill: "pill-green" },
-  { day: "Jue", type: null,          time: "—",       label: "Descanso",     pill: "" },
-  { day: "Vie", type: "new_car_day", time: "8:00pm",  label: "New Car Day",  pill: "pill-red" },
-  { day: "Sáb", type: null,          time: "—",       label: "Descanso",     pill: "" },
-  { day: "Dom", type: "quote",       time: "9:00am",  label: "Quote",        pill: "pill-gold" },
-];
-
-const TYPE_COLORS = {
-  inventory:   { cls: "pill-blue",  label: "Inventory" },
-  entrega:     { cls: "pill-red",   label: "Entrega Esp." },
-  new_car_day: { cls: "pill-red",   label: "New Car Day" },
-  tips:        { cls: "pill-green", label: "Tips" },
-  quote:       { cls: "pill-gold",  label: "Quote" },
+/* ─── Tabs ─── */
+const TABS = {
+  publicaciones: { btn:"tab-pub",   panel:"panel-publicaciones", load: () => { loadPublicaciones(); } },
+  marketplace:   { btn:"tab-mp",    panel:"panel-marketplace",   load: () => { loadMarketplace(); } },
+  citas:         { btn:"tab-citas", panel:"panel-citas",          load: () => { loadCitas(); } },
 };
+let activeTab = "";
 
-const todayIdx = (new Date().getDay() + 6) % 7; // 0=Mon
+function switchTab(name) {
+  if (activeTab === name) return;
+  Object.entries(TABS).forEach(([k, t]) => {
+    document.getElementById(t.btn).classList.toggle("active", k === name);
+    document.getElementById(t.panel).classList.toggle("active", k === name);
+  });
+  activeTab = name;
+  location.hash = name;
+  TABS[name].load();
+}
+
+function refreshAll() {
+  if (activeTab) TABS[activeTab].load();
+}
+
+/* ─── Init ─── */
+const initTab = ["publicaciones","marketplace","citas"].includes(location.hash.slice(1))
+  ? location.hash.slice(1) : "publicaciones";
+switchTab(initTab);
+
+/* ─── Intervalos de refresco ─── */
+setInterval(() => { if (activeTab === "publicaciones") loadPublicaciones(); }, 30000);
+setInterval(() => { if (activeTab === "marketplace")   loadMarketplace();   }, 60000);
+setInterval(() => { if (activeTab === "citas")         loadCitas();          }, 15000);
+
+
+/* ══════════════════════════════════════════
+   TAB 1: PUBLICACIONES
+═══════════════════════════════════════════ */
+const PARRILLA_DEF = [
+  { day:"Lun", type:"inventory",   time:"12:00pm", label:"Inventory",   pill:"pill-blue" },
+  { day:"Mar", type:"entrega",     time:"8:00pm",  label:"Entrega/NCD", pill:"pill-red"  },
+  { day:"Mié", type:"tips",        time:"8:00pm",  label:"Tips",        pill:"pill-green"},
+  { day:"Jue", type:null,          time:"—",       label:"Descanso",    pill:""          },
+  { day:"Vie", type:"new_car_day", time:"8:00pm",  label:"New Car Day", pill:"pill-red"  },
+  { day:"Sáb", type:null,          time:"—",       label:"Descanso",    pill:""          },
+  { day:"Dom", type:"quote",       time:"9:00am",  label:"Quote",       pill:"pill-gold" },
+];
+const TYPE_COLORS = {
+  inventory:   { cls:"pill-blue",  label:"Inventory"    },
+  entrega:     { cls:"pill-red",   label:"Entrega Esp." },
+  new_car_day: { cls:"pill-red",   label:"New Car Day"  },
+  tips:        { cls:"pill-green", label:"Tips"         },
+  quote:       { cls:"pill-gold",  label:"Quote"        },
+};
+const todayIdx = (new Date().getDay() + 6) % 7;
 
 function renderParrilla() {
-  const cont = document.getElementById("parrilla");
-  cont.innerHTML = PARRILLA_DEF.map((d, i) => {
+  document.getElementById("parrilla").innerHTML = PARRILLA_DEF.map((d,i) => {
     const isToday = i === todayIdx;
-    const hasPost = d.type !== null;
-    return `<div class="day-card ${isToday ? 'today' : (hasPost ? 'active' : '')}">
-      <div class="day-name">${d.day}${isToday ? ' ◀' : ''}</div>
-      <div class="day-type ${hasPost ? '' : 'none'}">
-        ${hasPost ? `<span class="pill ${d.pill}">${d.label}</span>` : '—'}
-      </div>
+    const has = d.type !== null;
+    return `<div class="day-card ${isToday?"today":has?"active":""}">
+      <div class="day-name">${d.day}${isToday?" ◀":""}</div>
+      <div class="day-type ${has?"":"none"}">${has?`<span class="pill ${d.pill}">${d.label}</span>`:"—"}</div>
       <div class="day-time">${d.time}</div>
     </div>`;
   }).join("");
@@ -286,240 +372,221 @@ function renderParrilla() {
 
 function getNextPost() {
   const now = new Date();
-  const nowDay = (now.getDay() + 6) % 7;
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowDay = (now.getDay()+6)%7;
+  const nowMin = now.getHours()*60+now.getMinutes();
   const times = [
-    { day: 0, min: 12*60, label: "Inventory", subLabel: "Lunes 12:00pm" },
-    { day: 1, min: 20*60, label: "Entrega", subLabel: "Martes 8:00pm" },
-    { day: 2, min: 20*60, label: "Tips", subLabel: "Miércoles 8:00pm" },
-    { day: 4, min: 20*60, label: "New Car Day", subLabel: "Viernes 8:00pm" },
-    { day: 6, min:  9*60, label: "Quote", subLabel: "Domingo 9:00am" },
+    {day:0,min:12*60,label:"Inventory",    subLabel:"Lunes 12:00pm"},
+    {day:1,min:20*60,label:"Entrega",      subLabel:"Martes 8:00pm"},
+    {day:2,min:20*60,label:"Tips",         subLabel:"Miércoles 8:00pm"},
+    {day:4,min:20*60,label:"New Car Day",  subLabel:"Viernes 8:00pm"},
+    {day:6,min: 9*60,label:"Quote",        subLabel:"Domingo 9:00am"},
   ];
-  for (let i = 0; i < 14; i++) {
+  for (let i=0;i<14;i++) {
     for (const t of times) {
-      const diffDay = (t.day - nowDay + 7) % 7;
-      if (diffDay > 0 || (diffDay === 0 && t.min > nowMin)) {
-        return { label: t.label, subLabel: diffDay === 0 ? "Hoy " + t.subLabel.split(" ")[1] : t.subLabel };
+      const diff = (t.day-nowDay+7)%7;
+      if (diff>0||(diff===0&&t.min>nowMin)) {
+        return {label:t.label, subLabel:diff===0?"Hoy "+t.subLabel.split(" ")[1]:t.subLabel};
       }
     }
   }
-  return { label: "—", subLabel: "—" };
+  return {label:"—",subLabel:"—"};
 }
 
-async function loadData() {
-  // Try to load posts_log.json
+async function loadPublicaciones() {
+  renderParrilla();
+  const next = getNextPost();
+  document.getElementById("next-post").textContent = next.label;
+  document.getElementById("next-time").textContent = next.subLabel;
+
   try {
-    const res = await fetch("posts_log.json?t=" + Date.now());
+    const res   = await fetch("posts_log.json?t="+Date.now());
     const posts = await res.json();
+    const now   = new Date();
+    const mStart = new Date(now.getFullYear(),now.getMonth(),1);
+    const wStart = new Date(now); wStart.setDate(now.getDate()-((now.getDay()+6)%7));
 
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    const thisMonth = posts.filter(p => new Date(p.datetime)>=mStart);
+    const thisWeek  = posts.filter(p => new Date(p.datetime)>=wStart);
+    const entregas  = posts.filter(p => p.post_type==="entrega"||p.post_type==="new_car_day");
 
-    const thisMonth = posts.filter(p => new Date(p.datetime) >= monthStart);
-    const thisWeek  = posts.filter(p => new Date(p.datetime) >= weekStart);
-    const entregas  = posts.filter(p => p.post_type === "entrega" || p.post_type === "new_car_day");
+    document.getElementById("posts-month").textContent     = thisMonth.length;
+    document.getElementById("posts-week").textContent      = thisWeek.length;
+    document.getElementById("entregas-count").textContent  = entregas.length;
 
-    document.getElementById("posts-month").textContent = thisMonth.length;
-    document.getElementById("posts-week").textContent  = thisWeek.length;
-    document.getElementById("entregas-count").textContent = entregas.length;
-
-    // Estimated reach: ~800 per inventory, ~1500 per entrega/NCD, ~600 tips/quote
-    const reach = thisMonth.reduce((acc, p) => {
-      const base = { inventory: 800, entrega: 1500, new_car_day: 1500, tips: 600, quote: 600 };
-      return acc + (base[p.post_type] || 600);
-    }, 0);
-
+    const reach = thisMonth.reduce((a,p)=>{
+      return a+({inventory:800,entrega:1500,new_car_day:1500,tips:600,quote:600}[p.post_type]||600);
+    },0);
     document.getElementById("reach-count").textContent = reach.toLocaleString();
-    const pct = Math.min(100, Math.round(reach / 100));
-    document.getElementById("goal-bar").style.width = pct + "%";
-    document.getElementById("goal-pct").textContent = pct + "%";
+    const pct = Math.min(100,Math.round(reach/100));
+    document.getElementById("goal-bar").style.width = pct+"%";
+    document.getElementById("goal-pct").textContent = pct+"%";
 
-    // Table
     const tbody = document.getElementById("posts-body");
-    if (posts.length === 0) {
+    if (!posts.length) {
       tbody.innerHTML = '<tr><td colspan="6" class="no-data">Aún no hay publicaciones registradas</td></tr>';
     } else {
-      tbody.innerHTML = [...posts].reverse().slice(0, 20).map(p => {
-        const tc = TYPE_COLORS[p.post_type] || { cls: "", label: p.post_type };
+      tbody.innerHTML = [...posts].reverse().slice(0,20).map(p => {
+        const tc = TYPE_COLORS[p.post_type]||{cls:"",label:p.post_type};
         return `<tr>
           <td>${p.datetime}</td>
-          <td><span class="type-badge pill ${tc.cls}">${tc.label}</span></td>
-          <td>Toyota ${p.model || "—"}</td>
-          <td>${p.promo || "—"}</td>
-          <td style="font-size:11px;color:#555">${p.fb_id || "—"}</td>
-          <td style="font-size:11px;color:#555">${p.ig_id || "—"}</td>
+          <td><span class="pill ${tc.cls}">${tc.label}</span></td>
+          <td>Toyota ${p.model||"—"}</td>
+          <td>${p.promo||"—"}</td>
+          <td style="font-size:11px;color:#444">${p.fb_id||"—"}</td>
+          <td style="font-size:11px;color:#444">${p.ig_id||"—"}</td>
         </tr>`;
       }).join("");
     }
   } catch {
     document.getElementById("posts-body").innerHTML =
-      '<tr><td colspan="6" class="no-data">posts_log.json no encontrado — publica tu primer post para ver datos aquí</td></tr>';
+      '<tr><td colspan="6" class="no-data">posts_log.json no encontrado</td></tr>';
   }
-
-  // Next post
-  const next = getNextPost();
-  document.getElementById("next-post").textContent = next.label;
-  document.getElementById("next-time").textContent = next.subLabel;
 }
 
-async function loadMarketplaceStats() {
+
+/* ══════════════════════════════════════════
+   TAB 2: MARKETPLACE
+═══════════════════════════════════════════ */
+async function loadMarketplace() {
   try {
-    const [statsRes, summaryRes] = await Promise.all([
+    const [sRes, sumRes] = await Promise.all([
       fetch(`/api/marketplace-stats?t=${Date.now()}`),
       fetch(`/api/marketplace-summary?t=${Date.now()}`),
     ]);
-    const stats   = await statsRes.json();
-    const summary = await summaryRes.json();
+    const stats   = await sRes.json();
+    const summary = await sumRes.json();
 
-    // Subtitle
-    const active = stats.filter(s => s.messages > 0).length;
+    document.getElementById("mp-listings").textContent    = summary.total_listings;
+    document.getElementById("mp-total-msg").textContent   = summary.total_messages;
+    document.getElementById("mp-total-hl").textContent    = summary.total_hot_leads;
+    document.getElementById("mp-conv").textContent        = summary.conversion_rate+"%";
+    document.getElementById("mp-total-appts").textContent = summary.total_appointments;
+
+    const active = stats.filter(s=>s.messages>0).length;
     document.getElementById("mp-subtitle").textContent =
-      `${summary.total_listings} publicados · ${active} con actividad · ${summary.total_messages} mensajes totales`;
+      `${active} de ${summary.total_listings} con actividad`;
 
-    // Banner top listing
-    if (summary.top_listing && summary.top_listing.messages > 0) {
+    const banner = document.getElementById("mp-banner");
+    if (summary.top_listing && summary.top_listing.messages>0) {
       const top = summary.top_listing;
-      document.getElementById("mp-banner").style.display = "flex";
+      banner.style.display = "flex";
       document.getElementById("mp-top-car").textContent =
         `${top.yr} Toyota ${top.model} ${top.trim}`.trim();
       document.getElementById("mp-top-sub").textContent =
-        `Score ${top.score} · Down payment $${(top.down_payment||0).toLocaleString()}`;
-      document.getElementById("mp-total-hl").textContent   = summary.total_hot_leads;
-      document.getElementById("mp-total-msg").textContent  = summary.total_messages;
-      document.getElementById("mp-conv").textContent       = summary.conversion_rate + "%";
-      document.getElementById("mp-total-appts").textContent = summary.total_appointments;
+        `Score ${top.score}  ·  ${top.messages} mensajes  ·  ${top.hot_leads} hot leads  ·  ${top.conversion_rate}% conv.`;
+    } else {
+      banner.style.display = "none";
     }
 
-    // Calcular max score para escalar las barras
-    const maxScore = Math.max(...stats.map(s => s.score), 1);
-
-    // Tabla
+    const maxScore = Math.max(...stats.map(s=>s.score),1);
     const tbody = document.getElementById("mp-tbody");
-    if (stats.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="no-data">Sin listings publicados</td></tr>';
+    if (!stats.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="no-data">Sin listings</td></tr>';
       return;
     }
 
-    tbody.innerHTML = stats.map((s, i) => {
-      const rank    = i + 1;
-      const isTop   = rank === 1 && s.messages > 0;
-      const barPct  = Math.round((s.score / maxScore) * 100);
-      const barColor = s.score > 0
-        ? `background:linear-gradient(90deg,#4a9a00,#88cc44)`
-        : "background:#333";
-      const lastContact = s.last_contact
-        ? new Date(s.last_contact).toLocaleDateString("es-US", {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"})
-        : "Sin contacto";
-      const hotBadge   = s.hot_leads   > 0 ? `<span class="badge-hot">🔥 ${s.hot_leads}</span>` : `<span style="color:#333">0</span>`;
-      const apptBadge  = s.appointments > 0 ? `<span style="color:#22c55e;font-weight:700">${s.appointments}</span>` : `<span style="color:#333">0</span>`;
-      const convColor  = s.conversion_rate >= 30 ? "#22c55e" : s.conversion_rate >= 10 ? "#FFD700" : "#555";
-
-      return `<tr class="${isTop ? 'top-row' : ''}">
-        <td><span class="rank-num ${isTop ? 'top' : ''}">${isTop ? '🥇' : rank}</span></td>
+    tbody.innerHTML = stats.map((s,i) => {
+      const rank  = i+1;
+      const isTop = rank===1 && s.messages>0;
+      const pct   = Math.round((Math.max(s.score,0)/maxScore)*100);
+      const barStyle = s.score>0
+        ? "background:linear-gradient(90deg,#3d8000,#6bbc20)"
+        : "background:#1e1e1e";
+      const last = s.last_contact
+        ? new Date(s.last_contact).toLocaleDateString("es-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})
+        : "—";
+      const convClr = s.conversion_rate>=30?"#22c55e":s.conversion_rate>=10?"#FFD700":"#444";
+      return `<tr class="${isTop?"top-row":""}">
+        <td style="font-size:12px;color:${isTop?"#FFD700":"#333"};font-weight:700">${isTop?"🥇":rank}</td>
         <td>
-          <div style="font-weight:600;font-size:13px">${s.yr} ${s.model} <span style="color:#888;font-weight:400">${s.trim}</span></div>
-          ${s.messages === 0 ? '<div style="font-size:11px;color:#444">Sin mensajes aún</div>' : ''}
+          <div style="font-weight:600">${s.yr} ${s.model} <span style="color:#555;font-weight:400">${s.trim}</span></div>
+          ${s.messages===0?'<div style="font-size:10px;color:#2a2a2a;margin-top:2px">Sin actividad aún</div>':""}
         </td>
-        <td style="text-align:right;font-weight:${s.messages>0?'600':'400'};color:${s.messages>0?'#fff':'#444'}">${s.messages}</td>
-        <td style="text-align:right">${hotBadge}</td>
-        <td style="text-align:right">${apptBadge}</td>
-        <td style="text-align:right;color:${s.declined>0?'#FF6666':'#444'}">${s.declined}</td>
-        <td style="text-align:right;color:${convColor};font-weight:600">${s.conversion_rate}%</td>
+        <td class="r" style="font-weight:${s.messages>0?600:400};color:${s.messages>0?"#fff":"#2d2d2d"}">${s.messages}</td>
+        <td class="r">${s.hot_leads>0?`<span class="badge-hot">🔥 ${s.hot_leads}</span>`:'<span class="zero">0</span>'}</td>
+        <td class="r" style="color:${s.appointments>0?"#22c55e":"#2d2d2d"};font-weight:${s.appointments>0?700:400}">${s.appointments}</td>
+        <td class="r" style="color:${s.declined>0?"#FF6666":"#2d2d2d"}">${s.declined}</td>
+        <td class="r" style="color:${convClr};font-weight:600">${s.conversion_rate}%</td>
         <td>
-          <div style="display:flex;align-items:center;gap:8px">
-            <div class="score-bar-bg"><div class="score-bar-fill" style="width:${barPct}%;${barColor}"></div></div>
-            <span style="font-size:12px;color:#666">${s.score}</span>
+          <div class="bar-wrap">
+            <div class="bar-bg"><div class="bar-fill" style="width:${pct}%;${barStyle}"></div></div>
+            <span style="font-size:11px;color:#444">${s.score}</span>
           </div>
         </td>
-        <td style="font-size:11px;color:#555">${lastContact}</td>
+        <td style="font-size:11px;color:#444">${last}</td>
       </tr>`;
     }).join("");
 
   } catch {
     document.getElementById("mp-tbody").innerHTML =
-      '<tr><td colspan="9" class="no-data" style="color:#444">Reinicia el dashboard: python3 local_server.py</td></tr>';
+      '<tr><td colspan="9" class="no-data" style="color:#333">Reinicia: python3 local_server.py</td></tr>';
   }
 }
 
+
+/* ══════════════════════════════════════════
+   TAB 3: CITAS
+═══════════════════════════════════════════ */
 async function confirmAppt(id, btn) {
-  btn.disabled = true;
-  btn.textContent = "...";
+  btn.disabled=true; btn.textContent="...";
   try {
-    const res = await fetch(`/api/confirm/${id}`);
-    const data = await res.json();
-    if (data.ok) { loadAppointments(); }
-    else { btn.textContent = "Error"; }
+    const d = await (await fetch(`/api/confirm/${id}`)).json();
+    if (d.ok) loadCitas(); else btn.textContent="Error";
   } catch {
-    // servidor sin API → instrucción CLI
-    btn.textContent = "CLI";
-    alert(`Sin servidor local. Confirma con:\npython3 appointments.py --confirm ${id}`);
+    btn.textContent="CLI";
+    alert(`Confirma con:\npython3 appointments.py --confirm ${id}`);
   }
 }
 
 async function cancelAppt(id, btn) {
   if (!confirm("¿Cancelar esta cita?")) return;
-  btn.disabled = true;
-  btn.textContent = "...";
+  btn.disabled=true; btn.textContent="...";
   try {
-    const res = await fetch(`/api/cancel/${id}`);
-    const data = await res.json();
-    if (data.ok) { loadAppointments(); }
-    else { btn.textContent = "Error"; }
+    const d = await (await fetch(`/api/cancel/${id}`)).json();
+    if (d.ok) loadCitas(); else btn.textContent="Error";
   } catch {
-    btn.textContent = "CLI";
-    alert(`Sin servidor local. Cancela con:\npython3 appointments.py --cancel ${id}`);
+    btn.textContent="CLI";
+    alert(`Cancela con:\npython3 appointments.py --cancel ${id}`);
   }
 }
 
-async function loadAppointments() {
-  const grid = document.getElementById("appt-grid");
+async function loadCitas() {
+  const grid    = document.getElementById("appt-grid");
   const countEl = document.getElementById("appt-count");
   try {
-    const res = await fetch(`/api/appointments?t=${Date.now()}`);
-    const appts = await res.json();
-    const active = appts.filter(a => a.status !== "cancelled");
-    const pending = active.filter(a => a.status === "pending").length;
-    countEl.textContent = `${active.length} activa(s) · ${pending} pendiente(s) de confirmar`;
+    const appts  = await (await fetch(`/api/appointments?t=${Date.now()}`)).json();
+    const active = appts.filter(a=>a.status!=="cancelled");
+    const pend   = active.filter(a=>a.status==="pending").length;
+    countEl.textContent = `${active.length} activa(s) · ${pend} por confirmar`;
 
-    if (active.length === 0) {
-      grid.innerHTML = '<div style="color:#333;font-size:14px;padding:20px 0;">Sin citas agendadas</div>';
+    if (!active.length) {
+      grid.innerHTML = '<div style="color:#2d2d2d;padding:20px 0;">Sin citas agendadas</div>';
       return;
     }
-
-    const statusLabel = { pending: "⏳ Pendiente", confirmed: "✅ Confirmada", cancelled: "❌ Cancelada" };
+    const lbl = {pending:"⏳ Pendiente de confirmar", confirmed:"✅ Confirmada"};
     grid.innerHTML = active.map(a => `
       <div class="appt-card ${a.status}">
         <div class="appt-id">${a.id}</div>
-        <div class="appt-status">${statusLabel[a.status] || a.status}</div>
+        <div class="appt-status">${lbl[a.status]||a.status}</div>
         <div class="appt-name">${a.customer_name}</div>
         <div class="appt-car">${a.car}</div>
-        <div class="appt-date">📅 ${a.date_preference} &nbsp;🕐 ${a.time_preference}</div>
-        ${a.customer_phone ? `<div class="appt-phone">📞 ${a.customer_phone}</div>` : '<div class="appt-phone" style="margin-bottom:12px"></div>'}
+        <div class="appt-row">📅 ${a.date_preference} &nbsp; 🕐 ${a.time_preference}</div>
+        ${a.customer_phone?`<div class="appt-phone">📞 ${a.customer_phone}</div>`:""}
         <div class="appt-actions">
-          ${a.status === "pending" ? `
-            <button class="btn-confirm" onclick="confirmAppt('${a.id}', this)">✅ Confirmar</button>
-            <button class="btn-cancel"  onclick="cancelAppt('${a.id}', this)">✖ Cancelar</button>
-          ` : a.status === "confirmed" ? `
-            <button class="btn-cancel"  onclick="cancelAppt('${a.id}', this)">✖ Cancelar</button>
-          ` : ""}
+          ${a.status==="pending"?`
+            <button class="btn-ok" onclick="confirmAppt('${a.id}',this)">✅ Confirmar</button>
+            <button class="btn-no" onclick="cancelAppt('${a.id}',this)">✖ Cancelar</button>
+          `:a.status==="confirmed"?`
+            <button class="btn-no" onclick="cancelAppt('${a.id}',this)">✖ Cancelar</button>
+          `:""}
         </div>
       </div>
     `).join("");
   } catch {
-    grid.innerHTML = '<div style="color:#333;font-size:14px;padding:20px 0;">Inicia el dashboard con: python3 local_server.py</div>';
-    countEl.textContent = "";
+    grid.innerHTML = '<div style="color:#2d2d2d;padding:20px 0;">Inicia: python3 local_server.py</div>';
+    countEl.textContent="";
   }
 }
-
-renderParrilla();
-loadData();
-loadAppointments();
-loadMarketplaceStats();
-setInterval(loadData, 30000);
-setInterval(loadAppointments, 15000);
-setInterval(loadMarketplaceStats, 60000);
 </script>
 </body>
 </html>
