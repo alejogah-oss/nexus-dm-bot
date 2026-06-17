@@ -1,0 +1,9 @@
+anthropic
+requests
+python-dotenv
+schedule
+beautifulsoup4
+playwright
+openai
+Pillow
+twilio

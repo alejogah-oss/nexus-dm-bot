@@ -1,9 +1,11 @@
 """DM Bot — @tucarroconalejo — responde mensajes de Facebook e Instagram."""
 import os
+import time
 import requests
 import anthropic
 from dotenv import load_dotenv
 from crm_client import push_hot_lead
+from pulse import pulse_notify
 
 load_dotenv()
 
@@ -46,25 +48,29 @@ SEÑALES DE LEAD CALIENTE (menciona en tu respuesta con [HOT LEAD]):
 """
 
 
+def _claude_create(model: str, max_tokens: int, system: str, messages: list, retries: int = 3) -> str:
+    """Calls Claude API with retry on 529 overload."""
+    for attempt in range(retries):
+        try:
+            response = client.messages.create(
+                model=model, max_tokens=max_tokens, system=system, messages=messages
+            )
+            return response.content[0].text
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529 and attempt < retries - 1:
+                wait = 10 * (attempt + 1)
+                print(f"[BOT] Anthropic sobrecargado — reintento en {wait}s")
+                time.sleep(wait)
+            else:
+                raise
+
+
 def generate_reply(conversation_history: list, new_message: str) -> tuple[str, bool]:
-    """
-    Generates a reply for the incoming DM.
-    Returns (reply_text, is_hot_lead).
-    """
+    """Returns (reply_text, is_hot_lead)."""
     messages = conversation_history + [{"role": "user", "content": new_message}]
-
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=300,
-        system=BOT_VOICE,
-        messages=messages,
-    )
-
-    reply = response.content[0].text
+    reply = _claude_create("claude-sonnet-4-6", 300, BOT_VOICE, messages)
     is_hot = "[HOT LEAD]" in reply
-    clean_reply = reply.replace("[HOT LEAD]", "").strip()
-
-    return clean_reply, is_hot
+    return reply.replace("[HOT LEAD]", "").strip(), is_hot
 
 
 def send_facebook_reply(recipient_id: str, text: str):
@@ -102,13 +108,17 @@ def send_instagram_reply(recipient_id: str, text: str):
 
 
 def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
-    """Notifies Alejo when a hot lead is detected — pushes to CRM."""
+    """Notifies Alejo when a hot lead is detected — pushes to CRM and sends SMS."""
     print(f"\n🔥 HOT LEAD DETECTADO")
     print(f"   Platform: {platform}")
     print(f"   Sender ID: {sender_id}")
     print(f"   Mensaje: {message}")
     history = _conversations.get(sender_id, [])
     push_hot_lead(sender_id, platform, history)
+    pulse_notify(
+        event="HOT_LEAD",
+        detail=f"Platform: {platform.upper()} | Mensaje: {message[:120]}"
+    )
 
 
 # In-memory conversation stores
@@ -132,20 +142,27 @@ FLUJO:
 Msg 1 → Confirma el carro que vio + invita a verlo en persona en Hollywood, FL
 Msg 2 → Si duda, maneja la objeción con calidez + vuelve a invitar
 Msg 3 → Si confirma que viene → da la dirección: 2200 N State Rd 7, Hollywood, FL 33021
-Msg 3 (si sigue dudando) → ofrece una llamada con Alejo directo
-Msg 4+ → Si rechaza 2+ veces la visita, acepta con gracia y agrega [SHOWROOM_DECLINED]
+Msg 3 (si sigue dudando) → ofrece una llamada con Alejo directo: (954) 310-6671
 
-SEÑALES DE HOT LEAD (agrega [HOT LEAD] en tu respuesta):
-- Dice "voy", "esta semana", "mañana", "cuándo puedo ir"
+CONTADOR DE RECHAZOS — MUY IMPORTANTE:
+- Rechazo 1: maneja la objeción con calidez, ofrece alternativa (llamada, otro día)
+- Rechazo 2: acepta con gracia, despídete amablemente, y agrega [SHOWROOM_DECLINED] al final
+- Cuentan como rechazo: "no puedo", "queda lejos", "no tengo tiempo", "lo voy a pensar",
+  "no sé", "tal vez después", "estoy ocupado" — cualquier evasiva es un rechazo
+- NO sigas insistiendo después del 2do rechazo — acepta y cierra con gracia
+
+SEÑALES DE HOT LEAD (agrega [HOT LEAD] al final de tu respuesta):
+- Dice "voy", "esta semana", "mañana", "cuándo puedo ir", "me interesa"
 - Da su número de teléfono
-- Pregunta por financiamiento específico
+- Pregunta por financiamiento específico o cuánto de inicial
 
 REGLAS ABSOLUTAS:
 - NUNCA des precio total ni mensualidades
 - NUNCA prometas crédito garantizado
 - Siempre ofrece contacto: (954) 310-6671 o DM directo
 - Máximo 3 oraciones por respuesta — breve y cálido
-- Sin Markdown"""
+- Sin Markdown
+- Las banderas [HOT LEAD] y [SHOWROOM_DECLINED] van al final, nunca en medio del texto"""
 
 
 WELCOME_MESSAGE = (
@@ -187,14 +204,11 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
             send_facebook_reply(sender_id, intro)
         history.append({"role": "assistant", "content": intro})
 
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=200,
-        system=_marketplace_voice(car),
-        messages=history + [{"role": "user", "content": text}],
+    reply = _claude_create(
+        "claude-sonnet-4-6", 200,
+        _marketplace_voice(car),
+        history + [{"role": "user", "content": text}],
     )
-
-    reply = response.content[0].text
     is_hot = "[HOT LEAD]" in reply
     is_declined = "[SHOWROOM_DECLINED]" in reply
     clean_reply = reply.replace("[HOT LEAD]", "").replace("[SHOWROOM_DECLINED]", "").strip()
@@ -211,12 +225,19 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
     if is_hot:
         print(f"\n🔥 MARKETPLACE HOT LEAD — {platform.upper()} | {sender_id[:12]}...")
         push_hot_lead(sender_id, platform, history)
+        pulse_notify(
+            event="HOT_LEAD",
+            detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} | Platform: {platform.upper()} | Msg: {text[:100]}"
+        )
 
     if is_declined:
         print(f"\n📋 SHOWROOM DECLINED — {platform.upper()} | {sender_id[:12]}...")
         print(f"   Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']}")
-        print(f"   Alejo debe contactar personalmente al (954) 310-6671")
         push_hot_lead(sender_id, platform, history)
+        pulse_notify(
+            event="SHOWROOM_DECLINED",
+            detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']} | Platform: {platform.upper()}"
+        )
 
     print(f"[MP-{platform.upper()}] {sender_id[:10]}... → replied | hot={is_hot} | declined={is_declined}")
     return clean_reply
