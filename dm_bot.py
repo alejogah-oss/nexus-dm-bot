@@ -6,6 +6,8 @@ import anthropic
 from dotenv import load_dotenv
 from crm_client import push_hot_lead
 from pulse import pulse_notify
+from assistant import log_event
+from appointments import extract_appointment_from_conversation
 
 load_dotenv()
 
@@ -119,6 +121,7 @@ def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
         event="HOT_LEAD",
         detail=f"Platform: {platform.upper()} | Mensaje: {message[:120]}"
     )
+    log_event("HOT_LEAD", f"ID: {sender_id[:12]} | {message[:100]}", platform)
 
 
 # In-memory conversation stores
@@ -141,8 +144,14 @@ Estamos en Hollywood, Florida — la dirección exacta se la das cuando confirme
 FLUJO:
 Msg 1 → Confirma el carro que vio + invita a verlo en persona en Hollywood, FL
 Msg 2 → Si duda, maneja la objeción con calidez + vuelve a invitar
-Msg 3 → Si confirma que viene → da la dirección: 2200 N State Rd 7, Hollywood, FL 33021
+Msg 3 → Si confirma que viene → pregunta: "¿Cuándo te viene bien? ¿Mañana, el fin de semana?" + da la dirección: 2200 N State Rd 7, Hollywood, FL 33021
+Msg 4 → Cuando diga el día/hora → confirma: "Perfecto, te esperamos el [día] a las [hora]. Alejo estará pendiente."
 Msg 3 (si sigue dudando) → ofrece una llamada con Alejo directo: (954) 310-6671
+
+AGENDAMIENTO — MUY IMPORTANTE:
+- Cuando el cliente diga que viene (HOT LEAD), SIEMPRE pregunta qué día y hora le viene bien
+- Si ya dijo el día/hora, confírmalo y agrega [HOT LEAD] al final
+- Ejemplos de confirmación: "el sábado", "mañana por la mañana", "esta semana", "el martes a las 3"
 
 CONTADOR DE RECHAZOS — MUY IMPORTANTE:
 - Rechazo 1: maneja la objeción con calidez, ofrece alternativa (llamada, otro día)
@@ -229,6 +238,9 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
             event="HOT_LEAD",
             detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} | Platform: {platform.upper()} | Msg: {text[:100]}"
         )
+        log_event("HOT_LEAD", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} | {text[:80]}", platform)
+        # Si el cliente mencionó fecha → crea cita automáticamente
+        extract_appointment_from_conversation(history, car, sender_id, platform)
 
     if is_declined:
         print(f"\n📋 SHOWROOM DECLINED — {platform.upper()} | {sender_id[:12]}...")
@@ -238,6 +250,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
             event="SHOWROOM_DECLINED",
             detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']} | Platform: {platform.upper()}"
         )
+        log_event("SHOWROOM_DECLINED", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} {car['color']}", platform)
 
     print(f"[MP-{platform.upper()}] {sender_id[:10]}... → replied | hot={is_hot} | declined={is_declined}")
     return clean_reply

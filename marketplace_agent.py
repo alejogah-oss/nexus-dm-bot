@@ -170,7 +170,7 @@ def _publish_to_catalog(v: dict, description: str, img_b64: str | None) -> str |
         "vehicle_id":       vehicle_id,
         "vin":              v.get("vin", ""),
         "availability":     "in stock",
-        "condition":        "excellent",
+        "condition":        "new",
         "description":      description,
         "make":             "Toyota",
         "model":            v["model"],
@@ -182,7 +182,7 @@ def _publish_to_catalog(v: dict, description: str, img_b64: str | None) -> str |
         "state_of_vehicle": "new",
         "vehicle_type":     "car_truck",
         "url":              DEALER_URL,
-        "mileage":          {"value": 0, "unit": "KM"},
+        "mileage":          {"value": 0, "unit": "MI"},
         "body_style":       _body_style(v["model"]),
         "fuel_type":        _fuel_type(v["model"]),
         "transmission":     "automatic",
@@ -323,5 +323,38 @@ def sync():
     return {"published": published, "updated": updated, "sold": sold_count, "errors": errors}
 
 
+def fix_existing():
+    """Manda todos los updates en un solo batch para evitar rate limit."""
+    log = load_log()
+    ids = list(log.get("by_listing_id", {}).keys())
+    if not ids:
+        print("No hay items en el log.")
+        return
+    print(f"\n── Corrigiendo {len(ids)} items en un solo batch...")
+    batch_requests = [
+        {
+            "method": "UPDATE",
+            "retailer_id": rid,
+            "data": {"condition": "new", "mileage": {"value": 0, "unit": "MI"}},
+        }
+        for rid in ids
+    ]
+    resp = requests.post(
+        f"{GRAPH_BASE}/{CATALOG_ID}/items_batch",
+        params={"access_token": CATALOG_TOKEN},
+        json={"allow_upsert": True, "item_type": "VEHICLE", "requests": batch_requests},
+        timeout=60,
+    )
+    result = resp.json()
+    if "handles" in result:
+        print(f"  ✅ Batch enviado — handle: {result['handles'][0]}")
+    else:
+        print(f"  ⚠️  Error: {result}")
+
+
 if __name__ == "__main__":
-    sync()
+    import sys
+    if "--fix" in sys.argv:
+        fix_existing()
+    else:
+        sync()

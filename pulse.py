@@ -32,6 +32,7 @@ _MESSAGES = {
         "⚠️ Error Marketplace — NEXUS\n"
         "{detail}"
     ),
+    "MORNING_BRIEF": "{detail}",
 }
 
 

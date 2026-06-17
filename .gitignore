@@ -1,0 +1,26 @@
+# Credenciales y sesiones — NUNCA subir
+.env
+browser_session/
+drive_service_account.json
+
+# Datos de runtime (se crean automáticamente)
+nexus_appointments.json
+nexus_events.json
+marketplace_posted.json
+marketplace_daily_log.json
+marketplace_log.json
+posts_log.json
+
+# Debug screenshots
+*.png
+
+# Cache y compilados
+__pycache__/
+*.pyc
+*.pyo
+fotos_cache/
+test_output/
+venv/
+
+# Logs
+logs/*.log
