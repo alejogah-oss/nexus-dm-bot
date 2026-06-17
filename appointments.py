@@ -9,6 +9,7 @@ import os
 import json
 import uuid
 import argparse
+import urllib.parse
 import anthropic
 from datetime import datetime, date, timedelta
 from dotenv import load_dotenv
@@ -17,7 +18,87 @@ from pulse import pulse_notify
 load_dotenv()
 
 APPOINTMENTS_FILE = os.path.join(os.path.dirname(__file__), "nexus_appointments.json")
+DEALER_ADDRESS = "2200 N State Rd 7, Hollywood, FL 33021"
 _claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+
+# ─────────────────────────────────────────────
+# Google Calendar link
+# ─────────────────────────────────────────────
+
+_DAY_NAMES = {
+    "lunes": 0, "martes": 1, "miércoles": 2, "miercoles": 2,
+    "jueves": 3, "viernes": 4, "sábado": 5, "sabado": 5, "domingo": 6,
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
+
+def _parse_date(date_pref: str, time_pref: str = "") -> tuple[date | None, int, int]:
+    """
+    Retorna (fecha, hora, minuto) desde texto libre.
+    Soporta: 'YYYY-MM-DD', 'mañana', 'hoy', nombre de día en español/inglés.
+    """
+    today = date.today()
+    d = None
+    h, m = 10, 0  # default: 10am
+
+    # Parse hora
+    if time_pref:
+        for fmt in ("%I:%M%p", "%H:%M", "%I%p"):
+            try:
+                t = datetime.strptime(time_pref.replace(" ", "").upper(), fmt)
+                h, m = t.hour, t.minute
+                break
+            except ValueError:
+                pass
+        if "pm" in time_pref.lower() and h < 12:
+            h += 12
+        elif "am" in time_pref.lower() and h == 12:
+            h = 0
+
+    dp = date_pref.strip().lower()
+
+    # ISO format
+    try:
+        d = date.fromisoformat(date_pref.strip()[:10])
+        return d, h, m
+    except ValueError:
+        pass
+
+    if "mañana" in dp or "manana" in dp or "tomorrow" in dp:
+        d = today + timedelta(days=1)
+    elif "hoy" in dp or "today" in dp:
+        d = today
+    else:
+        for name, wd in _DAY_NAMES.items():
+            if name in dp:
+                days_ahead = (wd - today.weekday()) % 7
+                if days_ahead == 0:
+                    days_ahead = 7
+                d = today + timedelta(days=days_ahead)
+                break
+
+    return d, h, m
+
+
+def google_calendar_link(date_pref: str, time_pref: str, customer_name: str, car: str) -> str:
+    """Genera link de Google Calendar para agregar la cita con un tap."""
+    d, h, m = _parse_date(date_pref, time_pref)
+    if not d:
+        d = date.today() + timedelta(days=1)
+
+    start = datetime(d.year, d.month, d.day, h, m)
+    end   = datetime(d.year, d.month, d.day, h + 1, m)
+
+    fmt = "%Y%m%dT%H%M%S"
+    params = urllib.parse.urlencode({
+        "text":     f"Cita Toyota — {customer_name}",
+        "dates":    f"{start.strftime(fmt)}/{end.strftime(fmt)}",
+        "details":  f"Carro: {car}\nCliente: {customer_name}\nContacto: Alejo (954) 310-6671",
+        "location": DEALER_ADDRESS,
+    })
+    return f"https://calendar.google.com/calendar/r/eventedit?{params}"
 
 
 # ─────────────────────────────────────────────
@@ -82,7 +163,7 @@ def create_appointment(
 
 
 def _notify_new_appointment(appt: dict):
-    """Envía WhatsApp a Alejo con los datos de la nueva cita."""
+    """Envía WhatsApp a Alejo con los datos de la nueva cita + link de Google Calendar."""
     name = appt["customer_name"]
     car = appt["car"]
     date_pref = appt["date_preference"]
@@ -92,12 +173,15 @@ def _notify_new_appointment(appt: dict):
     phone = appt["customer_phone"]
     phone_line = f"\n📞 Tel: {phone}" if phone else ""
 
+    gcal = google_calendar_link(date_pref, time_pref, name, car)
+
     detail = (
         f"📅 NUEVA CITA — NEXUS\n"
         f"Cliente: {name} ({platform}){phone_line}\n"
         f"Carro: {car}\n"
-        f"Fecha preferida: {date_pref}\n"
+        f"Fecha: {date_pref}\n"
         f"Hora: {time_pref}\n\n"
+        f"➕ Google Calendar:\n{gcal}\n\n"
         f"ID: {appt_id}\n"
         f"Confirmar: python3 appointments.py --confirm {appt_id}\n"
         f"Cancelar:  python3 appointments.py --cancel {appt_id}"

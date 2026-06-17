@@ -8,6 +8,7 @@ from crm_client import push_hot_lead
 from pulse import pulse_notify
 from assistant import log_event
 from appointments import extract_appointment_from_conversation
+from marketplace_analytics import track_message, track_hot_lead, track_declined
 
 load_dotenv()
 
@@ -231,6 +232,9 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
     else:
         send_facebook_reply(sender_id, clean_reply)
 
+    # Registrar mensaje en analytics (siempre, para todo listing)
+    track_message(car)
+
     if is_hot:
         print(f"\n🔥 MARKETPLACE HOT LEAD — {platform.upper()} | {sender_id[:12]}...")
         push_hot_lead(sender_id, platform, history)
@@ -239,7 +243,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
             detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} | Platform: {platform.upper()} | Msg: {text[:100]}"
         )
         log_event("HOT_LEAD", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} | {text[:80]}", platform)
-        # Si el cliente mencionó fecha → crea cita automáticamente
+        track_hot_lead(car)
         extract_appointment_from_conversation(history, car, sender_id, platform)
 
     if is_declined:
@@ -251,6 +255,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
             detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']} | Platform: {platform.upper()}"
         )
         log_event("SHOWROOM_DECLINED", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} {car['color']}", platform)
+        track_declined(car)
 
     print(f"[MP-{platform.upper()}] {sender_id[:10]}... → replied | hot={is_hot} | declined={is_declined}")
     return clean_reply
