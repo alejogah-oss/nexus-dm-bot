@@ -237,7 +237,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
 
     if is_hot:
         print(f"\n🔥 MARKETPLACE HOT LEAD — {platform.upper()} | {sender_id[:12]}...")
-        push_hot_lead(sender_id, platform, history)
+        push_hot_lead(sender_id, platform, history, car=car)
         pulse_notify(
             event="HOT_LEAD",
             detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} | Platform: {platform.upper()} | Msg: {text[:100]}"
@@ -249,7 +249,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
     if is_declined:
         print(f"\n📋 SHOWROOM DECLINED — {platform.upper()} | {sender_id[:12]}...")
         print(f"   Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']}")
-        push_hot_lead(sender_id, platform, history)
+        push_hot_lead(sender_id, platform, history, car=car)
         pulse_notify(
             event="SHOWROOM_DECLINED",
             detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']} | Platform: {platform.upper()}"

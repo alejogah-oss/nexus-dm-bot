@@ -17,6 +17,46 @@ CRM_AGENT_CODE  = os.getenv("CRM_AGENT_CODE", "alejo")
 _claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
+def fetch_user_profile(sender_id: str, platform: str) -> dict:
+    """Fetch public name and profile pic from Meta Graph API using sender_id."""
+    token = os.getenv("META_PAGE_ACCESS_TOKEN")
+    if not token or not sender_id:
+        return {}
+    try:
+        # Facebook Messenger: sender_id is a PSID — can fetch name via Graph API
+        if platform == "facebook":
+            r = requests.get(
+                f"https://graph.facebook.com/v19.0/{sender_id}",
+                params={"fields": "first_name,last_name,profile_pic", "access_token": token},
+                timeout=8,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                return {
+                    "first_name":   data.get("first_name"),
+                    "last_name":    data.get("last_name"),
+                    "profile_pic":  data.get("profile_pic"),
+                }
+        # Instagram: sender_id is an IGSID — name not always available
+        elif platform == "instagram":
+            r = requests.get(
+                f"https://graph.facebook.com/v19.0/{sender_id}",
+                params={"fields": "name,username", "access_token": token},
+                timeout=8,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                name_parts = (data.get("name") or "").split(" ", 1)
+                return {
+                    "first_name": name_parts[0] if name_parts else None,
+                    "last_name":  name_parts[1] if len(name_parts) > 1 else None,
+                    "ig_username": data.get("username"),
+                }
+    except Exception as e:
+        print(f"  ⚠️  CRM — profile fetch falló: {e}")
+    return {}
+
+
 def extract_lead_data(conversation_history: list, platform: str = "facebook") -> dict:
     """
     Uses Claude to extract structured lead data from the conversation history.
@@ -92,18 +132,38 @@ def send_to_crm(lead_data: dict, conversation_summary: str = "") -> dict:
         return {"error": str(e)}
 
 
-def push_hot_lead(sender_id: str, platform: str, conversation_history: list) -> dict:
+def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
+                  car: dict | None = None) -> dict:
     """
     Full flow: extract data from conversation → send to CRM.
+    car: optional Marketplace listing dict (yr, model, trim, color, vin, down_payment).
     Called automatically when bot detects HOT LEAD signal.
     """
     print(f"\n  📋 NEXUS → CRM: extrayendo datos del lead...")
+    # 1. Fetch public profile from Meta (name, pic) — fast, no AI needed
+    profile = fetch_user_profile(sender_id, platform)
+    # 2. Extract remaining fields from conversation with AI
     lead_data = extract_lead_data(conversation_history, platform)
+    # 3. Profile data takes priority over AI extraction (more reliable)
+    lead_data = {**lead_data, **{k: v for k, v in profile.items() if v}}
 
-    name = " ".join(filter(None, [lead_data.get("first_name"), lead_data.get("last_name")])) or "Sin nombre"
+    # If we know the exact car (Marketplace), override AI-extracted vehicle fields
+    if car:
+        lead_data["vehicle_model"] = car.get("model", lead_data.get("vehicle_model"))
+        lead_data["vehicle_year"]  = str(car.get("yr", lead_data.get("vehicle_year", "")))
+        lead_data["vehicle_trim"]  = car.get("trim", "")
+        lead_data["vehicle_color"] = car.get("color", "")
+        lead_data["vehicle_vin"]   = car.get("vin", "")
+        lead_data["down_payment"]  = car.get("down_payment", "")
+
+    name  = " ".join(filter(None, [lead_data.get("first_name"), lead_data.get("last_name")])) or "Sin nombre"
     phone = lead_data.get("phone", "no capturado")
     model = lead_data.get("vehicle_model", "no especificado")
-    print(f"  Nombre: {name} | Tel: {phone} | Modelo: {model}")
+    trim  = lead_data.get("vehicle_trim", "")
+    print(f"  Nombre: {name} | Tel: {phone} | Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}")
 
-    summary = f"Lead desde {platform.upper()} — ID: {sender_id[:12]}. Modelo de interés: {model}."
+    summary = (
+        f"Lead desde {platform.upper()} — ID: {sender_id[:12]}. "
+        f"Carro de interés: {lead_data.get('vehicle_year','')} Toyota {model} {trim}."
+    )
     return send_to_crm(lead_data, summary)
