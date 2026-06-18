@@ -13,6 +13,14 @@ load_dotenv()
 CRM_WEBHOOK_URL = os.getenv("CRM_WEBHOOK_URL", "https://crm.tucarroconalejo.com/api/webhook/tucarro")
 CRM_WEBHOOK_KEY = os.getenv("CRM_WEBHOOK_KEY", "crm-wh-k3y-2025-AutoXz9pLm")
 CRM_AGENT_CODE  = os.getenv("CRM_AGENT_CODE", "alejo")
+PAGE_ID         = os.getenv("META_PAGE_ID", "765862069934682")
+IG_USER_ID      = os.getenv("META_IG_USER_ID", "17841476248130016")
+
+
+def conversation_url(sender_id: str, platform: str) -> str:
+    """Returns direct link to the conversation in Meta Business Suite."""
+    asset_id = IG_USER_ID if platform == "instagram" else PAGE_ID
+    return f"https://business.facebook.com/latest/inbox/all?asset_id={asset_id}&selected_item_id={sender_id}"
 
 _claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -160,10 +168,26 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     phone = lead_data.get("phone", "no capturado")
     model = lead_data.get("vehicle_model", "no especificado")
     trim  = lead_data.get("vehicle_trim", "")
+    conv_url = conversation_url(sender_id, platform)
     print(f"  Nombre: {name} | Tel: {phone} | Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}")
+    print(f"  Conversación: {conv_url}")
+
+    # WhatsApp notification includes direct link
+    from pulse import pulse_notify
+    pulse_notify(
+        event="HOT_LEAD",
+        detail=(
+            f"Cliente: {name}\n"
+            f"Tel: {phone}\n"
+            f"Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}\n"
+            f"Canal: {platform.upper()}\n"
+            f"Chat: {conv_url}"
+        )
+    )
 
     summary = (
-        f"Lead desde {platform.upper()} — ID: {sender_id[:12]}. "
-        f"Carro de interés: {lead_data.get('vehicle_year','')} Toyota {model} {trim}."
+        f"Lead desde {platform.upper()}. "
+        f"Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}. "
+        f"Conversación: {conv_url}"
     )
     return send_to_crm(lead_data, summary)

@@ -111,17 +111,13 @@ def send_instagram_reply(recipient_id: str, text: str):
 
 
 def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
-    """Notifies Alejo when a hot lead is detected — pushes to CRM and sends SMS."""
+    """Notifies Alejo when a hot lead is detected — pushes to CRM (which sends WhatsApp)."""
     print(f"\n🔥 HOT LEAD DETECTADO")
     print(f"   Platform: {platform}")
     print(f"   Sender ID: {sender_id}")
     print(f"   Mensaje: {message}")
     history = _conversations.get(sender_id, [])
-    push_hot_lead(sender_id, platform, history)
-    pulse_notify(
-        event="HOT_LEAD",
-        detail=f"Platform: {platform.upper()} | Mensaje: {message[:120]}"
-    )
+    push_hot_lead(sender_id, platform, history)  # WhatsApp + CRM handled inside
     log_event("HOT_LEAD", f"ID: {sender_id[:12]} | {message[:100]}", platform)
 
 
@@ -237,11 +233,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
 
     if is_hot:
         print(f"\n🔥 MARKETPLACE HOT LEAD — {platform.upper()} | {sender_id[:12]}...")
-        push_hot_lead(sender_id, platform, history, car=car)
-        pulse_notify(
-            event="HOT_LEAD",
-            detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} | Platform: {platform.upper()} | Msg: {text[:100]}"
-        )
+        push_hot_lead(sender_id, platform, history, car=car)  # WhatsApp + CRM handled inside
         log_event("HOT_LEAD", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} | {text[:80]}", platform)
         track_hot_lead(car)
         extract_appointment_from_conversation(history, car, sender_id, platform)
