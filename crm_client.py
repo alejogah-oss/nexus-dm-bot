@@ -185,9 +185,13 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
         )
     )
 
+    lead_data["link"]             = conv_url
+    lead_data["source_url"]       = conv_url
+    lead_data["conversation_link"] = conv_url
+
     summary = (
         f"Lead desde {platform.upper()}. "
         f"Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}. "
-        f"Conversación: {conv_url}"
+        f"Chat: {conv_url}"
     )
     return send_to_crm(lead_data, summary)
