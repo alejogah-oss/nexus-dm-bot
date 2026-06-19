@@ -268,10 +268,22 @@ def _get_model_description(model: str) -> str | None:
     return None
 
 
-def _fetch_all_inventory():
-    """Returns every vehicle from the API — used for Marketplace catalog (all VINs)."""
+# Cache en memoria — evita descargar 430 vehículos por cada imagen solicitada
+_inventory_cache: list = []
+_inventory_cache_ts: float = 0.0
+_INVENTORY_CACHE_TTL = 300  # 5 minutos
+
+
+def _fetch_all_inventory() -> list:
+    """Returns every vehicle from the API with 5-minute in-memory cache."""
+    global _inventory_cache, _inventory_cache_ts
+    import time
+    if _inventory_cache and (time.time() - _inventory_cache_ts) < _INVENTORY_CACHE_TTL:
+        return _inventory_cache
     r = req_lib.get(_INVENTORY_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-    return r.json()["vehicles"]
+    _inventory_cache = r.json()["vehicles"]
+    _inventory_cache_ts = time.time()
+    return _inventory_cache
 
 
 def _fetch_unique_inventory():
@@ -303,7 +315,9 @@ def vehicle_image(vehicle_id):
             return "No image", 404
         if "base64," in img_data:
             img_data = img_data.split("base64,")[1]
-        return Response(base64.b64decode(img_data), mimetype="image/jpeg")
+        resp = Response(base64.b64decode(img_data), mimetype="image/jpeg")
+        resp.headers["Cache-Control"] = "public, max-age=86400"  # browser cachea 24h
+        return resp
     except Exception as e:
         return f"Error: {e}", 500
 
