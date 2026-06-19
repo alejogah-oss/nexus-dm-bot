@@ -6,11 +6,12 @@ import hmac
 import io
 import json
 import os
+import uuid
 
 import requests as req_lib
 from flask import Flask, request, jsonify, Response
 from dotenv import load_dotenv
-from dm_bot import handle_message, handle_get_started, handle_marketplace_message
+from dm_bot import handle_message, handle_get_started, handle_marketplace_message, generate_reply
 from comment_bot import handle_facebook_comment, handle_instagram_comment
 from marketplace_agent import get_car_by_listing_id
 
@@ -137,6 +138,77 @@ def receive_webhook():
 @app.get("/health")
 def health():
     return jsonify({"status": "ok", "bot": "nexus-tucarroconalejo"})
+
+
+# ── WEB CHAT ──────────────────────────────────────────────────────────────────
+_web_conversations: dict[str, list] = {}
+
+_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+}
+
+WEB_WELCOME = (
+    "¡Hola! Soy el asistente de Alejo 👋 "
+    "Tenemos más de 430 Toyotas disponibles en Hollywood Toyota, Florida. "
+    "¿Qué modelo te interesa?"
+)
+
+
+@app.route("/web-chat", methods=["OPTIONS"])
+def web_chat_preflight():
+    """Handles CORS preflight requests from the browser widget."""
+    return Response("", status=204, headers=_CORS_HEADERS)
+
+
+@app.route("/web-chat", methods=["POST"])
+def web_chat():
+    """
+    Chat endpoint for the website widget.
+
+    Request  JSON: { "message": str, "session_id": str }
+    Response JSON: { "reply": str, "session_id": str }
+    """
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    session_id = (data.get("session_id") or "").strip()
+
+    if not message:
+        resp = jsonify({"error": "message is required"})
+        resp.headers.update(_CORS_HEADERS)
+        return resp, 400
+
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
+    history = _web_conversations.get(session_id, [])
+
+    # First message in this session — prepend a silent welcome context so the
+    # AI knows it's talking to a web visitor (not a DM)
+    if not history:
+        history = [
+            {
+                "role": "user",
+                "content": "[Sistema: El usuario está chateando desde el sitio web tucarroconalejo.com]",
+            },
+            {"role": "assistant", "content": WEB_WELCOME},
+        ]
+
+    reply, is_hot = generate_reply(history, message)
+
+    history.append({"role": "user", "content": message})
+    history.append({"role": "assistant", "content": reply})
+    _web_conversations[session_id] = history[-20:]  # keep last 10 exchanges
+
+    if is_hot:
+        print(
+            f"[WEB-CHAT] HOT LEAD — session={session_id[:12]}... | msg={message[:80]}"
+        )
+
+    resp = jsonify({"reply": reply, "session_id": session_id})
+    resp.headers.update(_CORS_HEADERS)
+    return resp, 200
 
 
 # ── VEHICLE FEED ──────────────────────────────────────────────────────────────
