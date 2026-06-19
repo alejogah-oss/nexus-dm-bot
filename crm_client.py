@@ -140,6 +140,41 @@ def send_to_crm(lead_data: dict, conversation_summary: str = "") -> dict:
         return {"error": str(e)}
 
 
+def _build_crm_note(conversation_history: list, platform: str, name: str,
+                    model: str, trim: str, conv_url: str) -> str:
+    """Uses AI to generate a concise briefing note for Alejo in the CRM."""
+    if not conversation_history:
+        return f"Lead desde {platform.upper()}. Sin historial de conversación."
+
+    # Format transcript (last 16 messages max)
+    transcript = ""
+    for msg in conversation_history[-16:]:
+        role = "Cliente" if msg["role"] == "user" else "Bot"
+        transcript += f"{role}: {msg['content']}\n"
+
+    prompt = (
+        "Eres asistente de Alejo Garcia, asesor Toyota. "
+        "Resume esta conversación en 3-4 oraciones cortas para que Alejo sepa exactamente con quién va a hablar. "
+        "Incluye: nombre del cliente si lo mencionó, qué modelo le interesa, su situación (primera vez, trade-in, crédito, familia), "
+        "señales de urgencia o intención, y cualquier detalle útil para el primer contacto. "
+        "Escribe en español, tono directo, sin introducciones.\n\n"
+        f"CLIENTE IDENTIFICADO: {name}\n"
+        f"CONVERSACIÓN:\n{transcript}"
+    )
+    try:
+        client = anthropic.Anthropic()
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        note = resp.content[0].text.strip()
+    except Exception:
+        note = f"Interesado en Toyota {model} {trim}. Canal: {platform.upper()}."
+
+    return f"{note}\n\nCanal: {platform.upper()} | Chat: {conv_url}"
+
+
 def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
                   car: dict | None = None) -> dict:
     """
