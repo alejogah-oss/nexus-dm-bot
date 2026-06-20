@@ -1,33 +1,8 @@
 services:
-  - type: worker
-    name: nexus-marketplace-inbox-bot
-    env: python
-    buildCommand: pip install -r marketplace_requirements.txt && playwright install chromium --with-deps
-    startCommand: python marketplace_inbox_bot.py
-    envVars:
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: CRM_WEBHOOK_URL
-        value: https://crm.tucarroconalejo.com/api/webhook/tucarro
-      - key: CRM_WEBHOOK_KEY
-        sync: false
-      - key: CRM_AGENT_CODE
-        value: alejo
-      - key: TWILIO_ACCOUNT_SID
-        sync: false
-      - key: TWILIO_AUTH_TOKEN
-        sync: false
-      - key: TWILIO_FROM
-        value: "+18449223361"
-      - key: ALEJO_PHONE
-        value: "+19549106671"
-      - key: FB_COOKIES_B64
-        sync: false
-
   - type: web
     name: nexus-tucarroconalejo-bot
     env: python
-    buildCommand: pip install -r webhook_requirements.txt
+    buildCommand: pip install -r webhook_requirements.txt && playwright install chromium --with-deps
     startCommand: gunicorn webhook_server:app
     envVars:
       # Meta
@@ -59,3 +34,6 @@ services:
         sync: false
       - key: CRM_AGENT_CODE
         value: alejo
+      # Marketplace inbox bot — sesión de browser
+      - key: FB_COOKIES_B64
+        sync: false

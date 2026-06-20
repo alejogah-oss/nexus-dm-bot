@@ -1,4 +1,5 @@
 """Webhook server — receives Facebook & Instagram DM + comment events."""
+import asyncio
 import base64
 import csv
 import hashlib
@@ -6,6 +7,7 @@ import hmac
 import io
 import json
 import os
+import threading
 import uuid
 
 import requests as req_lib
@@ -18,6 +20,24 @@ from marketplace_agent import get_car_by_listing_id
 load_dotenv()
 
 app = Flask(__name__)
+
+
+def _start_marketplace_bot():
+    """Corre el marketplace inbox bot en un thread separado con su propio event loop."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        from marketplace_inbox_bot import run
+        print("[MARKETPLACE BOT] Iniciando loop de Marketplace...")
+        loop.run_until_complete(run())
+    except Exception as e:
+        print(f"[MARKETPLACE BOT] Error fatal: {e}")
+    finally:
+        loop.close()
+
+
+_mp_thread = threading.Thread(target=_start_marketplace_bot, daemon=True, name="marketplace-inbox-bot")
+_mp_thread.start()
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nexus_alejo_2026")
 APP_SECRET   = os.getenv("META_APP_SECRET", "")
