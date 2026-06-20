@@ -334,7 +334,9 @@ async def check_inbox(page: Page, state: dict):
         await _ensure_messenger_logged_in(page)
         # Ir directo al tab de Marketplace
         await page.goto("https://www.messenger.com/marketplace/", wait_until="load", timeout=30000)
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(5000)
+        print(f"[BOT] URL actual: {page.url}")
+        print(f"[BOT] Título: {await page.title()}")
     except Exception as e:
         print(f"[BOT] Error cargando inbox: {e}")
         return
@@ -342,9 +344,10 @@ async def check_inbox(page: Page, state: dict):
     # Recolectar links de threads de Marketplace
     try:
         links = await page.locator('a[href*="/marketplace/t/"]').all()
+        print(f"[BOT] Links /marketplace/t/: {len(links)}")
         if not links:
-            # Fallback: cualquier thread visible
             links = await page.locator('a[href*="/t/"]').all()
+            print(f"[BOT] Links /t/ (fallback): {len(links)}")
     except Exception:
         print("[BOT] No se encontraron threads")
         return
