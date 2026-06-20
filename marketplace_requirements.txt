@@ -1,5 +1,5 @@
 anthropic==0.40.0
-playwright==1.49.0
+playwright
 requests==2.32.3
 python-dotenv==1.0.1
 twilio
