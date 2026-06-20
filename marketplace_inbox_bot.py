@@ -28,7 +28,11 @@ COOKIES_FILE   = Path(__file__).parent / "browser_session/mp_session.json"
 STATE_FILE     = Path(__file__).parent / "marketplace_inbox_state.json"
 # En Render no hay perfil persistente — usamos cookies exportadas
 USE_COOKIES    = not USER_DATA_DIR.exists()
-POLL_SEC     = 60        # revisa cada 60 segundos
+POLL_SEC       = 60   # intervalo normal
+POLL_ACTIVE    = 10   # intervalo cuando hay conversación activa
+ACTIVE_WINDOW  = 60   # segundos en modo activo tras responder
+
+_active_until: float = 0.0   # timestamp hasta cuando está en modo activo
 MAX_THREADS  = 15        # máximo de threads a revisar por ciclo
 
 # Historial de conversaciones en memoria {thread_id: [messages]}
@@ -245,6 +249,9 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     try:
         await _type_and_send(page, reply)
         print(f"  [BOT] ✅ Respondido a {sender_name}")
+        # Activar modo rápido: revisar cada 10s durante 60s
+        global _active_until
+        _active_until = time.time() + ACTIVE_WINDOW
     except Exception as e:
         print(f"  [BOT] Error enviando respuesta: {e}")
         return
@@ -430,7 +437,11 @@ async def run():
                 except Exception:
                     pass
 
-            await asyncio.sleep(POLL_SEC)
+            # Modo activo: 10s si hubo respuesta reciente, 60s si no
+            sleep = POLL_ACTIVE if time.time() < _active_until else POLL_SEC
+            if sleep == POLL_ACTIVE:
+                print(f"[BOT] Modo activo — próximo en {sleep}s ({int(_active_until - time.time())}s restantes)")
+            await asyncio.sleep(sleep)
 
 
 if __name__ == "__main__":
