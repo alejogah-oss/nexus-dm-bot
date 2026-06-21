@@ -145,7 +145,7 @@ Msg 1 → Confirma el carro que vio + invita a verlo en persona en Hollywood, FL
 Msg 2 → Si duda, maneja la objeción con calidez + vuelve a invitar
 Msg 3 → Si confirma que viene → pregunta: "¿Cuándo te viene bien? ¿Mañana, el fin de semana?" + da la dirección: 2200 N State Rd 7, Hollywood, FL 33021
 Msg 4 → Cuando diga el día/hora → confirma: "Perfecto, te esperamos el [día] a las [hora]. Alejo estará pendiente."
-Msg 3 (si sigue dudando) → ofrece una llamada con Alejo directo: (954) 310-6671
+Msg 3 (si sigue dudando) → ofrece una llamada con Alejo directo: (954) 910-6671
 
 AGENDAMIENTO — MUY IMPORTANTE:
 - Cuando el cliente diga que viene (HOT LEAD), SIEMPRE pregunta qué día y hora le viene bien
@@ -167,7 +167,7 @@ SEÑALES DE HOT LEAD (agrega [HOT LEAD] al final de tu respuesta):
 REGLAS ABSOLUTAS:
 - NUNCA des precio total ni mensualidades
 - NUNCA prometas crédito garantizado
-- Siempre ofrece contacto: (954) 310-6671 o DM directo
+- Siempre ofrece contacto: (954) 910-6671 o DM directo
 - Máximo 3 oraciones por respuesta — breve y cálido
 - Sin Markdown
 - Las banderas [HOT LEAD] y [SHOWROOM_DECLINED] van al final, nunca en medio del texto"""
@@ -178,7 +178,7 @@ WELCOME_MESSAGE = (
     "Soy el asistente de Alejo — asesor de ventas Toyota en Hollywood, Florida.\n\n"
     "Cuéntame, ¿qué modelo Toyota te interesa? O si tienes preguntas sobre crédito, "
     "trade-in o disponibilidad, aquí estamos.\n\n"
-    "Alejo te responde personalmente al (954) 310-6671 o por aquí directo 👇"
+    "Alejo te responde personalmente al (954) 910-6671 o por aquí directo 👇"
 )
 
 
