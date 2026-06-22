@@ -374,8 +374,23 @@ def vehicles_csv():
         return f"Error generando CSV: {e}", 500
 
 
+def _keep_alive():
+    """Pinga /health cada 10 minutos para evitar que Render duerma el servicio."""
+    import threading, time
+    def _ping():
+        while True:
+            time.sleep(600)
+            try:
+                req_lib.get("https://bot.tucarroconalejo.com/health", timeout=10)
+            except Exception:
+                pass
+    t = threading.Thread(target=_ping, daemon=True)
+    t.start()
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5001))
+    _keep_alive()
     print(f"🤖 NEXUS DM Bot corriendo en puerto {port}")
     print(f"   Webhook URL: https://TU-DOMINIO/webhook")
     print(f"   Verify Token: {VERIFY_TOKEN}")
