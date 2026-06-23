@@ -397,12 +397,13 @@ def _send_sms(to_phone: str, body: str) -> bool:
         return False
 
 
-def send_confirmation_sms(phone: str, customer_name: str, hora: str) -> bool:
+def send_confirmation_sms(phone: str, customer_name: str, hora: str, car: str = "") -> bool:
     """Envía SMS de confirmación de cita al cliente."""
     nombre = customer_name.split()[0] if customer_name and customer_name != "Sin nombre" else ""
     saludo = f"Hola {nombre}! " if nombre else "Hola! "
+    car_line = f" para ver el {car}" if car else ""
     body = (
-        f"{saludo}Te recordamos tu cita en Hollywood Toyota hoy a las {hora}. "
+        f"{saludo}Te recordamos tu cita en Hollywood Toyota hoy a las {hora}{car_line}. "
         f"¿Confirmas que vienes? Responde SI o NO."
     )
     return _send_sms(phone, body)
@@ -441,7 +442,7 @@ def check_2h_reminders():
             # SMS al cliente
             sms_sent = False
             if phone:
-                sms_sent = send_confirmation_sms(phone, name, hora)
+                sms_sent = send_confirmation_sms(phone, name, hora, car)
 
             # WhatsApp a Alejo
             phone_line = f"\n📞 {phone}" if phone else "\n📞 Sin teléfono"
