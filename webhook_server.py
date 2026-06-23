@@ -203,7 +203,7 @@ def web_chat():
         traceback.print_exc()
         resp = jsonify({"error": "bot_error", "detail": str(exc)})
         resp.headers.update(_CORS_HEADERS)
-        return resp, 500
+        return resp, 200  # 200 to bypass Cloudflare error page interception
 
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": reply})
