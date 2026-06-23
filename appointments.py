@@ -404,6 +404,7 @@ def send_confirmation_sms(phone: str, customer_name: str, hora: str, car: str = 
     car_line = f" para ver el {car}" if car else ""
     body = (
         f"{saludo}Te recordamos tu cita en Hollywood Toyota hoy a las {hora}{car_line}. "
+        f"Recuerda preguntar por Fabio Alejandro. "
         f"¿Confirmas que vienes? Responde SI o NO."
     )
     return _send_sms(phone, body)
