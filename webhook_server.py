@@ -195,15 +195,7 @@ def web_chat():
             {"role": "assistant", "content": WEB_WELCOME},
         ]
 
-    try:
-        reply, is_hot = generate_reply(history, message)
-    except Exception as exc:
-        import traceback
-        print(f"[WEB-CHAT] ERROR en generate_reply: {exc}")
-        traceback.print_exc()
-        resp = jsonify({"error": "bot_error", "detail": str(exc)})
-        resp.headers.update(_CORS_HEADERS)
-        return resp, 200  # 200 to bypass Cloudflare error page interception
+    reply, is_hot = generate_reply(history, message)
 
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": reply})
