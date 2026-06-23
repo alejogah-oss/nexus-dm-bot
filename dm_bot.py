@@ -9,6 +9,7 @@ from pulse import pulse_notify
 from assistant import log_event
 from appointments import extract_appointment_from_conversation
 from marketplace_analytics import track_message, track_hot_lead, track_declined
+from notes import save_note, get_note
 
 load_dotenv()
 
@@ -58,6 +59,11 @@ FLUJO (un paso por mensaje):
 2. Una pregunta sobre su situación (primera vez, trade-in, familia, trabajo)
 3. Pide nombre y teléfono para coordinar
 4. Mantén la conversación hasta que el equipo tome el lead
+
+CITAS — MUY IMPORTANTE:
+- Cuando el cliente dé un día u hora, confírmalo SIEMPRE de forma explícita: "Perfecto, anotamos para el [día] a las [hora]. ¿Te queda bien?"
+- Si el cliente cambia el día u hora que ya había dado, confirma el nuevo: "Claro, lo cambiamos para el [nuevo día]. ¿Confirmamos a esa hora?"
+- Nunca dejes pasar una fecha/hora sin confirmarla en voz alta.
 
 [HOT LEAD] — etiqueta SILENCIOSA, solo al final de tu respuesta, NUNCA la expliques ni la menciones al cliente. Úsala si:
 - Quiere comprar pronto / "esta semana" / "tengo el dinero"
@@ -132,6 +138,21 @@ def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
     print(f"   Sender ID: {sender_id}")
     print(f"   Mensaje: {message}")
     history = _conversations.get(sender_id, [])
+
+    # Guardar nota con resumen + cita detectada
+    note = save_note(sender_id, platform, history)
+    if note["changed"]:
+        pulse_notify(
+            event="HOT_LEAD",
+            detail=(
+                f"⚠️ CAMBIO DE CITA\n"
+                f"Cita anterior: {note['prev_appointment']}\n"
+                f"Nueva cita: {note['appointment']}\n"
+                f"Hora: {note['timestamp']}"
+            )
+        )
+        print(f"   ⚠️ Cambio de cita detectado: {note['prev_appointment']} → {note['appointment']}")
+
     push_hot_lead(sender_id, platform, history)  # WhatsApp + CRM handled inside
     log_event("HOT_LEAD", f"ID: {sender_id[:12]} | {message[:100]}", platform)
 
@@ -249,7 +270,18 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
 
     if is_hot:
         print(f"\n🔥 MARKETPLACE HOT LEAD — {platform.upper()} | {sender_id[:12]}...")
-        push_hot_lead(sender_id, platform, history, car=car)  # WhatsApp + CRM handled inside
+        note = save_note(sender_id, platform, history)
+        if note["changed"]:
+            pulse_notify(
+                event="HOT_LEAD",
+                detail=(
+                    f"⚠️ CAMBIO DE CITA — Marketplace\n"
+                    f"Cita anterior: {note['prev_appointment']}\n"
+                    f"Nueva cita: {note['appointment']}\n"
+                    f"Hora: {note['timestamp']}"
+                )
+            )
+        push_hot_lead(sender_id, platform, history, car=car)
         log_event("HOT_LEAD", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} | {text[:80]}", platform)
         track_hot_lead(car)
         extract_appointment_from_conversation(history, car, sender_id, platform)
