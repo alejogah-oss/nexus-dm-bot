@@ -375,16 +375,28 @@ def vehicles_csv():
 
 
 def _keep_alive():
-    """Pinga /health cada 10 minutos para evitar que Render duerma el servicio."""
+    """Pinga /health cada 10 minutos y revisa recordatorios de citas cada 5 minutos."""
     import threading, time
-    def _ping():
+    from appointments import check_2h_reminders
+
+    def _run():
+        tick = 0
         while True:
-            time.sleep(600)
+            time.sleep(300)  # cada 5 minutos
+            tick += 1
+            # Recordatorio 2h antes — cada ciclo (cada 5 min)
             try:
-                req_lib.get("https://bot.tucarroconalejo.com/health", timeout=10)
-            except Exception:
-                pass
-    t = threading.Thread(target=_ping, daemon=True)
+                check_2h_reminders()
+            except Exception as e:
+                print(f"[SCHEDULER] Error en check_2h_reminders: {e}")
+            # Keep-alive — cada 2 ciclos (cada 10 min)
+            if tick % 2 == 0:
+                try:
+                    req_lib.get("https://bot.tucarroconalejo.com/health", timeout=10)
+                except Exception:
+                    pass
+
+    t = threading.Thread(target=_run, daemon=True)
     t.start()
 
 

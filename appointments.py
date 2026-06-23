@@ -151,6 +151,7 @@ def create_appointment(
         "created_at": datetime.now().isoformat(),
         "reminded_day_before": False,
         "reminded_morning": False,
+        "reminded_2h_before": False,
     }
 
     appointments = _load()
@@ -376,6 +377,50 @@ def send_day_before_reminders():
             a["reminded_day_before"] = True
     _save(appointments)
     print(f"[APPT] Recordatorio enviado — {len(pending)} cita(s) mañana.")
+
+
+def check_2h_reminders():
+    """
+    Revisa todas las citas pendientes/confirmadas y envía WhatsApp
+    si faltan entre 90 y 150 minutos para la cita.
+    Ejecutar cada 5 minutos desde webhook_server.
+    """
+    appointments = _load()
+    now = datetime.now()
+    fired = False
+
+    for appt in appointments:
+        if appt.get("status") == "cancelled":
+            continue
+        if appt.get("reminded_2h_before"):
+            continue
+
+        d, h, m = _parse_date(appt.get("date_preference", ""), appt.get("time_preference", ""))
+        if not d:
+            continue
+
+        appt_dt = datetime(d.year, d.month, d.day, h, m)
+        diff_min = (appt_dt - now).total_seconds() / 60
+
+        if 90 <= diff_min <= 150:
+            name  = appt["customer_name"]
+            car   = appt["car"]
+            phone = appt["customer_phone"]
+            phone_line = f"\n📞 {phone}" if phone else ""
+            detail = (
+                f"⏰ RECORDATORIO — cita en 2 horas\n"
+                f"Cliente: {name}{phone_line}\n"
+                f"Carro: {car}\n"
+                f"Hora: {appt['time_preference']}\n"
+                f"ID: {appt['id']}"
+            )
+            pulse_notify("MORNING_BRIEF", detail)
+            appt["reminded_2h_before"] = True
+            fired = True
+            print(f"[APPT] ⏰ Recordatorio 2h enviado — {name} / {appt['date_preference']}")
+
+    if fired:
+        _save(appointments)
 
 
 def get_appointments_summary_for_briefing() -> str:
