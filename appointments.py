@@ -379,10 +379,40 @@ def send_day_before_reminders():
     print(f"[APPT] Recordatorio enviado — {len(pending)} cita(s) mañana.")
 
 
+def _send_sms(to_phone: str, body: str) -> bool:
+    """Envía SMS via Twilio. Retorna True si tuvo éxito."""
+    sid   = os.getenv("TWILIO_ACCOUNT_SID")
+    token = os.getenv("TWILIO_AUTH_TOKEN")
+    from_ = os.getenv("TWILIO_FROM")
+    if not all([sid, token, from_]):
+        print("[APPT] Twilio no configurado — SMS no enviado")
+        return False
+    try:
+        from twilio.rest import Client
+        Client(sid, token).messages.create(body=body, from_=from_, to=to_phone)
+        print(f"[APPT] ✅ SMS enviado a {to_phone}")
+        return True
+    except Exception as e:
+        print(f"[APPT] ❌ SMS falló: {e}")
+        return False
+
+
+def send_confirmation_sms(phone: str, customer_name: str, hora: str) -> bool:
+    """Envía SMS de confirmación de cita al cliente."""
+    nombre = customer_name.split()[0] if customer_name and customer_name != "Sin nombre" else ""
+    saludo = f"Hola {nombre}! " if nombre else "Hola! "
+    body = (
+        f"{saludo}Te recordamos tu cita en Hollywood Toyota hoy a las {hora}. "
+        f"¿Confirmas que vienes? Responde SI o NO."
+    )
+    return _send_sms(phone, body)
+
+
 def check_2h_reminders():
     """
-    Revisa todas las citas pendientes/confirmadas y envía WhatsApp
-    si faltan entre 90 y 150 minutos para la cita.
+    Revisa citas pendientes/confirmadas y a los 90-150 min antes:
+    1. Manda SMS al cliente si tiene teléfono
+    2. Manda WhatsApp a Alejo con el recordatorio
     Ejecutar cada 5 minutos desde webhook_server.
     """
     appointments = _load()
@@ -405,19 +435,29 @@ def check_2h_reminders():
         if 90 <= diff_min <= 150:
             name  = appt["customer_name"]
             car   = appt["car"]
-            phone = appt["customer_phone"]
-            phone_line = f"\n📞 {phone}" if phone else ""
+            phone = appt.get("customer_phone", "")
+            hora  = appt.get("time_preference", "la hora acordada")
+
+            # SMS al cliente
+            sms_sent = False
+            if phone:
+                sms_sent = send_confirmation_sms(phone, name, hora)
+
+            # WhatsApp a Alejo
+            phone_line = f"\n📞 {phone}" if phone else "\n📞 Sin teléfono"
+            sms_line = "✅ SMS enviado al cliente" if sms_sent else "⚠️ Sin teléfono — contactar manualmente"
             detail = (
                 f"⏰ RECORDATORIO — cita en 2 horas\n"
                 f"Cliente: {name}{phone_line}\n"
                 f"Carro: {car}\n"
-                f"Hora: {appt['time_preference']}\n"
+                f"Hora: {hora}\n"
+                f"{sms_line}\n"
                 f"ID: {appt['id']}"
             )
             pulse_notify("MORNING_BRIEF", detail)
             appt["reminded_2h_before"] = True
             fired = True
-            print(f"[APPT] ⏰ Recordatorio 2h enviado — {name} / {appt['date_preference']}")
+            print(f"[APPT] ⏰ Recordatorio 2h — {name} / {appt['date_preference']} | SMS: {sms_sent}")
 
     if fired:
         _save(appointments)
