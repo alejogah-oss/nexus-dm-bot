@@ -351,7 +351,7 @@ def vehicles_csv():
                 f"{v['yr']} Toyota {model} {trim} en {v['color']}. "
                 f"Vehiculo nuevo disponible en Hollywood Toyota, FL. "
                 f"El precio indicado es el down payment estimado (15%-25% del valor total segun tu credito). "
-                f"Escribeme o llama al (954) 310-6671 - soy Alejo, te atiendo personalmente."
+                f"Escribeme por aqui - Alejo te atiende personalmente."
             )
             w.writerow([
                 f"{vid}-2026", title, desc, "IN STOCK", "NEW",
