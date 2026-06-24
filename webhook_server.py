@@ -374,8 +374,66 @@ def vehicles_csv():
         return f"Error generando CSV: {e}", 500
 
 
+def _check_frozen_leads():
+    """Detecta conversaciones con 4+ horas de inactividad y 3+ mensajes — alerta a Alejo."""
+    import json
+    from datetime import datetime
+    from pulse import pulse_notify
+
+    activity_file = os.path.join(os.path.dirname(__file__), "leads_activity.json")
+    try:
+        with open(activity_file, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return
+
+    now = datetime.now()
+    updated = False
+
+    for sender_id, entry in data.items():
+        if entry.get("frozen_alert_sent"):
+            continue
+        if entry.get("message_count", 0) < 3:  # mínimo 3 mensajes para considerarlo lead real
+            continue
+
+        last = entry.get("last_activity", "")
+        if not last:
+            continue
+
+        try:
+            last_dt = datetime.fromisoformat(last)
+        except ValueError:
+            continue
+
+        hours_idle = (now - last_dt).total_seconds() / 3600
+
+        if hours_idle >= 4:
+            platform = entry.get("platform", "").upper()
+            conv_url = entry.get("conv_url", "")
+            msgs = entry.get("message_count", 0)
+            idle_str = f"{int(hours_idle)}h" if hours_idle < 24 else f"{int(hours_idle/24)}d"
+
+            pulse_notify(
+                event="HOT_LEAD",
+                detail=(
+                    f"❄️ LEAD CONGELADO\n"
+                    f"Canal: {platform}\n"
+                    f"Inactivo hace: {idle_str}\n"
+                    f"Mensajes: {msgs}\n"
+                    f"Ver conversación:\n{conv_url}"
+                )
+            )
+            entry["frozen_alert_sent"] = True
+            updated = True
+            print(f"[FROZEN] Alerta enviada — {sender_id[:12]} | {idle_str} idle | {msgs} msgs")
+
+    if updated:
+        with open(activity_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+
 def _keep_alive():
-    """Pinga /health cada 10 minutos y revisa recordatorios de citas cada 5 minutos."""
+    """Pinga /health cada 10 min, revisa citas cada 5 min y leads congelados cada 30 min."""
     import threading, time
     from appointments import check_2h_reminders
 
@@ -389,6 +447,12 @@ def _keep_alive():
                 check_2h_reminders()
             except Exception as e:
                 print(f"[SCHEDULER] Error en check_2h_reminders: {e}")
+            # Leads congelados — cada 6 ciclos (cada 30 min)
+            if tick % 6 == 0:
+                try:
+                    _check_frozen_leads()
+                except Exception as e:
+                    print(f"[SCHEDULER] Error en check_frozen_leads: {e}")
             # Keep-alive — cada 2 ciclos (cada 10 min)
             if tick % 2 == 0:
                 try:

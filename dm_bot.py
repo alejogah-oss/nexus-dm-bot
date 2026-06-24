@@ -161,6 +161,36 @@ def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
 _conversations: dict[str, list] = {}
 _mp_conversations: dict[str, list] = {}  # Marketplace threads (separate namespace)
 
+# Activity tracker — persisted to disk for frozen lead detection
+import json as _json
+_ACTIVITY_FILE = os.path.join(os.path.dirname(__file__), "leads_activity.json")
+
+def _load_activity() -> dict:
+    try:
+        with open(_ACTIVITY_FILE, encoding="utf-8") as f:
+            return _json.load(f)
+    except (FileNotFoundError, _json.JSONDecodeError):
+        return {}
+
+def _save_activity(data: dict):
+    with open(_ACTIVITY_FILE, "w", encoding="utf-8") as f:
+        _json.dump(data, f, indent=2, ensure_ascii=False)
+
+def track_activity(sender_id: str, platform: str, message_count: int):
+    """Updates last activity timestamp for a conversation."""
+    from datetime import datetime
+    data = _load_activity()
+    entry = data.get(sender_id, {})
+    data[sender_id] = {
+        **entry,
+        "platform": platform,
+        "last_activity": datetime.now().isoformat(),
+        "message_count": message_count,
+        "frozen_alert_sent": entry.get("frozen_alert_sent", False),
+        "conv_url": f"https://business.facebook.com/latest/inbox/all?selected_item_id={sender_id}",
+    }
+    _save_activity(data)
+
 
 def _marketplace_voice(car: dict) -> str:
     """Dynamic system prompt injected with the specific car the buyer messaged from."""
@@ -318,6 +348,9 @@ def handle_message(sender_id: str, message_text: str, platform: str = "facebook"
     history.append({"role": "user", "content": message_text})
     history.append({"role": "assistant", "content": reply})
     _conversations[sender_id] = history[-20:]  # keep last 10 exchanges
+
+    # Track activity for frozen lead detection
+    track_activity(sender_id, platform, len(history))
 
     # Send reply
     if platform == "instagram":
