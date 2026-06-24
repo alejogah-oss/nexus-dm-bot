@@ -9,7 +9,7 @@ from pulse import pulse_notify
 from assistant import log_event
 from appointments import extract_appointment_from_conversation
 from marketplace_analytics import track_message, track_hot_lead, track_declined
-from notes import save_note, get_note
+from notes import save_note
 
 load_dotenv()
 
@@ -177,19 +177,39 @@ def _save_activity(data: dict):
         _json.dump(data, f, indent=2, ensure_ascii=False)
 
 def track_activity(sender_id: str, platform: str, message_count: int):
-    """Updates last activity timestamp for a conversation."""
+    """Updates last activity. Detects frozen lead reactivation and alerts Alejo."""
     from datetime import datetime
     data = _load_activity()
     entry = data.get(sender_id, {})
+    was_frozen = entry.get("frozen_alert_sent", False)
+
     data[sender_id] = {
         **entry,
         "platform": platform,
         "last_activity": datetime.now().isoformat(),
         "message_count": message_count,
-        "frozen_alert_sent": entry.get("frozen_alert_sent", False),
+        "frozen_alert_sent": False,  # reset — lead is active again
         "conv_url": f"https://business.facebook.com/latest/inbox/all?selected_item_id={sender_id}",
     }
     _save_activity(data)
+
+    # Lead reactivado — estaba congelado y volvió a escribir
+    if was_frozen:
+        conv_url = data[sender_id]["conv_url"]
+        pulse_notify(
+            event="HOT_LEAD",
+            detail=(
+                f"♻️ LEAD REACTIVADO\n"
+                f"Canal: {platform.upper()}\n"
+                f"Un lead congelado volvió a escribir.\n"
+                f"Ver conversación:\n{conv_url}"
+            )
+        )
+        print(f"[FROZEN] Lead reactivado — {sender_id[:12]} | {platform}")
+        # Empujar al CRM si hay historial suficiente
+        history = _conversations.get(sender_id, [])
+        if len(history) >= 4:
+            push_hot_lead(sender_id, platform, history)
 
 
 def _marketplace_voice(car: dict) -> str:
