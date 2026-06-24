@@ -176,12 +176,13 @@ def _save_activity(data: dict):
     with open(_ACTIVITY_FILE, "w", encoding="utf-8") as f:
         _json.dump(data, f, indent=2, ensure_ascii=False)
 
-def track_activity(sender_id: str, platform: str, message_count: int):
+def track_activity(sender_id: str, platform: str, message_count: int, is_hot: bool = False):
     """Updates last activity. Detects frozen lead reactivation and alerts Alejo."""
     from datetime import datetime
     data = _load_activity()
     entry = data.get(sender_id, {})
     was_frozen = entry.get("frozen_alert_sent", False)
+    was_hot = entry.get("is_hot_lead", False)
 
     data[sender_id] = {
         **entry,
@@ -189,26 +190,26 @@ def track_activity(sender_id: str, platform: str, message_count: int):
         "last_activity": datetime.now().isoformat(),
         "message_count": message_count,
         "frozen_alert_sent": False,  # reset — lead is active again
+        "is_hot_lead": was_hot or is_hot,  # sticky — once hot, always tracked
         "conv_url": f"https://business.facebook.com/latest/inbox/all?selected_item_id={sender_id}",
     }
     _save_activity(data)
 
-    # Lead reactivado — estaba congelado y volvió a escribir
-    if was_frozen:
+    # Lead reactivado — solo si previamente fue identificado como HOT LEAD
+    if was_frozen and was_hot:
         conv_url = data[sender_id]["conv_url"]
         pulse_notify(
             event="HOT_LEAD",
             detail=(
                 f"♻️ LEAD REACTIVADO\n"
                 f"Canal: {platform.upper()}\n"
-                f"Un lead congelado volvió a escribir.\n"
+                f"Un lead calificado volvió a escribir.\n"
                 f"Ver conversación:\n{conv_url}"
             )
         )
         print(f"[FROZEN] Lead reactivado — {sender_id[:12]} | {platform}")
-        # Empujar al CRM si hay historial suficiente
         history = _conversations.get(sender_id, [])
-        if len(history) >= 4:
+        if history:
             push_hot_lead(sender_id, platform, history)
 
 
@@ -370,7 +371,7 @@ def handle_message(sender_id: str, message_text: str, platform: str = "facebook"
     _conversations[sender_id] = history[-20:]  # keep last 10 exchanges
 
     # Track activity for frozen lead detection
-    track_activity(sender_id, platform, len(history))
+    track_activity(sender_id, platform, len(history), is_hot=is_hot)
 
     # Send reply
     if platform == "instagram":

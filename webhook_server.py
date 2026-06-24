@@ -393,7 +393,7 @@ def _check_frozen_leads():
     for sender_id, entry in data.items():
         if entry.get("frozen_alert_sent"):
             continue
-        if entry.get("message_count", 0) < 3:  # mínimo 3 mensajes para considerarlo lead real
+        if not entry.get("is_hot_lead"):  # solo leads que tuvieron señal HOT LEAD
             continue
 
         last = entry.get("last_activity", "")
