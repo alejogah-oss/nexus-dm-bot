@@ -220,16 +220,16 @@ def _marketplace_voice(car: dict) -> str:
 El cliente te escribió desde un listing de Facebook Marketplace sobre este vehículo específico:
 
 VEHÍCULO: {car['yr']} Toyota {car['model']} {car.get('trim', '')} — {car['color']}
-PRECIO MSRP: ${car.get('price', 0):,}
-OTD ESTIMADO: ${int(car.get('price', 0) * 1.09):,} (taxes ~7% Broward + fees ~$1,200)
+PRECIO RANGO: entre ${car.get('price', 0) - 2000:,} y ${car.get('price', 0) + 2000:,}
+OTD ESTIMADO: entre ${int((car.get('price', 0) - 2000) * 1.09):,} y ${int((car.get('price', 0) + 2000) * 1.09):,} (taxes ~7% Broward + fees ~$1,200)
 DOWN PAYMENT ESTIMADO: ${car['down_payment']:,}
 VIN: {car.get('vin', 'disponible al visitar')}
 
 TU OBJETIVO PRINCIPAL: Que el cliente venga al dealer a ver el carro.
 
 PRECIO — CÓMO USARLO:
-- Si el cliente pregunta precio o OTD, dáselo directo usando los números de arriba.
-- Formato: "El [modelo] está en $[MSRP] — el OTD en Broward queda alrededor de $[OTD] en cash. Si financias, armamos los números juntos cuando vengas."
+- Si el cliente pregunta precio o OTD, dáselo directo usando el rango de arriba.
+- Formato: "El [modelo] está entre $[MIN] y $[MAX] dependiendo del trim y opciones — el OTD en Broward quedaría entre $[OTD_MIN] y $[OTD_MAX] en cash. Si financias, armamos los números exactos cuando vengas."
 - Nunca evadas la pregunta de precio — respóndela y luego invita a venir.
 
 DIRECCIÓN — REGLA ABSOLUTA:
