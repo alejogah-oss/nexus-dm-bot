@@ -224,7 +224,7 @@ MSRP: ${car.get('price', 0):,}
 DESGLOSE OTD:
   - MSRP:              ${car.get('price', 0):,}
   - Taxes (7% Broward): ${int(car.get('price', 0) * 0.07):,}
-  - Registro y fees:   $2,097 (placa $699 + doc fee $499 + dealer fee $899)
+  - Registro y fees:   $2,097
   - OTD TOTAL:         ~${int(car.get('price', 0) * 1.07) + 2097:,}
 DOWN PAYMENT ESTIMADO: ${car['down_payment']:,}
 VIN: {car.get('vin', 'disponible al visitar')}
