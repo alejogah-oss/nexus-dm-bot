@@ -224,9 +224,18 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     lead_data["source_url"]       = conv_url
     lead_data["conversation_link"] = conv_url
 
-    summary = (
-        f"Lead desde {platform.upper()}. "
-        f"Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}. "
-        f"Chat: {conv_url}"
-    )
-    return send_to_crm(lead_data, summary)
+    from notes import analyze_buyer
+    buyer = analyze_buyer(conversation_history)
+
+    crm_note = _build_crm_note(conversation_history, platform, name, model, trim, conv_url)
+
+    if buyer:
+        crm_note += (
+            f"\n\n━━ PERFIL DEL COMPRADOR ━━"
+            f"\nPerfil:  {buyer.get('perfil', '—')}"
+            f"\nEstado:  {buyer.get('estado', '—')}"
+            f"\nSeñales: {buyer.get('señales', '—')}"
+            f"\nApproach: {buyer.get('approach', '—')}"
+        )
+
+    return send_to_crm(lead_data, crm_note)

@@ -84,6 +84,44 @@ def _generate_summary(conversation_history: list, platform: str, name: str) -> s
         return f"Contacto desde {platform.upper()}."
 
 
+def analyze_buyer(conversation_history: list) -> dict:
+    """
+    Analyzes buyer psychology: profile type, buying state, and negotiation insights.
+    Returns dict with: perfil, estado, approach, señales.
+    """
+    if not conversation_history:
+        return {}
+    transcript = "\n".join(
+        f"{'Cliente' if m['role'] == 'user' else 'Bot'}: {m['content']}"
+        for m in conversation_history[-20:]
+    )
+    try:
+        resp = _claude.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=250,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "Analiza este chat de venta de autos desde perspectiva psicológica. "
+                    "Responde SOLO con JSON válido:\n\n"
+                    "{\n"
+                    '  "perfil": "Analítico|Emocional|Desconfiado|Impulsivo|Negociador",\n'
+                    '  "estado": "Explorando|Interesado|Considerando|Decidido|Urgente",\n'
+                    '  "señales": "2 señales clave observadas en el chat",\n'
+                    '  "approach": "1-2 oraciones: cómo debe abordarlo Alejo en la negociación"\n'
+                    "}\n\n"
+                    f"CONVERSACIÓN:\n{transcript}"
+                )
+            }]
+        )
+        text = resp.content[0].text.strip()
+        if "```" in text:
+            text = text.split("```")[1].split("```")[0].replace("json", "").strip()
+        return json.loads(text)
+    except Exception:
+        return {}
+
+
 def save_note(sender_id: str, platform: str, conversation_history: list, name: str = "Sin nombre") -> dict:
     """
     Genera resumen + extrae cita y guarda nota con timestamp.
@@ -94,6 +132,7 @@ def save_note(sender_id: str, platform: str, conversation_history: list, name: s
 
     summary = _generate_summary(conversation_history, platform, name)
     appointment = _extract_appointment(conversation_history)
+    buyer = analyze_buyer(conversation_history)
 
     entry = data.get(sender_id, {})
     prev_appointment = entry.get("appointment", "")
@@ -105,22 +144,25 @@ def save_note(sender_id: str, platform: str, conversation_history: list, name: s
         "last_updated": now,
         "summary": summary,
         "appointment": appointment or prev_appointment,
+        "buyer_profile": buyer,
         "history": entry.get("history", []) + [{
             "timestamp": now,
             "summary": summary,
             "appointment": appointment,
+            "buyer_profile": buyer,
         }],
     }
     data[sender_id]["history"] = data[sender_id]["history"][-10:]
     _save(data)
 
-    print(f"[NOTES] {now} | {name} | Cita: {appointment or 'ninguna'} | Cambio: {changed}")
+    print(f"[NOTES] {now} | {name} | Cita: {appointment or 'ninguna'} | Perfil: {buyer.get('perfil','?')} | Estado: {buyer.get('estado','?')}")
     return {
         "summary": summary,
         "appointment": appointment,
         "prev_appointment": prev_appointment,
         "changed": changed,
         "timestamp": now,
+        "buyer": buyer,
     }
 
 
