@@ -464,6 +464,49 @@ def _keep_alive():
     t.start()
 
 
+# ── BOT PROPOSALS ────────────────────────────────────────────────────────────
+
+@app.get("/bot/proposals")
+def list_proposals():
+    """Lista todas las propuestas pendientes."""
+    from bot_proposals import get_pending
+    pending = get_pending()
+    return jsonify({"pending": len(pending), "proposals": pending})
+
+
+@app.get("/bot/proposals/approve/<pid>")
+def approve_proposal(pid: str):
+    """Aprueba una propuesta de mejora."""
+    from bot_proposals import approve_proposal as _approve
+    result = _approve(pid)
+    if result.get("error"):
+        return jsonify(result), 404
+    p = result["proposal"]
+    return (
+        f"<h2>✅ Mejora aprobada</h2>"
+        f"<p><b>Área:</b> {p['area']}</p>"
+        f"<p><b>Cambio:</b> {p['cambio']}</p>"
+        f"<p><b>Motivo:</b> {p['motivo']}</p>"
+        f"<p>Registrado en el log el {p['resolved_at']}.</p>"
+    ), 200
+
+
+@app.get("/bot/proposals/reject/<pid>")
+def reject_proposal(pid: str):
+    """Rechaza una propuesta de mejora."""
+    from bot_proposals import reject_proposal as _reject
+    result = _reject(pid)
+    if result.get("error"):
+        return jsonify(result), 404
+    p = result["proposal"]
+    return (
+        f"<h2>❌ Mejora rechazada</h2>"
+        f"<p><b>Área:</b> {p['area']}</p>"
+        f"<p><b>Cambio:</b> {p['cambio']}</p>"
+        f"<p>No se aplicará ningún cambio.</p>"
+    ), 200
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5001))
     _keep_alive()
