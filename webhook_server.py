@@ -474,6 +474,42 @@ def list_proposals():
     return jsonify({"pending": len(pending), "proposals": pending})
 
 
+@app.get("/bot/proposals")
+def list_proposals_detail():
+    """Lista todas las propuestas pendientes con diff completo."""
+    from bot_proposals import get_pending
+    pending = get_pending()
+    if not pending:
+        return "<h2>No hay propuestas pendientes.</h2>", 200
+
+    html = "<h2>📋 Propuestas pendientes de aprobación</h2>"
+    for p in pending:
+        approve_url = f"/bot/proposals/approve/{p['id']}"
+        reject_url  = f"/bot/proposals/reject/{p['id']}"
+        html += f"""
+        <hr>
+        <h3>🔧 {p['area']} — <small>{p['id']}</small></h3>
+        <p><b>Autor:</b> {p['autor']} | <b>Fecha:</b> {p['created_at']}</p>
+        <p><b>Motivo:</b> {p['motivo']}</p>
+        <table border="1" cellpadding="8" style="width:100%;border-collapse:collapse">
+          <tr>
+            <th style="background:#fdd;width:50%">📌 TEXTO ACTUAL</th>
+            <th style="background:#dfd;width:50%">✏️ TEXTO NUEVO</th>
+          </tr>
+          <tr>
+            <td><pre style="white-space:pre-wrap">{p.get('texto_actual','')}</pre></td>
+            <td><pre style="white-space:pre-wrap">{p.get('texto_nuevo','')}</pre></td>
+          </tr>
+        </table>
+        <p>
+          <a href="{approve_url}" style="background:green;color:white;padding:8px 16px;text-decoration:none;border-radius:4px">✅ Aprobar</a>
+          &nbsp;&nbsp;
+          <a href="{reject_url}" style="background:red;color:white;padding:8px 16px;text-decoration:none;border-radius:4px">❌ Rechazar</a>
+        </p>
+        """
+    return html, 200
+
+
 @app.get("/bot/proposals/approve/<pid>")
 def approve_proposal(pid: str):
     """Aprueba una propuesta de mejora."""
@@ -483,11 +519,12 @@ def approve_proposal(pid: str):
         return jsonify(result), 404
     p = result["proposal"]
     return (
-        f"<h2>✅ Mejora aprobada</h2>"
-        f"<p><b>Área:</b> {p['area']}</p>"
-        f"<p><b>Cambio:</b> {p['cambio']}</p>"
+        f"<h2>✅ Aprobado — {p['area']}</h2>"
         f"<p><b>Motivo:</b> {p['motivo']}</p>"
+        f"<p><b>Texto nuevo aplicado:</b></p>"
+        f"<pre style='background:#f0f0f0;padding:12px'>{p.get('texto_nuevo','')}</pre>"
         f"<p>Registrado en el log el {p['resolved_at']}.</p>"
+        f"<p><a href='/bot/proposals'>← Ver otras propuestas</a></p>"
     ), 200
 
 
@@ -500,10 +537,9 @@ def reject_proposal(pid: str):
         return jsonify(result), 404
     p = result["proposal"]
     return (
-        f"<h2>❌ Mejora rechazada</h2>"
-        f"<p><b>Área:</b> {p['area']}</p>"
-        f"<p><b>Cambio:</b> {p['cambio']}</p>"
+        f"<h2>❌ Rechazado — {p['area']}</h2>"
         f"<p>No se aplicará ningún cambio.</p>"
+        f"<p><a href='/bot/proposals'>← Ver otras propuestas</a></p>"
     ), 200
 
 

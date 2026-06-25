@@ -26,9 +26,17 @@ def _save(data: dict):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
 
-def create_proposal(area: str, cambio: str, motivo: str, autor: str = "Pulse") -> str:
+def create_proposal(
+    area: str,
+    motivo: str,
+    texto_actual: str,
+    texto_nuevo: str,
+    autor: str = "Pulse",
+) -> str:
     """
-    Crea una propuesta de mejora y notifica a Alejo por WhatsApp.
+    Crea una propuesta de mejora con diff exacto y notifica a Alejo por WhatsApp.
+    - texto_actual: el texto que está en el bot HOY
+    - texto_nuevo:  el texto exacto que reemplazaría al actual
     Retorna el proposal_id.
     """
     import uuid
@@ -41,8 +49,9 @@ def create_proposal(area: str, cambio: str, motivo: str, autor: str = "Pulse") -
     data[pid] = {
         "id": pid,
         "area": area,
-        "cambio": cambio,
         "motivo": motivo,
+        "texto_actual": texto_actual,
+        "texto_nuevo": texto_nuevo,
         "autor": autor,
         "status": "pending",
         "created_at": now,
@@ -53,14 +62,19 @@ def create_proposal(area: str, cambio: str, motivo: str, autor: str = "Pulse") -
     approve_url = f"https://bot.tucarroconalejo.com/bot/proposals/approve/{pid}"
     reject_url  = f"https://bot.tucarroconalejo.com/bot/proposals/reject/{pid}"
 
+    # WhatsApp tiene límite de caracteres — truncar textos largos
+    actual_preview = texto_actual[:200] + "..." if len(texto_actual) > 200 else texto_actual
+    nuevo_preview  = texto_nuevo[:200]  + "..." if len(texto_nuevo)  > 200 else texto_nuevo
+
     pulse_notify(
         event="HOT_LEAD",
         detail=(
             f"🔧 MEJORA PROPUESTA — {autor}\n"
             f"Área: {area}\n"
-            f"Cambio: {cambio}\n"
             f"Motivo: {motivo}\n\n"
-            f"✅ Aprobar:\n{approve_url}\n\n"
+            f"📌 ANTES:\n{actual_preview}\n\n"
+            f"✏️ DESPUÉS:\n{nuevo_preview}\n\n"
+            f"Ver completo + aprobar:\n{approve_url}\n\n"
             f"❌ Rechazar:\n{reject_url}"
         )
     )
