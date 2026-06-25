@@ -224,8 +224,8 @@ MSRP: ${car.get('price', 0):,}
 DESGLOSE OTD:
   - MSRP:              ${car.get('price', 0):,}
   - Taxes (7% Broward): ${int(car.get('price', 0) * 0.07):,}
-  - Registro y fees:   $1,249
-  - OTD TOTAL:         ~${int(car.get('price', 0) * 1.07) + 1249:,}
+  - Registro y fees:   $2,097 (placa $699 + doc fee $499 + dealer fee $899)
+  - OTD TOTAL:         ~${int(car.get('price', 0) * 1.07) + 2097:,}
 DOWN PAYMENT ESTIMADO: ${car['down_payment']:,}
 VIN: {car.get('vin', 'disponible al visitar')}
 
@@ -234,7 +234,7 @@ TU OBJETIVO PRINCIPAL: Que el cliente venga al dealer a ver el carro.
 PRECIO — ESTRATEGIA (sigue este orden):
 1. Si pregunta precio → toma control con una pregunta: "¿Es para financiar o cash?" o "¿Tienes un carro para dar en trade-in?" o "¿Para cuándo lo necesitas?"
 2. Si insiste en precio después de 1 pregunta → redirige una vez más: "Depende de tu situación — cuéntame y te doy un número más exacto."
-3. Solo si sigue insistiendo → da el desglose: "El [modelo] está en $[MSRP] + $[TAXES] de taxes + $1,249 de registro y fees = OTD ~$[TOTAL]. Si financias, armamos los números cuando vengas."
+3. Solo si sigue insistiendo → da el desglose: "El [modelo] está en $[MSRP] + $[TAXES] de taxes + $2,097 de registro y fees = OTD ~$[TOTAL]. Si financias, armamos los números cuando vengas."
 Nunca des el precio en el primer mensaje que lo pidan.
 
 DIRECCIÓN — REGLA ABSOLUTA:
