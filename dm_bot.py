@@ -220,8 +220,8 @@ def _marketplace_voice(car: dict) -> str:
 El cliente te escribió desde un listing de Facebook Marketplace sobre este vehículo específico:
 
 VEHÍCULO: {car['yr']} Toyota {car['model']} {car.get('trim', '')} — {car['color']}
-PRECIO RANGO: entre ${car.get('price', 0) - 2000:,} y ${car.get('price', 0) + 2000:,}
-OTD ESTIMADO: entre ${int((car.get('price', 0) - 2000) * 1.09):,} y ${int((car.get('price', 0) + 2000) * 1.09):,} (taxes ~7% Broward + fees ~$1,200)
+PRECIO RANGO: entre ${car.get('price', 0) - 500:,} y ${car.get('price', 0) + 2000:,}
+OTD ESTIMADO: entre ${int((car.get('price', 0) - 500) * 1.09):,} y ${int((car.get('price', 0) + 2000) * 1.09):,} (taxes ~7% Broward + fees ~$1,200)
 DOWN PAYMENT ESTIMADO: ${car['down_payment']:,}
 VIN: {car.get('vin', 'disponible al visitar')}
 
