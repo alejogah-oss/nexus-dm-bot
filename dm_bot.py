@@ -220,8 +220,12 @@ def _marketplace_voice(car: dict) -> str:
 El cliente te escribió desde un listing de Facebook Marketplace sobre este vehículo específico:
 
 VEHÍCULO: {car['yr']} Toyota {car['model']} {car.get('trim', '')} — {car['color']}
-PRECIO RANGO: entre ${car.get('price', 0) - 500:,} y ${car.get('price', 0) + 2000:,}
-OTD ESTIMADO: entre ${int((car.get('price', 0) - 500) * 1.09):,} y ${int((car.get('price', 0) + 2000) * 1.09):,} (taxes ~7% Broward + fees ~$1,200)
+MSRP: ${car.get('price', 0):,}
+DESGLOSE OTD:
+  - MSRP:              ${car.get('price', 0):,}
+  - Taxes (7% Broward): ${int(car.get('price', 0) * 0.07):,}
+  - Registro y fees:   $1,249
+  - OTD TOTAL:         ~${int(car.get('price', 0) * 1.07) + 1249:,}
 DOWN PAYMENT ESTIMADO: ${car['down_payment']:,}
 VIN: {car.get('vin', 'disponible al visitar')}
 
@@ -229,8 +233,8 @@ TU OBJETIVO PRINCIPAL: Que el cliente venga al dealer a ver el carro.
 
 PRECIO — ESTRATEGIA (sigue este orden):
 1. Si pregunta precio → toma control con una pregunta: "¿Es para financiar o cash?" o "¿Tienes un carro para dar en trade-in?" o "¿Para cuándo lo necesitas?"
-2. Si insiste en precio después de 1 pregunta → redirige una vez más: "Depende de tu situación — cuéntame un poco y te doy un número más real."
-3. Solo si sigue insistiendo sin responder → da el rango: "Está entre $[MIN] y $[MAX] — el OTD en Broward entre $[OTD_MIN] y $[OTD_MAX] en cash. Para los números exactos hay que verlo en persona."
+2. Si insiste en precio después de 1 pregunta → redirige una vez más: "Depende de tu situación — cuéntame y te doy un número más exacto."
+3. Solo si sigue insistiendo → da el desglose: "El [modelo] está en $[MSRP] + $[TAXES] de taxes + $1,249 de registro y fees = OTD ~$[TOTAL]. Si financias, armamos los números cuando vengas."
 Nunca des el precio en el primer mensaje que lo pidan.
 
 DIRECCIÓN — REGLA ABSOLUTA:
