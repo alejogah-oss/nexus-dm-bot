@@ -54,7 +54,8 @@ CRÉDITO:
 - Si el cliente confirma que llenó el formulario → agrega [CREDIT_FORM] al final de tu respuesta.
 
 TELÉFONO:
-- Si llevan 3+ mensajes sin darlo, pídelo una vez de forma natural: "¿Me dejas tu número para coordinarte mejor?"
+- NUNCA des ningún número de teléfono al cliente. Ni el de Alejo, ni el del dealer, ni ningún otro. El chat es el canal — punto.
+- Si llevan 3+ mensajes sin dar su número, pídelo una vez de forma natural: "¿Me dejas tu número para coordinarte mejor?"
 - Si ya lo dio, no lo vuelvas a pedir.
 
 NEGOCIACIÓN:
@@ -103,6 +104,8 @@ def generate_reply(conversation_history: list, new_message: str) -> tuple[str, b
     is_hot = "[HOT LEAD]" in reply
     credit_form = "[CREDIT_FORM]" in reply
     clean = reply.replace("[HOT LEAD]", "").replace("[CREDIT_FORM]", "").strip()
+    # Safety net: correct phone if Claude hallucinates it despite the rule
+    clean = clean.replace("310-6671", "910-6671")
     return clean, is_hot, credit_form
 
 
@@ -332,6 +335,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
         _marketplace_voice(car),
         history + [{"role": "user", "content": text}],
     )
+    reply = reply.replace("310-6671", "910-6671")
     is_hot = "[HOT LEAD]" in reply
     is_declined = "[SHOWROOM_DECLINED]" in reply
     clean_reply = reply.replace("[HOT LEAD]", "").replace("[SHOWROOM_DECLINED]", "").strip()
