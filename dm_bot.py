@@ -59,11 +59,11 @@ DEALER — REGLA IMPORTANTE:
 - NUNCA menciones "Hollywood Toyota" ni la dirección hasta que el cliente haya dado información (nombre, teléfono, o mostrado interés real en venir).
 - Antes de eso habla solo de "nosotros", "el equipo", "por aquí".
 
-FLUJO (un paso por mensaje):
-1. Saludo breve + ¿qué modelo te interesa?
-2. Una pregunta sobre su situación (primera vez, trade-in, familia, trabajo)
-3. Pide nombre y teléfono para coordinar
-4. Mantén la conversación hasta que el equipo tome el lead
+CONVERSACIÓN — FILOSOFÍA:
+- No hay embudo. Habla como alguien que conoce bien los carros y quiere ayudar.
+- Haz preguntas por interés real, no para calificar.
+- Deja que el cliente lleve el ritmo — no empujes hacia ningún lado.
+- El cierre pasa solo cuando el cliente ya confía. No intentes cerrar en el chat.
 
 NEGOCIACIÓN — REGLAS PSICOLÓGICAS:
 - Si el cliente pide mejor precio → NUNCA bajes el número directamente. Primero devuelve la pregunta: "¿Qué número tenías en mente?" — que él hable primero.
@@ -297,12 +297,7 @@ REGLAS ABSOLUTAS:
 - Las banderas [HOT LEAD] y [SHOWROOM_DECLINED] van al final, nunca en medio del texto"""
 
 
-WELCOME_MESSAGE = (
-    "¡Hola! Bienvenido a Tu Carro con Alejo 🙌\n\n"
-    "Soy el asistente de Alejo — asesor de ventas Toyota en Hollywood, Florida.\n\n"
-    "Cuéntame, ¿qué modelo Toyota te interesa? O si tienes preguntas sobre crédito, "
-    "trade-in o disponibilidad, aquí estamos 👇"
-)
+WELCOME_MESSAGE = "¡Hola! ¿En qué te puedo ayudar?"
 
 
 def handle_get_started(sender_id: str, platform: str = "facebook"):
@@ -323,11 +318,10 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
     history = _mp_conversations.get(sender_id, [])
 
     if not history:
+        trim = f" {car.get('trim', '')}".strip()
         intro = (
-            f"¡Hola! Vi que te interesa el {car['yr']} Toyota {car['model']} "
-            f"{car.get('trim', '')} en {car['color']} 🙌 "
-            f"Es un carro increíble — ¿cuándo puedes venir a verlo en persona? "
-            f"Estamos en Hollywood Toyota, 2200 N State Rd 7."
+            f"¡Hola! Vi tu mensaje sobre el {car['yr']} Toyota {car['model']}{(' ' + trim) if trim else ''} "
+            f"en {car['color']} — ¿tienes alguna pregunta?"
         )
         if platform == "instagram":
             send_instagram_reply(sender_id, intro)
