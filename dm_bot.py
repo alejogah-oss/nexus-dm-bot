@@ -385,12 +385,14 @@ def handle_message(sender_id: str, message_text: str, platform: str = "facebook"
     """Main handler — processes incoming DM and sends reply."""
     history = _conversations.get(sender_id, [])
 
-    # First message from this user — send welcome before AI reply
+    # First message — send welcome only, skip AI reply
     if not history:
         if platform == "instagram":
             send_instagram_reply(sender_id, WELCOME_MESSAGE)
         else:
             send_facebook_reply(sender_id, WELCOME_MESSAGE)
+        _conversations[sender_id] = [{"role": "user", "content": message_text}]
+        return WELCOME_MESSAGE
 
     reply, is_hot, credit_form = generate_reply(history, message_text)
 
