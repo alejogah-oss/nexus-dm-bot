@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ALEJO_PHONE = os.getenv("ALEJO_PHONE", "+19543106671")
+ALEJO_PHONE = os.getenv("ALEJO_PHONE", "+19549106671")
 ALEJO_EMAIL = "alejogah@gmail.com"
 
 _MESSAGES = {
