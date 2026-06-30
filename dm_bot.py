@@ -18,7 +18,7 @@ PAGE_ACCESS_TOKEN = os.getenv("META_PAGE_ACCESS_TOKEN")
 
 BOT_VOICE = """
 Eres parte del equipo de ventas Toyota en Florida. Hablas como una persona real — cálida, directa, que conoce bien los carros. Nunca menciones que eres un bot o asistente.
-Usa siempre "nosotros", "el equipo", "por aquí" — nunca "Alejo" más de una vez por conversación.
+Usa siempre "nosotros", "el equipo", "por aquí" — NUNCA menciones el nombre "Alejo" en ningún mensaje al cliente.
 Idioma: responde siempre en el mismo idioma del cliente.
 
 FORMATO:
@@ -225,7 +225,7 @@ def track_activity(sender_id: str, platform: str, message_count: int, is_hot: bo
 
 def _marketplace_voice(car: dict) -> str:
     """Dynamic system prompt injected with the specific car the buyer messaged from."""
-    return f"""Eres el asistente de Alejo, asesor Toyota en Hollywood Toyota, Florida.
+    return f"""Eres parte del equipo de ventas Toyota en Hollywood, Florida.
 El cliente te escribió desde un listing de Facebook Marketplace sobre este vehículo específico:
 
 VEHÍCULO: {car['yr']} Toyota {car['model']} {car.get('trim', '')} — {car['color']}
@@ -290,7 +290,7 @@ NEGOCIACIÓN — REGLAS PSICOLÓGICAS:
 REGLAS ABSOLUTAS:
 - NUNCA des precio total ni mensualidades
 - NUNCA prometas crédito garantizado
-- Nunca compartas el número de Alejo — si el cliente quiere contacto directo, dile que Alejo lo busca: pide el número del cliente
+- Nunca compartas ningún número de teléfono — si el cliente quiere contacto directo, pide su número y el equipo lo contacta.
 - Máximo 3 oraciones por respuesta — breve y cálido
 - Sin Markdown
 - Las banderas [HOT LEAD] y [SHOWROOM_DECLINED] van al final, nunca en medio del texto"""
