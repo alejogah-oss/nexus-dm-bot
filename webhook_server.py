@@ -433,15 +433,31 @@ def _check_frozen_leads():
 
 
 def _keep_alive():
-    """Pinga /health cada 10 min, revisa citas cada 5 min y leads congelados cada 30 min."""
+    """Pinga /health cada 10 min, revisa citas cada 5 min, leads congelados cada 30 min, briefing a las 8am."""
     import threading, time
+    from datetime import datetime
     from appointments import check_2h_reminders
+
+    _briefing_sent_date = {"date": None}  # track si ya se envió hoy
 
     def _run():
         tick = 0
         while True:
             time.sleep(300)  # cada 5 minutos
             tick += 1
+
+            # Briefing matutino — a las 8am, una sola vez por día
+            try:
+                now = datetime.now()
+                today = now.strftime("%Y-%m-%d")
+                if now.hour == 8 and _briefing_sent_date["date"] != today:
+                    from assistant import morning_briefing
+                    morning_briefing()
+                    _briefing_sent_date["date"] = today
+                    print(f"[SCHEDULER] ✅ Briefing matutino enviado — {today}")
+            except Exception as e:
+                print(f"[SCHEDULER] Error en morning_briefing: {e}")
+
             # Recordatorio 2h antes — cada ciclo (cada 5 min)
             try:
                 check_2h_reminders()
