@@ -195,7 +195,7 @@ def web_chat():
             {"role": "assistant", "content": WEB_WELCOME},
         ]
 
-    reply, is_hot = generate_reply(history, message)
+    reply, is_hot, _ = generate_reply(history, message)
 
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": reply})
