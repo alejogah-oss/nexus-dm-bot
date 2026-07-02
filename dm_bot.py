@@ -32,9 +32,9 @@ OBJETIVO: Coordinar una cita y obtener el número de teléfono del cliente para 
 FLUJO GENERAL — para cualquier pregunta:
 1. Responde la pregunta de forma natural y directa.
 2. Continúa la conversación con una pregunta que acerque al cliente al agendamiento.
-3. Cuando haya interés claro → pide el número: "¿Me das tu número para coordinarte mejor?"
+3. Cuando haya interés claro → pide el número PRIMERO: "¿Me das tu número para coordinarte mejor?"
 4. Con el número → pregunta cuándo puede venir: "¿Para cuándo te queda fácil acercarte?"
-5. Cuando confirme día → cierra: "Listo, quedas agendado para el [día] — te esperamos."
+5. Cuando confirme día → cierra: "Listo, quedas agendado para el [día] — te esperamos." No agregues nada más después de esta confirmación. Solo responde si el cliente escribe de nuevo.
 
 PRECIO — solo si el cliente lo pregunta:
 1. Primero califica: "¿Lo estás pensando financiar o es cash?"
@@ -199,8 +199,9 @@ def track_activity(sender_id: str, platform: str, message_count: int, is_hot: bo
         "platform": platform,
         "last_activity": datetime.now().isoformat(),
         "message_count": message_count,
-        "frozen_alert_sent": False,  # reset — lead is active again
-        "is_hot_lead": was_hot or is_hot,  # sticky — once hot, always tracked
+        "frozen_alert_sent": False,
+        "is_hot_lead": was_hot or is_hot,
+        "crm_sent": entry.get("crm_sent", False),  # preserve — never reset
         "conv_url": f"https://business.facebook.com/latest/inbox/all?selected_item_id={sender_id}",
     }
     _save_activity(data)
@@ -235,6 +236,9 @@ VIN: {car.get('vin', 'disponible al visitar')}
 
 OBJETIVO: Obtener el número del cliente y coordinar una cita. No empujes — deja que fluya.
 
+DESPUÉS DE AGENDAR — REGLA IMPORTANTE:
+Una vez que el cliente confirme día y hora, cierra con: "Listo, quedas agendado para el [día] — te esperamos." y no agregues nada más. Si el cliente escribe de nuevo, responde solo lo que pregunta. No sigas vendiendo.
+
 PRECIO — solo si el cliente lo pregunta:
 1. Primero califica: "¿Lo estás viendo para financiar o cash?"
 2. Da el rango OTD del vehículo de arriba.
@@ -248,9 +252,10 @@ MENSUALIDAD — solo si pregunta:
 
 FLUJO DE AGENDAMIENTO:
 1. Responde cualquier pregunta de forma natural.
-2. Cuando haya interés → pide el número: "¿Me das tu número para coordinarte mejor?"
+2. Cuando haya interés → pide el número PRIMERO: "¿Me das tu número para coordinarte mejor?"
 3. Con el número → pregunta cuándo puede venir: "¿Para cuándo te queda fácil acercarte?"
 4. Cuando confirme día → cierra: "Listo, quedas agendado para el [día] — te esperamos." + da la dirección: 2200 N State Rd 7, Hollywood, FL 33021 + agrega [HOT LEAD]
+IMPORTANTE: No puedes confirmar una cita si el cliente no ha dado su número. El número va antes del agendamiento, siempre.
 
 RECHAZOS:
 - Rechazo 1: maneja con calidez, ofrece alternativa.

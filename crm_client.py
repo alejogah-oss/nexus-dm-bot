@@ -179,9 +179,34 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
                   car: dict | None = None) -> dict:
     """
     Full flow: extract data from conversation → send to CRM.
-    car: optional Marketplace listing dict (yr, model, trim, color, vin, down_payment).
-    Called automatically when bot detects HOT LEAD signal.
+    First HOT_LEAD: creates CRM entry. Subsequent: sends WhatsApp update only.
     """
+    import json as _json, os as _os
+    _activity_file = _os.path.join(_os.path.dirname(__file__), "leads_activity.json")
+    try:
+        with open(_activity_file, encoding="utf-8") as f:
+            _activity = _json.load(f)
+    except Exception:
+        _activity = {}
+
+    already_sent = _activity.get(sender_id, {}).get("crm_sent", False)
+
+    if already_sent:
+        # Lead ya está en CRM — solo notifica con info actualizada
+        conv_url = conversation_url(sender_id, platform)
+        from pulse import pulse_notify
+        pulse_notify(
+            event="HOT_LEAD",
+            detail=(
+                f"🔄 ACTUALIZACIÓN DE LEAD\n"
+                f"Canal: {platform.upper()}\n"
+                f"Nueva actividad del cliente ya registrado.\n"
+                f"Chat: {conv_url}"
+            )
+        )
+        print(f"  📋 CRM — Lead ya existe, solo notificación enviada.")
+        return {"ok": True, "skipped": True}
+
     print(f"\n  📋 NEXUS → CRM: extrayendo datos del lead...")
     # 1. Fetch public profile from Meta (name, pic) — fast, no AI needed
     profile = fetch_user_profile(sender_id, platform)
@@ -238,4 +263,15 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
             f"\nApproach: {buyer.get('approach', '—')}"
         )
 
-    return send_to_crm(lead_data, crm_note)
+    result = send_to_crm(lead_data, crm_note)
+
+    # Mark as sent so future HOT_LEAD signals don't create duplicate CRM entries
+    if result.get("success") or result.get("ok"):
+        try:
+            _activity[sender_id] = {**_activity.get(sender_id, {}), "crm_sent": True}
+            with open(_activity_file, "w", encoding="utf-8") as f:
+                _json.dump(_activity, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"  ⚠️  CRM — No se pudo marcar crm_sent: {e}")
+
+    return result
