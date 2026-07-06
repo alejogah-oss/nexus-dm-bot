@@ -430,8 +430,17 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
         await page.wait_for_timeout(3000)
         print(f"[BOT] URL: {page.url[:80]}", flush=True)
         if "login" in page.url:
-            print("[BOT] Redirigido a login en marketplace — sesión inválida", flush=True)
-            return
+            print("[BOT] Sesión inválida en marketplace — intentando re-login...", flush=True)
+            ok = await _fb_login(page)
+            if not ok:
+                print("[BOT] Login fallido — saltando ciclo", flush=True)
+                return
+            await page.goto("https://www.messenger.com/marketplace/", wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)
+            print(f"[BOT] Post-login URL: {page.url[:80]}", flush=True)
+            if "login" in page.url:
+                print("[BOT] Sigue sin sesión válida — saltando", flush=True)
+                return
     except Exception as e:
         print(f"[BOT] Error cargando inbox: {e}", flush=True)
         return
