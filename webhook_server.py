@@ -581,7 +581,7 @@ def _start_marketplace_bot():
         try:
             import marketplace_inbox_bot
             asyncio.run(marketplace_inbox_bot.run())
-        except Exception as e:
+        except BaseException as e:
             _mib_error = traceback.format_exc()
             print(f"[MARKETPLACE BOT] Error fatal: {e}\n{_mib_error}")
 
