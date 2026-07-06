@@ -601,6 +601,22 @@ def marketplace_status():
     })
 
 
+@app.get("/marketplace/logs")
+def marketplace_logs():
+    """Retorna los últimos logs del proceso marketplace_inbox_bot."""
+    if _mib_proc is None:
+        return jsonify({"logs": "Proceso no iniciado"}), 200
+    try:
+        out = _mib_proc.stdout.read(4096) if _mib_proc.stdout else b""
+        return jsonify({
+            "pid": _mib_proc.pid,
+            "returncode": _mib_proc.poll(),
+            "logs": out.decode("utf-8", errors="replace"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.get("/marketplace/test-chromium")
 def test_chromium():
     """Prueba si Chromium puede lanzarse en este entorno."""
