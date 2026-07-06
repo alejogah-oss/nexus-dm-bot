@@ -318,24 +318,38 @@ async def _fb_login(page: Page) -> bool:
         print("[BOT] ⚠️  FB_PASSWORD no configurado — no se puede re-autenticar", flush=True)
         return False
 
-    print("[BOT] Iniciando sesión en Facebook...", flush=True)
+    print("[BOT] Iniciando sesión en Facebook (móvil)...", flush=True)
     try:
-        await page.goto("https://www.facebook.com/login", wait_until="domcontentloaded", timeout=20000)
-        await page.wait_for_timeout(2000)
+        # Usar versión móvil — más ligera, carga más rápido desde datacenter
+        await page.goto("https://m.facebook.com/login/", wait_until="domcontentloaded", timeout=45000)
+        print(f"[BOT] Login page url={page.url[:80]}", flush=True)
+        await page.wait_for_timeout(3000)
+
+        # Esperar que aparezca el campo email
+        try:
+            await page.wait_for_selector('[name="email"], #email, input[type="email"]', timeout=15000)
+        except Exception:
+            print(f"[BOT] No se encontró campo email — url={page.url[:80]}", flush=True)
+            return False
+
         await page.fill('[name="email"]', email)
+        await page.wait_for_timeout(500)
         await page.fill('[name="pass"]', password)
-        await page.click('[name="login"]')
-        await page.wait_for_timeout(6000)
+        await page.wait_for_timeout(500)
+        await page.keyboard.press("Enter")
+        await page.wait_for_timeout(8000)
         final_url = page.url
         print(f"[BOT] Post-login url={final_url[:80]}", flush=True)
 
-        if "checkpoint" in final_url or "two_step" in final_url or "login" in final_url:
-            print("[BOT] ⚠️  Login bloqueado / 2FA requerido — url=" + final_url[:80], flush=True)
+        if "checkpoint" in final_url or "two_step" in final_url:
+            print("[BOT] ⚠️  2FA / checkpoint requerido — " + final_url[:80], flush=True)
+            return False
+        if "login" in final_url:
+            print("[BOT] ⚠️  Login rechazado (contraseña incorrecta o bloqueo)", flush=True)
             return False
 
         print("[BOT] ✅ Login Facebook exitoso", flush=True)
-        # Navegar a messenger.com para que las cookies queden activas
-        await page.goto("https://www.messenger.com/", wait_until="domcontentloaded", timeout=20000)
+        await page.goto("https://www.messenger.com/", wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(3000)
         logged_in = "login" not in page.url
         if logged_in:
