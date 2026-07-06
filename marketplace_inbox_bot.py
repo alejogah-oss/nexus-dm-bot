@@ -532,45 +532,11 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
 LAUNCH_ARGS = [
     "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
     "--disable-blink-features=AutomationControlled",
-    "--disable-extensions", "--disable-plugins", "--disable-translate",
-    "--disable-background-networking", "--disable-sync",
-    "--disable-default-apps", "--no-first-run", "--no-default-browser-check",
-    "--no-zygote",
-    "--js-flags=--max-old-space-size=128",
+    "--disable-extensions", "--disable-plugins",
+    "--no-first-run", "--no-default-browser-check",
 ]
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-
-async def _run_one_cycle(state: dict):
-    """Lanza Chromium, hace un ciclo de inbox, cierra Chromium. Libera memoria entre ciclos."""
-    print("[MIB] launching playwright for cycle...", flush=True)
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=LAUNCH_ARGS)
-        print(f"[MIB] chromium up version={browser.version}", flush=True)
-        ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
-
-        # Cargar cookies guardadas (preferir archivo de sesión Render sobre env var)
-        if COOKIES_FILE.exists():
-            cookies = json.loads(COOKIES_FILE.read_text())
-        else:
-            raw_b64 = os.getenv("FB_COOKIES_B64", "")
-            cookies = json.loads(base64.b64decode(raw_b64).decode()) if raw_b64 else []
-        if cookies:
-            await ctx.add_cookies(cookies)
-
-        page = await ctx.new_page()
-        try:
-            await check_inbox(page, state, quick=False)
-            _save_state(state)
-        except Exception as e:
-            print(f"[BOT] Error en ciclo: {e}", flush=True)
-        finally:
-            try:
-                await browser.close()
-                print("[MIB] chromium cerrado — memoria liberada", flush=True)
-            except Exception:
-                pass
 
 
 async def run():
@@ -581,20 +547,46 @@ async def run():
     print("=" * 50)
     print("  NEXUS — Marketplace Inbox Bot")
     print(f"  Cuenta: tucarroconalejo@gmail.com")
-    print(f"  Ciclos: cada {POLL_SEC}s, Chromium abre/cierra por ciclo")
+    print(f"  Ciclos: cada {POLL_SEC}s, browser cierra/abre por ciclo")
     print("=" * 50)
 
-    cycle = 0
-    while True:
-        cycle += 1
-        print(f"\n[MIB] === CICLO {cycle} === {time.strftime('%H:%M:%S')}", flush=True)
-        try:
-            await _run_one_cycle(state)
-        except BaseException as e:
-            print(f"[MIB] Ciclo {cycle} falló: {type(e).__name__}: {e}", flush=True)
+    # Mantener el driver Playwright vivo — solo cerrar el browser entre ciclos
+    async with async_playwright() as p:
+        print("[MIB] playwright driver listo", flush=True)
+        cycle = 0
+        while True:
+            cycle += 1
+            print(f"\n[MIB] === CICLO {cycle} === {time.strftime('%H:%M:%S')}", flush=True)
+            browser = None
+            try:
+                browser = await p.chromium.launch(headless=True, args=LAUNCH_ARGS)
+                print(f"[MIB] chromium up v{browser.version}", flush=True)
+                ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
 
-        print(f"[MIB] Durmiendo {POLL_SEC}s (Chromium cerrado)...", flush=True)
-        await asyncio.sleep(POLL_SEC)
+                # Preferir cookies guardadas (login desde Render) sobre env var stale
+                if COOKIES_FILE.exists():
+                    cookies = json.loads(COOKIES_FILE.read_text())
+                else:
+                    raw_b64 = os.getenv("FB_COOKIES_B64", "")
+                    cookies = json.loads(base64.b64decode(raw_b64).decode()) if raw_b64 else []
+                if cookies:
+                    await ctx.add_cookies(cookies)
+
+                page = await ctx.new_page()
+                await check_inbox(page, state, quick=False)
+                _save_state(state)
+            except Exception as e:
+                print(f"[MIB] Ciclo {cycle} error: {e}", flush=True)
+            finally:
+                if browser:
+                    try:
+                        await browser.close()
+                        print("[MIB] chromium cerrado", flush=True)
+                    except Exception:
+                        pass
+
+            print(f"[MIB] Durmiendo {POLL_SEC}s...", flush=True)
+            await asyncio.sleep(POLL_SEC)
 
 
 if __name__ == "__main__":
