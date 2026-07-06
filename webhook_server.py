@@ -560,29 +560,34 @@ def reject_proposal(pid: str):
 
 
 _mib_thread = None
+_mib_error  = None
+
 
 def _start_marketplace_bot():
     """Arranca el Marketplace Inbox Bot en un thread separado (Render/local)."""
-    global _mib_thread
-    import os, threading, asyncio
+    global _mib_thread, _mib_error
+    import os, threading, asyncio, traceback
 
     cookies_b64 = os.getenv("FB_COOKIES_B64", "")
     cookies_file = os.path.join(os.path.dirname(__file__), "browser_session/mp_session.json")
 
     if not cookies_b64 and not os.path.exists(cookies_file):
-        print("[MARKETPLACE BOT] Sin cookies disponibles — bot no iniciado")
+        _mib_error = "Sin cookies (FB_COOKIES_B64 no seteado)"
+        print(f"[MARKETPLACE BOT] {_mib_error}")
         return
 
     def _run_bot():
+        global _mib_error
         try:
             import marketplace_inbox_bot
             asyncio.run(marketplace_inbox_bot.run())
         except Exception as e:
-            print(f"[MARKETPLACE BOT] Error fatal: {e}")
+            _mib_error = traceback.format_exc()
+            print(f"[MARKETPLACE BOT] Error fatal: {e}\n{_mib_error}")
 
     _mib_thread = threading.Thread(target=_run_bot, daemon=True, name="marketplace-inbox-bot")
     _mib_thread.start()
-    print("[MARKETPLACE BOT] ✅ Iniciado en background")
+    print("[MARKETPLACE BOT] ✅ Thread iniciado")
 
 
 @app.get("/marketplace/status")
@@ -595,6 +600,7 @@ def marketplace_status():
         "marketplace_bot": "running" if alive else "stopped",
         "has_cookies": bool(os.getenv("FB_COOKIES_B64")),
         "threads": threads,
+        "last_error": _mib_error,
     })
 
 
