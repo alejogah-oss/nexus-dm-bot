@@ -337,10 +337,28 @@ async def _fb_login(page: Page) -> bool:
         # Navegar a messenger.com para que las cookies queden activas
         await page.goto("https://www.messenger.com/", wait_until="domcontentloaded", timeout=20000)
         await page.wait_for_timeout(3000)
-        return "login" not in page.url
+        logged_in = "login" not in page.url
+        if logged_in:
+            await _save_session_cookies(page)
+        return logged_in
     except Exception as e:
         print(f"[BOT] Error en login: {e}", flush=True)
         return False
+
+
+async def _save_session_cookies(page: Page):
+    """Guarda las cookies activas a mp_session.json para reusar en próximos reinicios."""
+    try:
+        ctx = page.context
+        cookies = await ctx.cookies(["https://www.messenger.com", "https://www.facebook.com"])
+        valid = [c for c in cookies if c.get("value")]
+        COOKIES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        COOKIES_FILE.write_text(json.dumps(valid, indent=2))
+        b64 = base64.b64encode(json.dumps(valid).encode()).decode()
+        print(f"[BOT] ✅ Cookies guardadas ({len(valid)} cookies) en {COOKIES_FILE}", flush=True)
+        print(f"[BOT] FB_COOKIES_B64={b64[:60]}...", flush=True)
+    except Exception as e:
+        print(f"[BOT] Error guardando cookies: {e}", flush=True)
 
 
 async def _ensure_messenger_logged_in(page: Page) -> bool:

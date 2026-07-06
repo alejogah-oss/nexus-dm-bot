@@ -579,11 +579,24 @@ def _start_marketplace_bot():
     script = os.path.join(os.path.dirname(__file__), "marketplace_inbox_bot.py")
     log_path = os.path.join(os.path.dirname(__file__), "marketplace_bot.log")
     try:
-        log_file = open(log_path, "w", buffering=1)
+        # Prefer saved cookie file (written after login from Render IP) over stale env var
+        env = {**os.environ}
+        cookies_file = os.path.join(os.path.dirname(__file__), "browser_session/mp_session.json")
+        if os.path.exists(cookies_file):
+            try:
+                import base64 as _b64
+                with open(cookies_file) as _f:
+                    raw = _f.read().strip()
+                if raw and raw != "[]":
+                    env["FB_COOKIES_B64"] = _b64.b64encode(raw.encode()).decode()
+                    print("[MARKETPLACE BOT] Using cookies from mp_session.json (saved session)")
+            except Exception:
+                pass
+        log_file = open(log_path, "a", buffering=1)  # append to keep history
         _mib_proc = subprocess.Popen(
             [sys.executable, "-u", script],
             stdout=log_file, stderr=log_file,
-            env={**os.environ},
+            env=env,
         )
         print(f"[MARKETPLACE BOT] ✅ Proceso iniciado PID={_mib_proc.pid} log={log_path}")
     except Exception as e:
