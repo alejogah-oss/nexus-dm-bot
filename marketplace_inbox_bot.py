@@ -26,13 +26,14 @@ load_dotenv()
 USER_DATA_DIR  = Path.home() / ".fb_playwright_profile"
 COOKIES_FILE   = Path(__file__).parent / "browser_session/mp_session.json"
 STATE_FILE     = Path(__file__).parent / "marketplace_inbox_state.json"
-# En Render no hay perfil persistente — usamos cookies exportadas
-USE_COOKIES    = not USER_DATA_DIR.exists()
-POLL_SEC       = 60   # intervalo normal
-POLL_ACTIVE    = 10   # intervalo cuando hay conversación activa
-ACTIVE_WINDOW  = 60   # segundos en modo activo tras responder
+# Siempre usar cookies (mp_session.json) — el perfil persistente falla en headless
+USE_COOKIES    = True
+POLL_SEC       = 60    # intervalo normal
+POLL_ACTIVE    = 10    # intervalo cuando hay conversación activa
+ACTIVE_WINDOW  = 300   # segundos en modo activo tras responder (5 min)
 
-_active_until: float = 0.0   # timestamp hasta cuando está en modo activo
+_active_until: float = 0.0              # timestamp hasta cuando está en modo activo
+_active_threads: dict[str, float] = {}  # {thread_id: expires_at}
 MAX_THREADS  = 15        # máximo de threads a revisar por ciclo
 
 # Historial de conversaciones en memoria {thread_id: [messages]}
@@ -90,9 +91,9 @@ async def _extract_messages(page: Page) -> list[dict]:
     """
     messages = []
     try:
-        await page.wait_for_timeout(2000)
-        await _dismiss_pin_modal(page)
         await page.wait_for_timeout(800)
+        await _dismiss_pin_modal(page)
+        await page.wait_for_timeout(400)
 
         els = await page.locator('[aria-label*=" sent "]').all()
 
@@ -177,9 +178,9 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     print(f"  [BOT] Revisando: {sender_name} ({thread_id})")
 
     try:
-        await page.goto(f"https://www.facebook.com/messages/t/{thread_id}",
-                        wait_until="load", timeout=25000)
-        await page.wait_for_timeout(2500)
+        await page.goto(f"https://www.messenger.com/t/{thread_id}",
+                        wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(1200)
     except Exception as e:
         print(f"  [BOT] Error cargando thread: {e}")
         return
@@ -214,13 +215,12 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     history = _conversations.get(thread_id, messages[:-1])
 
-    # Intro en primer contacto (igual que handle_marketplace_message en dm_bot)
+    # Intro en primer contacto
     if not history and car:
         intro = (
             f"¡Hola! Vi que te interesa el {car['yr']} Toyota {car['model']} "
-            f"{car.get('trim', '')} 🙌 "
-            f"Es un carro increíble — ¿cuándo puedes venir a verlo en persona? "
-            f"Estamos en Hollywood Toyota, 2200 N State Rd 7."
+            f"{car.get('trim', '')}. "
+            f"¿Tienes alguna pregunta sobre el carro?"
         ).strip()
         try:
             await _type_and_send(page, intro)
@@ -249,9 +249,10 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     try:
         await _type_and_send(page, reply)
         print(f"  [BOT] ✅ Respondido a {sender_name}")
-        # Activar modo rápido: revisar cada 10s durante 60s
-        global _active_until
+        # Activar modo rápido: revisar este thread cada 10s durante 5 min
+        global _active_until, _active_threads
         _active_until = time.time() + ACTIVE_WINDOW
+        _active_threads[thread_id] = time.time() + ACTIVE_WINDOW
     except Exception as e:
         print(f"  [BOT] Error enviando respuesta: {e}")
         return
@@ -300,84 +301,116 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 # ── Loop principal ────────────────────────────────────────────────────────────
 
 async def _ensure_messenger_logged_in(page: Page):
-    """Verifica login en facebook.com antes de navegar al inbox."""
-    await page.goto("https://www.facebook.com/", wait_until="load", timeout=30000)
+    """Navega a messenger.com y completa el login + cierra modales."""
+    await page.goto("https://www.messenger.com/", wait_until="load", timeout=30000)
     await page.wait_for_timeout(3000)
-    print(f"[BOT] FB URL: {page.url} | Título: {await page.title()}")
 
-    # Si redirigió a login, las cookies no son válidas
-    if "login" in page.url.lower():
-        print("[BOT] ⚠️ Sesión expirada — cookies inválidas desde esta IP")
-        return False
+    # Completar login si aparece "Continue as"
+    btn = page.locator('button:has-text("Continue as")')
+    if await btn.count() > 0:
+        print("[BOT] Completando login en Messenger...")
+        await btn.first.click()
+        await page.wait_for_timeout(5000)
 
-    print("[BOT] ✅ Sesión válida en facebook.com")
+    # Cerrar modal de PIN de cifrado si aparece
+    close_btn = page.locator('[aria-label="Close"]').first
+    if await close_btn.count() > 0:
+        print("[BOT] Cerrando modal de PIN...")
+        await close_btn.click(force=True)
+        await page.wait_for_timeout(1000)
+
+    # Confirmar "Continue without restoring?" si aparece
+    no_restore = page.locator('button:has-text("Don\'t restore messages")')
+    if await no_restore.count() > 0:
+        print("[BOT] Confirmando sin restaurar mensajes...")
+        await no_restore.click()
+        await page.wait_for_timeout(1000)
+
     return True
 
 
-async def check_inbox(page: Page, state: dict):
-    """Escanea el inbox de Marketplace en Messenger y procesa threads nuevos."""
+async def check_inbox(page: Page, state: dict, quick: bool = False):
+    """Escanea el inbox de Marketplace. quick=True solo revisa threads activos."""
+    now = time.time()
+
+    # Modo rápido: solo los threads con conversación activa
+    if quick:
+        active = {tid: exp for tid, exp in _active_threads.items() if exp > now}
+        if not active:
+            return
+        print(f"\n[BOT] Modo activo — revisando {len(active)} thread(s) — {time.strftime('%H:%M:%S')}")
+        for thread_id, _ in active.items():
+            href = f"https://www.messenger.com/marketplace/t/{thread_id}"
+            await process_thread(page, state, href, "")
+        return
+
     print(f"\n[BOT] Revisando inbox Marketplace — {time.strftime('%H:%M:%S')}")
 
     try:
-        logged_in = await _ensure_messenger_logged_in(page)
-        if not logged_in:
-            print("[BOT] ❌ Sin sesión válida — saltando ciclo")
-            return
-        # Navegar al inbox via facebook.com (más estable que messenger.com desde IPs externas)
-        await page.goto("https://www.facebook.com/messages/t/", wait_until="load", timeout=30000)
-        await page.wait_for_timeout(5000)
-        print(f"[BOT] URL actual: {page.url}")
-        print(f"[BOT] Título: {await page.title()}")
+        await _ensure_messenger_logged_in(page)
+        await page.goto("https://www.messenger.com/marketplace/", wait_until="load", timeout=30000)
+        await page.wait_for_timeout(3000)
+        print(f"[BOT] URL: {page.url[:80]}")
     except Exception as e:
         print(f"[BOT] Error cargando inbox: {e}")
         return
 
-    # Recolectar links de threads (facebook.com usa /messages/t/)
     try:
-        links = await page.locator('a[href*="/messages/t/"]').all()
-        print(f"[BOT] Links /messages/t/: {len(links)}")
+        links = await page.locator('a[href*="/marketplace/t/"]').all()
         if not links:
             links = await page.locator('a[href*="/t/"]').all()
-            print(f"[BOT] Links /t/ (fallback): {len(links)}")
     except Exception:
         print("[BOT] No se encontraron threads")
         return
 
-    seen_ids = set()
-    threads  = []
-
+    seen_ids  = set()
+    threads   = []
+    # Recolectar threads con preview de último mensaje para saltar los sin cambios
     for link in links[:MAX_THREADS]:
         try:
             href = await link.get_attribute("href")
             if not href or "/t/" not in href:
                 continue
-
             thread_id = href.split("/t/")[-1].split("/")[0].split("?")[0]
             if thread_id in seen_ids:
                 continue
             seen_ids.add(thread_id)
-
-            # Nombre del remitente
             try:
                 name = (await link.locator('[dir="auto"]').first.inner_text()).strip().split("\n")[0]
             except Exception:
                 name = thread_id
-
-            threads.append((href, name))
+            # Preview del último mensaje visible en el inbox
+            try:
+                preview = (await link.locator('[dir="auto"]').nth(1).inner_text()).strip()
+            except Exception:
+                preview = ""
+            threads.append((href, name, thread_id, preview))
         except Exception:
             continue
 
-    print(f"[BOT] {len(threads)} threads encontrados")
+    # Filtrar: solo abrir threads donde el preview cambió respecto al último hash
+    to_process = []
+    for href, name, thread_id, preview in threads:
+        preview_hash = hash(preview) if preview else None
+        # Si no hay preview o el hash cambió, hay que revisar
+        if not preview or preview_hash != state.get(f"preview_{thread_id}"):
+            to_process.append((href, name, thread_id, preview_hash))
 
-    for href, name in threads:
+    skipped = len(threads) - len(to_process)
+    print(f"[BOT] {len(threads)} threads — {len(to_process)} con cambios, {skipped} sin cambios")
+
+    for href, name, thread_id, preview_hash in to_process:
         await process_thread(page, state, href, name)
-        # Volver al inbox entre threads
-        try:
-            await page.goto("https://www.facebook.com/messages/marketplace/",
-                            wait_until="load", timeout=20000)
-            await page.wait_for_timeout(1500)
-        except Exception:
-            pass
+        # Guardar preview hash para evitar recargar en próximo ciclo
+        if preview_hash:
+            state[f"preview_{thread_id}"] = preview_hash
+        if to_process.index((href, name, thread_id, preview_hash)) < len(to_process) - 1:
+            try:
+                await page.goto("https://www.messenger.com/marketplace/",
+                                wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(600)
+            except Exception:
+                pass
 
     print(f"[BOT] Ciclo completo — próximo en {POLL_SEC}s")
 
@@ -420,8 +453,9 @@ async def run():
         print("=" * 50)
 
         while True:
+            in_active = time.time() < _active_until
             try:
-                await check_inbox(page, state)
+                await check_inbox(page, state, quick=in_active)
                 _save_state(state)
             except Exception as e:
                 print(f"[BOT] Error general: {e}")
@@ -431,10 +465,7 @@ async def run():
                 except Exception:
                     pass
 
-            # Modo activo: 10s si hubo respuesta reciente, 60s si no
             sleep = POLL_ACTIVE if time.time() < _active_until else POLL_SEC
-            if sleep == POLL_ACTIVE:
-                print(f"[BOT] Modo activo — próximo en {sleep}s ({int(_active_until - time.time())}s restantes)")
             await asyncio.sleep(sleep)
 
 

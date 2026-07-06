@@ -559,9 +559,36 @@ def reject_proposal(pid: str):
     ), 200
 
 
+def _start_marketplace_bot():
+    """Arranca el Marketplace Inbox Bot en un thread separado (Render/local)."""
+    import os, threading, asyncio
+
+    cookies_b64 = os.getenv("FB_COOKIES_B64", "")
+    cookies_file = os.path.join(os.path.dirname(__file__), "browser_session/mp_session.json")
+
+    if not cookies_b64 and not os.path.exists(cookies_file):
+        print("[MARKETPLACE BOT] Sin cookies disponibles — bot no iniciado")
+        return
+
+    def _run_bot():
+        try:
+            import marketplace_inbox_bot
+            asyncio.run(marketplace_inbox_bot.run())
+        except Exception as e:
+            print(f"[MARKETPLACE BOT] Error fatal: {e}")
+
+    t = threading.Thread(target=_run_bot, daemon=True, name="marketplace-inbox-bot")
+    t.start()
+    print("[MARKETPLACE BOT] ✅ Iniciado en background")
+
+
+# Arrancar servicios de fondo — corre tanto bajo gunicorn como directo
+_keep_alive()
+_start_marketplace_bot()
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5001))
-    _keep_alive()
     print(f"🤖 NEXUS DM Bot corriendo en puerto {port}")
     print(f"   Webhook URL: https://TU-DOMINIO/webhook")
     print(f"   Verify Token: {VERIFY_TOKEN}")
