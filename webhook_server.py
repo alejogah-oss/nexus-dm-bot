@@ -559,14 +559,14 @@ def reject_proposal(pid: str):
     ), 200
 
 
-_mib_thread = None
+_mib_proc   = None
 _mib_error  = None
 
 
 def _start_marketplace_bot():
-    """Arranca el Marketplace Inbox Bot en un thread separado (Render/local)."""
-    global _mib_thread, _mib_error
-    import os, threading, asyncio, traceback
+    """Arranca el Marketplace Inbox Bot como subprocess independiente."""
+    global _mib_proc, _mib_error
+    import subprocess, sys, os
 
     cookies_b64 = os.getenv("FB_COOKIES_B64", "")
     cookies_file = os.path.join(os.path.dirname(__file__), "browser_session/mp_session.json")
@@ -576,30 +576,27 @@ def _start_marketplace_bot():
         print(f"[MARKETPLACE BOT] {_mib_error}")
         return
 
-    def _run_bot():
-        global _mib_error
-        try:
-            import marketplace_inbox_bot
-            asyncio.run(marketplace_inbox_bot.run())
-        except BaseException as e:
-            _mib_error = traceback.format_exc()
-            print(f"[MARKETPLACE BOT] Error fatal: {e}\n{_mib_error}")
-
-    _mib_thread = threading.Thread(target=_run_bot, daemon=True, name="marketplace-inbox-bot")
-    _mib_thread.start()
-    print("[MARKETPLACE BOT] ✅ Thread iniciado")
+    script = os.path.join(os.path.dirname(__file__), "marketplace_inbox_bot.py")
+    try:
+        _mib_proc = subprocess.Popen(
+            [sys.executable, script],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        print(f"[MARKETPLACE BOT] ✅ Proceso iniciado PID={_mib_proc.pid}")
+    except Exception as e:
+        _mib_error = str(e)
+        print(f"[MARKETPLACE BOT] Error al iniciar: {e}")
 
 
 @app.get("/marketplace/status")
 def marketplace_status():
     """Verifica si el Marketplace Inbox Bot está corriendo."""
     import threading
-    alive = _mib_thread is not None and _mib_thread.is_alive()
-    threads = [t.name for t in threading.enumerate()]
+    alive = _mib_proc is not None and _mib_proc.poll() is None
     return jsonify({
         "marketplace_bot": "running" if alive else "stopped",
+        "pid": _mib_proc.pid if _mib_proc else None,
         "has_cookies": bool(os.getenv("FB_COOKIES_B64")),
-        "threads": threads,
         "last_error": _mib_error,
     })
 
