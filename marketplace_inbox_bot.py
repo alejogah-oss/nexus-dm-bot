@@ -535,7 +535,7 @@ LAUNCH_ARGS = [
     "--disable-extensions", "--disable-plugins", "--disable-translate",
     "--disable-background-networking", "--disable-sync",
     "--disable-default-apps", "--no-first-run", "--no-default-browser-check",
-    "--no-zygote", "--single-process",
+    "--no-zygote",
     "--js-flags=--max-old-space-size=128",
 ]
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
