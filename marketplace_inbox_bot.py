@@ -318,10 +318,13 @@ async def _fb_login(page: Page) -> bool:
         print("[BOT] ⚠️  FB_PASSWORD no configurado — no se puede re-autenticar", flush=True)
         return False
 
-    print("[BOT] Iniciando sesión en Facebook (móvil)...", flush=True)
+    print("[BOT] Limpiando cookies viejas e iniciando sesión...", flush=True)
     try:
-        # Usar versión móvil — más ligera, carga más rápido desde datacenter
-        await page.goto("https://m.facebook.com/login/", wait_until="domcontentloaded", timeout=45000)
+        # Limpiar cookies — las viejas redirigen al home en vez de mostrar el login
+        await page.context.clear_cookies()
+        print("[BOT] Cookies limpiadas", flush=True)
+
+        await page.goto("https://www.facebook.com/login/", wait_until="domcontentloaded", timeout=45000)
         print(f"[BOT] Login page url={page.url[:80]}", flush=True)
         await page.wait_for_timeout(3000)
 
@@ -330,7 +333,14 @@ async def _fb_login(page: Page) -> bool:
             await page.wait_for_selector('[name="email"], #email, input[type="email"]', timeout=15000)
         except Exception:
             print(f"[BOT] No se encontró campo email — url={page.url[:80]}", flush=True)
-            return False
+            # Último intento: versión móvil
+            await page.goto("https://m.facebook.com/login/", wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(3000)
+            try:
+                await page.wait_for_selector('[name="email"], #email', timeout=10000)
+            except Exception:
+                print(f"[BOT] Login form no encontrado en móvil tampoco — url={page.url[:80]}", flush=True)
+                return False
 
         await page.fill('[name="email"]', email)
         await page.wait_for_timeout(500)
@@ -344,7 +354,7 @@ async def _fb_login(page: Page) -> bool:
         if "checkpoint" in final_url or "two_step" in final_url:
             print("[BOT] ⚠️  2FA / checkpoint requerido — " + final_url[:80], flush=True)
             return False
-        if "login" in final_url:
+        if "login" in final_url and "facebook" in final_url:
             print("[BOT] ⚠️  Login rechazado (contraseña incorrecta o bloqueo)", flush=True)
             return False
 
