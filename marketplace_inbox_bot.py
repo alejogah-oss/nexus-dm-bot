@@ -529,72 +529,72 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
     print(f"[BOT] Ciclo completo — próximo en {POLL_SEC}s")
 
 
+LAUNCH_ARGS = [
+    "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+    "--disable-blink-features=AutomationControlled",
+    "--disable-extensions", "--disable-plugins", "--disable-translate",
+    "--disable-background-networking", "--disable-sync",
+    "--disable-default-apps", "--no-first-run", "--no-default-browser-check",
+    "--no-zygote", "--single-process",
+    "--js-flags=--max-old-space-size=128",
+]
+UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+
+async def _run_one_cycle(state: dict):
+    """Lanza Chromium, hace un ciclo de inbox, cierra Chromium. Libera memoria entre ciclos."""
+    print("[MIB] launching playwright for cycle...", flush=True)
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, args=LAUNCH_ARGS)
+        print(f"[MIB] chromium up version={browser.version}", flush=True)
+        ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
+
+        # Cargar cookies guardadas (preferir archivo de sesión Render sobre env var)
+        if COOKIES_FILE.exists():
+            cookies = json.loads(COOKIES_FILE.read_text())
+        else:
+            raw_b64 = os.getenv("FB_COOKIES_B64", "")
+            cookies = json.loads(base64.b64decode(raw_b64).decode()) if raw_b64 else []
+        if cookies:
+            await ctx.add_cookies(cookies)
+
+        page = await ctx.new_page()
+        try:
+            await check_inbox(page, state, quick=False)
+            _save_state(state)
+        except Exception as e:
+            print(f"[BOT] Error en ciclo: {e}", flush=True)
+        finally:
+            try:
+                await browser.close()
+                print("[MIB] chromium cerrado — memoria liberada", flush=True)
+            except Exception:
+                pass
+
+
 async def run():
     print("[MIB] run() entered", flush=True)
     state = _load_state()
     print("[MIB] state loaded", flush=True)
 
-    LAUNCH_ARGS = [
-        "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-extensions", "--disable-plugins", "--disable-translate",
-        "--disable-background-networking", "--disable-sync",
-        "--disable-default-apps", "--no-first-run", "--no-default-browser-check",
-        "--js-flags=--max-old-space-size=256",
-        "--memory-pressure-off",
-    ]
-    UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    print("=" * 50)
+    print("  NEXUS — Marketplace Inbox Bot")
+    print(f"  Cuenta: tucarroconalejo@gmail.com")
+    print(f"  Ciclos: cada {POLL_SEC}s, Chromium abre/cierra por ciclo")
+    print("=" * 50)
 
-    print("[MIB] launching playwright...", flush=True)
-    async with async_playwright() as p:
-        print("[MIB] playwright ctx ok", flush=True)
-        if USE_COOKIES:
-            print("[MIB] launching chromium...", flush=True)
-            # Render / sin perfil local — usa cookies desde env var o archivo
-            browser = await p.chromium.launch(headless=True, args=LAUNCH_ARGS)
-            print(f"[MIB] chromium up version={browser.version}", flush=True)
-            ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
-            print("[MIB] context created", flush=True)
-            raw_b64 = os.getenv("FB_COOKIES_B64", "")
-            if raw_b64:
-                cookies = json.loads(base64.b64decode(raw_b64).decode())
-            else:
-                cookies = json.loads(COOKIES_FILE.read_text())
-            await ctx.add_cookies(cookies)
-        else:
-            # Mac local — perfil persistente completo
-            ctx = await p.chromium.launch_persistent_context(
-                user_data_dir=str(USER_DATA_DIR),
-                headless=True,
-                args=LAUNCH_ARGS,
-                ignore_default_args=["--enable-automation"],
-                user_agent=UA,
-                viewport={"width": 1280, "height": 900},
-            )
-        page = await ctx.new_page()
+    cycle = 0
+    while True:
+        cycle += 1
+        print(f"\n[MIB] === CICLO {cycle} === {time.strftime('%H:%M:%S')}", flush=True)
+        try:
+            await _run_one_cycle(state)
+        except BaseException as e:
+            print(f"[MIB] Ciclo {cycle} falló: {type(e).__name__}: {e}", flush=True)
 
-        print("=" * 50)
-        print("  NEXUS — Marketplace Inbox Bot")
-        print(f"  Cuenta: tucarroconalejo@gmail.com")
-        print(f"  Intervalo: {POLL_SEC}s")
-        print("=" * 50)
-
-        while True:
-            in_active = time.time() < _active_until
-            try:
-                await check_inbox(page, state, quick=in_active)
-                _save_state(state)
-            except Exception as e:
-                print(f"[BOT] Error general: {e}")
-                try:
-                    await page.reload(timeout=15000)
-                    await page.wait_for_timeout(5000)
-                except Exception:
-                    pass
-
-            sleep = POLL_ACTIVE if time.time() < _active_until else POLL_SEC
-            await asyncio.sleep(sleep)
+        print(f"[MIB] Durmiendo {POLL_SEC}s (Chromium cerrado)...", flush=True)
+        await asyncio.sleep(POLL_SEC)
 
 
 if __name__ == "__main__":
