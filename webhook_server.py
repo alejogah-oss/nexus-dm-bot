@@ -598,12 +598,10 @@ def marketplace_status():
     })
 
 
-# Arrancar servicios de fondo — corre tanto bajo gunicorn como directo
-_keep_alive()
-_start_marketplace_bot()
-
-
 if __name__ == "__main__":
+    # En modo directo (no gunicorn) arrancamos los servicios aquí
+    _keep_alive()
+    _start_marketplace_bot()
     port = int(os.getenv("PORT", 5001))
     print(f"🤖 NEXUS DM Bot corriendo en puerto {port}")
     print(f"   Webhook URL: https://TU-DOMINIO/webhook")
