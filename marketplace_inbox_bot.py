@@ -430,8 +430,15 @@ async def run():
     state = _load_state()
     print("[MIB] state loaded", flush=True)
 
-    LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
-                   "--disable-blink-features=AutomationControlled"]
+    LAUNCH_ARGS = [
+        "--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-extensions", "--disable-plugins", "--disable-translate",
+        "--disable-background-networking", "--disable-sync",
+        "--disable-default-apps", "--no-first-run", "--no-default-browser-check",
+        "--js-flags=--max-old-space-size=256",
+        "--memory-pressure-off",
+    ]
     UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
@@ -490,9 +497,10 @@ if __name__ == "__main__":
     print("[MIB] __main__ reached — calling asyncio.run(run())", flush=True)
     try:
         asyncio.run(run())
-    except Exception as e:
+    except BaseException as e:
         import traceback
-        print(f"[MIB] FATAL EXCEPTION: {e}", flush=True)
+        print(f"[MIB] FATAL {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
-        sys.exit(1)
+        code = e.code if isinstance(e, SystemExit) else 1
+        sys.exit(code)
     print("[MIB] asyncio.run() returned — loop exited (unexpected)", flush=True)

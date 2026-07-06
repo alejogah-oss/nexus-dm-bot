@@ -594,11 +594,11 @@ def _start_marketplace_bot():
 @app.get("/marketplace/status")
 def marketplace_status():
     """Verifica si el Marketplace Inbox Bot está corriendo."""
-    import threading
     alive = _mib_proc is not None and _mib_proc.poll() is None
     return jsonify({
         "marketplace_bot": "running" if alive else "stopped",
         "pid": _mib_proc.pid if _mib_proc else None,
+        "returncode": _mib_proc.poll() if _mib_proc else None,
         "has_cookies": bool(os.getenv("FB_COOKIES_B64")),
         "last_error": _mib_error,
     })
@@ -645,9 +645,26 @@ def test_chromium():
         return jsonify({"ok": False, "error": traceback.format_exc()}), 500
 
 
+def _watchdog_marketplace_bot():
+    """Monitorea el subprocess y lo reinicia si muere."""
+    import threading, time
+    def _watch():
+        time.sleep(30)  # wait initial startup
+        while True:
+            if _mib_proc is not None and _mib_proc.poll() is not None:
+                rc = _mib_proc.poll()
+                print(f"[WATCHDOG] Bot exited rc={rc} — restarting in 15s", flush=True)
+                time.sleep(15)
+                _start_marketplace_bot()
+            time.sleep(10)
+    t = threading.Thread(target=_watch, daemon=True, name="mib-watchdog")
+    t.start()
+
+
 # Arrancar servicios de fondo — corre en el worker al importar el módulo
 _keep_alive()
 _start_marketplace_bot()
+_watchdog_marketplace_bot()
 
 
 if __name__ == "__main__":
