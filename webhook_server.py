@@ -624,6 +624,30 @@ def marketplace_logs():
     })
 
 
+@app.get("/marketplace/memory")
+def marketplace_memory():
+    """Reporta uso de RAM del container (Linux /proc/meminfo)."""
+    try:
+        with open("/proc/meminfo") as f:
+            raw = {line.split(":")[0].strip(): line.split(":")[1].strip()
+                   for line in f if ":" in line}
+        total = int(raw.get("MemTotal", "0 kB").split()[0])
+        avail = int(raw.get("MemAvailable", "0 kB").split()[0])
+        used  = total - avail
+        mib_pid = _mib_proc.pid if _mib_proc else None
+        mib_status = "running" if (_mib_proc and _mib_proc.poll() is None) else "stopped"
+        return jsonify({
+            "total_mb": round(total / 1024),
+            "used_mb": round(used / 1024),
+            "available_mb": round(avail / 1024),
+            "used_pct": round(used / total * 100, 1),
+            "mib_pid": mib_pid,
+            "mib_status": mib_status,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.get("/marketplace/test-chromium")
 def test_chromium():
     """Prueba si Chromium puede lanzarse en este entorno."""
