@@ -559,8 +559,11 @@ def reject_proposal(pid: str):
     ), 200
 
 
+_mib_thread = None
+
 def _start_marketplace_bot():
     """Arranca el Marketplace Inbox Bot en un thread separado (Render/local)."""
+    global _mib_thread
     import os, threading, asyncio
 
     cookies_b64 = os.getenv("FB_COOKIES_B64", "")
@@ -577,9 +580,22 @@ def _start_marketplace_bot():
         except Exception as e:
             print(f"[MARKETPLACE BOT] Error fatal: {e}")
 
-    t = threading.Thread(target=_run_bot, daemon=True, name="marketplace-inbox-bot")
-    t.start()
+    _mib_thread = threading.Thread(target=_run_bot, daemon=True, name="marketplace-inbox-bot")
+    _mib_thread.start()
     print("[MARKETPLACE BOT] ✅ Iniciado en background")
+
+
+@app.get("/marketplace/status")
+def marketplace_status():
+    """Verifica si el Marketplace Inbox Bot está corriendo."""
+    import threading
+    alive = _mib_thread is not None and _mib_thread.is_alive()
+    threads = [t.name for t in threading.enumerate()]
+    return jsonify({
+        "marketplace_bot": "running" if alive else "stopped",
+        "has_cookies": bool(os.getenv("FB_COOKIES_B64")),
+        "threads": threads,
+    })
 
 
 # Arrancar servicios de fondo — corre tanto bajo gunicorn como directo
