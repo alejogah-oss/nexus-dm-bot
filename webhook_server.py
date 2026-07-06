@@ -577,13 +577,15 @@ def _start_marketplace_bot():
         return
 
     script = os.path.join(os.path.dirname(__file__), "marketplace_inbox_bot.py")
+    log_path = os.path.join(os.path.dirname(__file__), "marketplace_bot.log")
     try:
+        log_file = open(log_path, "w", buffering=1)
         _mib_proc = subprocess.Popen(
-            [sys.executable, "-u", script],  # -u = unbuffered stdout
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            env={**os.environ},  # pass full env including FB_COOKIES_B64
+            [sys.executable, "-u", script],
+            stdout=log_file, stderr=log_file,
+            env={**os.environ},
         )
-        print(f"[MARKETPLACE BOT] ✅ Proceso iniciado PID={_mib_proc.pid}")
+        print(f"[MARKETPLACE BOT] ✅ Proceso iniciado PID={_mib_proc.pid} log={log_path}")
     except Exception as e:
         _mib_error = str(e)
         print(f"[MARKETPLACE BOT] Error al iniciar: {e}")
@@ -604,29 +606,20 @@ def marketplace_status():
 
 @app.get("/marketplace/logs")
 def marketplace_logs():
-    """Retorna los últimos logs del proceso marketplace_inbox_bot."""
-    if _mib_proc is None:
-        return jsonify({"logs": "Proceso no iniciado"}), 200
-    import select, os
+    """Retorna los últimos logs del proceso marketplace_inbox_bot (desde archivo)."""
+    log_path = os.path.join(os.path.dirname(__file__), "marketplace_bot.log")
     lines = []
     try:
-        if _mib_proc.stdout:
-            # Non-blocking read — collect up to 50 lines or 2s worth of data
-            while True:
-                r, _, _ = select.select([_mib_proc.stdout], [], [], 0)
-                if not r:
-                    break
-                line = _mib_proc.stdout.readline()
-                if not line:
-                    break
-                lines.append(line.decode("utf-8", errors="replace").rstrip())
-                if len(lines) >= 50:
-                    break
+        if os.path.exists(log_path):
+            with open(log_path, "r", errors="replace") as f:
+                lines = f.read().splitlines()[-100:]
+        else:
+            lines = ["[log file not found yet]"]
     except Exception as e:
-        lines.append(f"[error leyendo logs: {e}]")
+        lines = [f"[error leyendo log: {e}]"]
     return jsonify({
-        "pid": _mib_proc.pid,
-        "returncode": _mib_proc.poll(),
+        "pid": _mib_proc.pid if _mib_proc else None,
+        "returncode": _mib_proc.poll() if _mib_proc else None,
         "logs": lines,
     })
 

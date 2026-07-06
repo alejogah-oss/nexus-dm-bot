@@ -6,20 +6,30 @@ y responde con la misma IA de dm_bot. Corre en loop localmente.
 Uso:
     venv/bin/python3 marketplace_inbox_bot.py
 """
+import sys, os
+print(f"[MIB] STARTED pid={os.getpid()} python={sys.executable}", flush=True)
+
 import asyncio
 import base64
 import json
-import os
 import time
 from pathlib import Path
 
+print("[MIB] stdlib ok", flush=True)
+
 from playwright.async_api import async_playwright, Page
+print("[MIB] playwright imported", flush=True)
+
 from dotenv import load_dotenv
 
 from dm_bot import _claude_create, _marketplace_voice, push_hot_lead, log_event
+print("[MIB] dm_bot imported", flush=True)
 from marketplace_analytics import track_message, track_hot_lead, track_declined
+print("[MIB] marketplace_analytics imported", flush=True)
 from pulse import pulse_notify
+print("[MIB] pulse imported", flush=True)
 from appointments import extract_appointment_from_conversation
+print("[MIB] appointments imported", flush=True)
 
 load_dotenv()
 
@@ -416,18 +426,25 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
 
 
 async def run():
+    print("[MIB] run() entered", flush=True)
     state = _load_state()
+    print("[MIB] state loaded", flush=True)
 
     LAUNCH_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
                    "--disable-blink-features=AutomationControlled"]
     UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
+    print("[MIB] launching playwright...", flush=True)
     async with async_playwright() as p:
+        print("[MIB] playwright ctx ok", flush=True)
         if USE_COOKIES:
+            print("[MIB] launching chromium...", flush=True)
             # Render / sin perfil local — usa cookies desde env var o archivo
             browser = await p.chromium.launch(headless=True, args=LAUNCH_ARGS)
+            print(f"[MIB] chromium up version={browser.version}", flush=True)
             ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
+            print("[MIB] context created", flush=True)
             raw_b64 = os.getenv("FB_COOKIES_B64", "")
             if raw_b64:
                 cookies = json.loads(base64.b64decode(raw_b64).decode())
@@ -470,4 +487,12 @@ async def run():
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    print("[MIB] __main__ reached — calling asyncio.run(run())", flush=True)
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        import traceback
+        print(f"[MIB] FATAL EXCEPTION: {e}", flush=True)
+        traceback.print_exc()
+        sys.exit(1)
+    print("[MIB] asyncio.run() returned — loop exited (unexpected)", flush=True)
