@@ -310,31 +310,76 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
 # ── Loop principal ────────────────────────────────────────────────────────────
 
-async def _ensure_messenger_logged_in(page: Page):
-    """Navega a messenger.com y completa el login + cierra modales."""
+async def _fb_login(page: Page) -> bool:
+    """Intenta login con FB_EMAIL + FB_PASSWORD. Retorna True si exitoso."""
+    email = os.getenv("FB_EMAIL", "tucarroconalejo@gmail.com")
+    password = os.getenv("FB_PASSWORD", "")
+    if not password:
+        print("[BOT] ⚠️  FB_PASSWORD no configurado — no se puede re-autenticar", flush=True)
+        return False
+
+    print("[BOT] Iniciando sesión en Facebook...", flush=True)
+    try:
+        await page.goto("https://www.facebook.com/login", wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(2000)
+        await page.fill('[name="email"]', email)
+        await page.fill('[name="pass"]', password)
+        await page.click('[name="login"]')
+        await page.wait_for_timeout(6000)
+        final_url = page.url
+        print(f"[BOT] Post-login url={final_url[:80]}", flush=True)
+
+        if "checkpoint" in final_url or "two_step" in final_url or "login" in final_url:
+            print("[BOT] ⚠️  Login bloqueado / 2FA requerido — url=" + final_url[:80], flush=True)
+            return False
+
+        print("[BOT] ✅ Login Facebook exitoso", flush=True)
+        # Navegar a messenger.com para que las cookies queden activas
+        await page.goto("https://www.messenger.com/", wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(3000)
+        return "login" not in page.url
+    except Exception as e:
+        print(f"[BOT] Error en login: {e}", flush=True)
+        return False
+
+
+async def _ensure_messenger_logged_in(page: Page) -> bool:
+    """Navega a messenger.com. Si la sesión no es válida intenta re-login. Retorna True si OK."""
     print("[BOT] goto messenger.com...", flush=True)
-    await page.goto("https://www.messenger.com/", wait_until="load", timeout=30000)
+    try:
+        await page.goto("https://www.messenger.com/", wait_until="domcontentloaded", timeout=30000)
+    except Exception as e:
+        print(f"[BOT] Timeout/error navigating to messenger.com: {e}", flush=True)
+        return False
     print(f"[BOT] messenger loaded — url={page.url[:80]}", flush=True)
-    await page.wait_for_timeout(3000)
+    await page.wait_for_timeout(2000)
+
+    # Si redirigió al login, intentar re-autenticación
+    if "login" in page.url or "facebook.com" in page.url:
+        print("[BOT] Sesión expirada — intentando re-login...", flush=True)
+        ok = await _fb_login(page)
+        if not ok:
+            return False
+        await page.wait_for_timeout(2000)
 
     # Completar login si aparece "Continue as"
     btn = page.locator('button:has-text("Continue as")')
     if await btn.count() > 0:
-        print("[BOT] Completando login en Messenger...")
+        print("[BOT] Completando login en Messenger...", flush=True)
         await btn.first.click()
         await page.wait_for_timeout(5000)
 
     # Cerrar modal de PIN de cifrado si aparece
     close_btn = page.locator('[aria-label="Close"]').first
     if await close_btn.count() > 0:
-        print("[BOT] Cerrando modal de PIN...")
+        print("[BOT] Cerrando modal de PIN...", flush=True)
         await close_btn.click(force=True)
         await page.wait_for_timeout(1000)
 
     # Confirmar "Continue without restoring?" si aparece
     no_restore = page.locator('button:has-text("Don\'t restore messages")')
     if await no_restore.count() > 0:
-        print("[BOT] Confirmando sin restaurar mensajes...")
+        print("[BOT] Confirmando sin restaurar mensajes...", flush=True)
         await no_restore.click()
         await page.wait_for_timeout(1000)
 
@@ -359,12 +404,18 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
     print(f"\n[BOT] Revisando inbox Marketplace — {time.strftime('%H:%M:%S')}")
 
     try:
-        await _ensure_messenger_logged_in(page)
-        await page.goto("https://www.messenger.com/marketplace/", wait_until="load", timeout=30000)
+        logged_in = await _ensure_messenger_logged_in(page)
+        if not logged_in:
+            print("[BOT] Sesión no válida — saltando ciclo", flush=True)
+            return
+        await page.goto("https://www.messenger.com/marketplace/", wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(3000)
-        print(f"[BOT] URL: {page.url[:80]}")
+        print(f"[BOT] URL: {page.url[:80]}", flush=True)
+        if "login" in page.url:
+            print("[BOT] Redirigido a login en marketplace — sesión inválida", flush=True)
+            return
     except Exception as e:
-        print(f"[BOT] Error cargando inbox: {e}")
+        print(f"[BOT] Error cargando inbox: {e}", flush=True)
         return
 
     try:
