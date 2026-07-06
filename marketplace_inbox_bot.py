@@ -312,7 +312,9 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
 async def _ensure_messenger_logged_in(page: Page):
     """Navega a messenger.com y completa el login + cierra modales."""
+    print("[BOT] goto messenger.com...", flush=True)
     await page.goto("https://www.messenger.com/", wait_until="load", timeout=30000)
+    print(f"[BOT] messenger loaded — url={page.url[:80]}", flush=True)
     await page.wait_for_timeout(3000)
 
     # Completar login si aparece "Continue as"

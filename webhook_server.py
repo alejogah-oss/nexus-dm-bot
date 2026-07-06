@@ -669,6 +669,44 @@ def test_chromium():
         return jsonify({"ok": False, "error": traceback.format_exc()}), 500
 
 
+@app.get("/marketplace/test-navigation")
+def test_navigation():
+    """Prueba navegación a messenger.com con las cookies reales."""
+    import asyncio, traceback, base64, json
+    async def _test():
+        from playwright.async_api import async_playwright
+        ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+                "--disable-extensions", "--disable-plugins",
+                "--disable-background-networking", "--no-first-run"]
+        UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+              "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=ARGS)
+            ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
+            raw_b64 = os.getenv("FB_COOKIES_B64", "")
+            if raw_b64:
+                cookies = json.loads(base64.b64decode(raw_b64).decode())
+                await ctx.add_cookies(cookies)
+                cookie_count = len(cookies)
+            else:
+                cookie_count = 0
+            page = await ctx.new_page()
+            try:
+                await page.goto("https://www.messenger.com/", wait_until="domcontentloaded", timeout=20000)
+                url = page.url
+                title = await page.title()
+            except Exception as e:
+                url = f"ERROR: {e}"
+                title = ""
+            await browser.close()
+            return {"ok": True, "final_url": url, "title": title, "cookie_count": cookie_count}
+    try:
+        result = asyncio.run(_test())
+        return jsonify(result)
+    except BaseException as e:
+        return jsonify({"ok": False, "error": traceback.format_exc()}), 500
+
+
 def _watchdog_marketplace_bot():
     """Monitorea el subprocess y lo reinicia si muere."""
     import threading, time
