@@ -33,9 +33,11 @@ print("[MIB] appointments imported", flush=True)
 
 load_dotenv()
 
-USER_DATA_DIR  = Path.home() / ".fb_playwright_profile"
-COOKIES_FILE   = Path(__file__).parent / "browser_session/mp_session.json"
-STATE_FILE     = Path(__file__).parent / "marketplace_inbox_state.json"
+USER_DATA_DIR    = Path.home() / ".fb_playwright_profile"
+COOKIES_FILE     = Path(__file__).parent / "browser_session/mp_session.json"
+STATE_FILE       = Path(__file__).parent / "marketplace_inbox_state.json"
+TWO_FA_CODE_FILE    = Path(__file__).parent / "browser_session/2fa_code.txt"
+TWO_FA_PENDING_FILE = Path(__file__).parent / "browser_session/2fa_pending.txt"
 # Siempre usar cookies (mp_session.json) — el perfil persistente falla en headless
 USE_COOKIES    = True
 POLL_SEC       = 60    # intervalo normal
@@ -310,6 +312,67 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
 # ── Loop principal ────────────────────────────────────────────────────────────
 
+async def _wait_for_2fa_code(timeout: int = 300) -> str | None:
+    """Espera hasta `timeout` segundos a que se ingrese el código 2FA via endpoint."""
+    TWO_FA_PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)
+    TWO_FA_PENDING_FILE.write_text("waiting")
+    print(
+        "[BOT] ⏳ Ingresa el código 2FA en:\n"
+        "       https://bot.tucarroconalejo.com/marketplace/enter-2fa?code=XXXXXX",
+        flush=True,
+    )
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if TWO_FA_CODE_FILE.exists():
+            code = TWO_FA_CODE_FILE.read_text().strip()
+            TWO_FA_CODE_FILE.unlink(missing_ok=True)
+            if code:
+                print(f"[BOT] Código 2FA recibido: {code}", flush=True)
+                TWO_FA_PENDING_FILE.unlink(missing_ok=True)
+                return code
+        await asyncio.sleep(5)
+    TWO_FA_PENDING_FILE.unlink(missing_ok=True)
+    print("[BOT] ❌ 2FA timeout — saltando ciclo", flush=True)
+    return None
+
+
+async def _submit_2fa_code(page: Page, code: str) -> bool:
+    """Llena el código 2FA en el formulario de Facebook y lo envía."""
+    try:
+        # El campo puede variar; intentar los selectores más comunes
+        await page.wait_for_selector(
+            '#approvals_code, [name="approvals_code"], input[name="code"], input[type="tel"], input[autocomplete="one-time-code"]',
+            timeout=10000,
+        )
+        await page.fill(
+            '#approvals_code, [name="approvals_code"], input[name="code"], input[type="tel"], input[autocomplete="one-time-code"]',
+            code,
+        )
+        await page.wait_for_timeout(500)
+        await page.keyboard.press("Enter")
+        await page.wait_for_timeout(6000)
+        print(f"[BOT] Post-2FA url={page.url[:80]}", flush=True)
+
+        # Facebook puede preguntar "Save this browser?" — guardar para no pedir 2FA de nuevo
+        try:
+            save_btn = page.locator('button[name="submit[Save Browser]"], button:has-text("Save Browser"), button:has-text("Save")')
+            if await save_btn.count() > 0:
+                await save_btn.first.click()
+                await page.wait_for_timeout(4000)
+                print("[BOT] ✅ Browser guardado — futuras sesiones no necesitarán 2FA", flush=True)
+        except Exception:
+            pass
+
+        still_2fa = "two_step" in page.url or "checkpoint" in page.url
+        if still_2fa:
+            print("[BOT] ❌ 2FA code no aceptado", flush=True)
+            return False
+        return True
+    except Exception as e:
+        print(f"[BOT] Error enviando código 2FA: {e}", flush=True)
+        return False
+
+
 async def _fb_login(page: Page) -> bool:
     """Intenta login con FB_EMAIL + FB_PASSWORD. Retorna True si exitoso."""
     email = os.getenv("FB_EMAIL", "tucarroconalejo@gmail.com")
@@ -352,9 +415,16 @@ async def _fb_login(page: Page) -> bool:
         print(f"[BOT] Post-login url={final_url[:80]}", flush=True)
 
         if "checkpoint" in final_url or "two_step" in final_url:
-            print("[BOT] ⚠️  2FA / checkpoint requerido — " + final_url[:80], flush=True)
-            return False
-        if "login" in final_url and "facebook" in final_url:
+            print("[BOT] ⚠️  2FA requerido — esperando código (hasta 5 min)...", flush=True)
+            code = await _wait_for_2fa_code(timeout=300)
+            if not code:
+                return False
+            ok = await _submit_2fa_code(page, code)
+            if not ok:
+                return False
+            # Si llegó aquí, login exitoso con 2FA
+
+        elif "login" in final_url and "facebook" in final_url:
             print("[BOT] ⚠️  Login rechazado (contraseña incorrecta o bloqueo)", flush=True)
             return False
 
@@ -563,6 +633,13 @@ async def run():
                 print(f"[MIB] chromium up v{browser.version}", flush=True)
                 ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
 
+                # Bloquear imágenes/CSS/media — reduce uso de RAM ~150MB
+                async def _block_heavy(route):
+                    if route.request.resource_type in ("image", "stylesheet", "font", "media", "other"):
+                        await route.abort()
+                    else:
+                        await route.continue_()
+
                 # Preferir cookies guardadas (login desde Render) sobre env var stale
                 if COOKIES_FILE.exists():
                     cookies = json.loads(COOKIES_FILE.read_text())
@@ -573,6 +650,7 @@ async def run():
                     await ctx.add_cookies(cookies)
 
                 page = await ctx.new_page()
+                await page.route("**/*", _block_heavy)
                 await check_inbox(page, state, quick=False)
                 _save_state(state)
             except Exception as e:

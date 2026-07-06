@@ -673,6 +673,29 @@ def marketplace_memory():
         return jsonify({"error": str(e)}), 500
 
 
+@app.get("/marketplace/enter-2fa")
+@app.post("/marketplace/enter-2fa")
+def marketplace_enter_2fa():
+    """Ingresa el código 2FA de Facebook al bot que está esperando.
+    Uso: GET /marketplace/enter-2fa?code=123456
+    """
+    code = request.args.get("code", "").strip()
+    if not code or not code.replace(" ", "").isdigit() or len(code) < 4:
+        return jsonify({"error": "Código inválido — usa ?code=123456"}), 400
+    two_fa_file = os.path.join(os.path.dirname(__file__), "browser_session/2fa_code.txt")
+    os.makedirs(os.path.dirname(two_fa_file), exist_ok=True)
+    with open(two_fa_file, "w") as f:
+        f.write(code.replace(" ", ""))
+    return jsonify({"ok": True, "code": code, "message": "Código recibido — el bot lo procesará en segundos"})
+
+
+@app.get("/marketplace/2fa-status")
+def marketplace_2fa_status():
+    """Verifica si el bot está esperando un código 2FA."""
+    pending_file = os.path.join(os.path.dirname(__file__), "browser_session/2fa_pending.txt")
+    return jsonify({"pending": os.path.exists(pending_file)})
+
+
 @app.get("/marketplace/test-chromium")
 def test_chromium():
     """Prueba si Chromium puede lanzarse en este entorno."""
