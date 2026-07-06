@@ -579,8 +579,9 @@ def _start_marketplace_bot():
     script = os.path.join(os.path.dirname(__file__), "marketplace_inbox_bot.py")
     try:
         _mib_proc = subprocess.Popen(
-            [sys.executable, script],
+            [sys.executable, "-u", script],  # -u = unbuffered stdout
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            env={**os.environ},  # pass full env including FB_COOKIES_B64
         )
         print(f"[MARKETPLACE BOT] ✅ Proceso iniciado PID={_mib_proc.pid}")
     except Exception as e:
