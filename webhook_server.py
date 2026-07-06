@@ -606,15 +606,28 @@ def marketplace_logs():
     """Retorna los últimos logs del proceso marketplace_inbox_bot."""
     if _mib_proc is None:
         return jsonify({"logs": "Proceso no iniciado"}), 200
+    import select, os
+    lines = []
     try:
-        out = _mib_proc.stdout.read(4096) if _mib_proc.stdout else b""
-        return jsonify({
-            "pid": _mib_proc.pid,
-            "returncode": _mib_proc.poll(),
-            "logs": out.decode("utf-8", errors="replace"),
-        })
+        if _mib_proc.stdout:
+            # Non-blocking read — collect up to 50 lines or 2s worth of data
+            while True:
+                r, _, _ = select.select([_mib_proc.stdout], [], [], 0)
+                if not r:
+                    break
+                line = _mib_proc.stdout.readline()
+                if not line:
+                    break
+                lines.append(line.decode("utf-8", errors="replace").rstrip())
+                if len(lines) >= 50:
+                    break
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        lines.append(f"[error leyendo logs: {e}]")
+    return jsonify({
+        "pid": _mib_proc.pid,
+        "returncode": _mib_proc.poll(),
+        "logs": lines,
+    })
 
 
 @app.get("/marketplace/test-chromium")
