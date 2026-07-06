@@ -604,6 +604,27 @@ def marketplace_status():
     })
 
 
+@app.get("/marketplace/test-chromium")
+def test_chromium():
+    """Prueba si Chromium puede lanzarse en este entorno."""
+    import asyncio, traceback
+    async def _test():
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+            )
+            version = browser.version
+            await browser.close()
+            return {"ok": True, "chromium_version": version}
+    try:
+        result = asyncio.run(_test())
+        return jsonify(result)
+    except BaseException as e:
+        return jsonify({"ok": False, "error": traceback.format_exc()}), 500
+
+
 # Arrancar servicios de fondo — corre en el worker al importar el módulo
 _keep_alive()
 _start_marketplace_bot()
