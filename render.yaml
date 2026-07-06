@@ -3,7 +3,7 @@ services:
     name: nexus-tucarroconalejo-bot
     env: python
     buildCommand: pip install -r webhook_requirements.txt && playwright install chromium --with-deps
-    startCommand: gunicorn --config gunicorn.conf.py webhook_server:app
+    startCommand: playwright install chromium && gunicorn --config gunicorn.conf.py webhook_server:app
     envVars:
       # Meta
       - key: ANTHROPIC_API_KEY
