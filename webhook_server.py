@@ -689,6 +689,16 @@ def marketplace_enter_2fa():
     return jsonify({"ok": True, "code": code, "message": "Código recibido — el bot lo procesará en segundos"})
 
 
+@app.get("/marketplace/screenshot")
+def marketplace_screenshot():
+    """Sirve el último screenshot de la página 2FA del bot."""
+    shot_path = os.path.join(os.path.dirname(__file__), "browser_session/2fa_screenshot.png")
+    if not os.path.exists(shot_path):
+        return "No hay screenshot disponible aún — espera que el bot llegue a la pantalla 2FA", 404
+    return app.send_static_file.__func__(app, shot_path) if False else \
+        __import__("flask").send_file(shot_path, mimetype="image/png")
+
+
 @app.get("/marketplace/2fa-status")
 def marketplace_2fa_status():
     """Verifica si el bot está esperando un código 2FA."""

@@ -349,6 +349,15 @@ async def _trigger_2fa_sms(page: Page):
         pass
     await page.wait_for_timeout(2000)
 
+    # Screenshot de la página 2FA para diagnóstico visual
+    try:
+        shot_path = Path(__file__).parent / "browser_session/2fa_screenshot.png"
+        shot_path.parent.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(shot_path), full_page=True)
+        print(f"[BOT] 2FA screenshot guardado — ver en /marketplace/screenshot", flush=True)
+    except Exception as e:
+        print(f"[BOT] 2FA screenshot error: {e}", flush=True)
+
     # Dump de diagnóstico vía JS (sin checks de visibilidad)
     try:
         pg_title = await page.title()
