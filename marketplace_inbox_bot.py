@@ -336,48 +336,86 @@ async def _wait_for_2fa_code(timeout: int = 300) -> str | None:
     return None
 
 
-async def _submit_2fa_code(page: Page, code: str) -> bool:
-    """Llena el código 2FA en el formulario de Facebook y lo envía."""
-    try:
-        await page.wait_for_timeout(3000)
+async def _trigger_2fa_sms(page: Page):
+    """
+    Navega las pantallas intermedias del 2FA de Facebook para llegar al campo de código.
+    Selecciona el teléfono terminado en 71 y dispara el envío del SMS.
+    Se llama ANTES de esperar el código del usuario.
+    """
+    await page.wait_for_timeout(2000)
 
-        # Dump de diagnóstico — qué está mostrando Facebook ahora
+    # Dump de diagnóstico — qué está mostrando Facebook en la página de 2FA
+    try:
+        pg_title = await page.title()
+        pg_text  = (await page.inner_text("body"))[:800]
+        print(f"[BOT] 2FA PAGE TITLE: {pg_title}", flush=True)
+        print(f"[BOT] 2FA PAGE TEXT:\n{pg_text}\n---", flush=True)
+    except Exception:
+        pass
+
+    # 1. Si hay pantalla "Aprueba desde la app" → ir a otro método
+    for sel in ['a:has-text("Try Another Way")', 'button:has-text("Try Another Way")',
+                'a:has-text("Try a different method")', 'button:has-text("Try a different method")',
+                'a:has-text("Use a different method")', 'button:has-text("Use a different method")']:
         try:
-            pg_title = await page.title()
-            pg_text  = (await page.inner_text("body"))[:600]
-            print(f"[BOT] 2FA submit page title: {pg_title}", flush=True)
-            print(f"[BOT] 2FA submit page text:\n{pg_text}\n---", flush=True)
+            el = page.locator(sel)
+            if await el.count() > 0:
+                print(f"[BOT] 2FA: clic 'Try Another Way'", flush=True)
+                await el.first.click()
+                await page.wait_for_timeout(2500)
+                break
         except Exception:
             pass
 
-        # Facebook puede mostrar pantalla "Aprueba desde la app" antes del input de código.
-        # Intentar navegar al flujo de código SMS/email.
-        intermediate_btns = [
-            'a:has-text("Try Another Way")',
-            'button:has-text("Try Another Way")',
-            'a:has-text("Try a different method")',
-            'button:has-text("Try a different method")',
-            'a:has-text("Use a different method")',
-            'button:has-text("Use a different method")',
-            'a:has-text("Use SMS")',
-            'button:has-text("Use SMS")',
-            'a:has-text("Text message")',
-            'button:has-text("Text message")',
-            'a:has-text("Enter code")',
-            'button:has-text("Enter code")',
-        ]
-        for selector in intermediate_btns:
+    # 2. Si hay selección de método, elegir SMS/Text
+    for sel in ['a:has-text("Text message")', 'button:has-text("Text message")',
+                'div[role="radio"]:has-text("Text")', 'label:has-text("Text message")',
+                'a:has-text("SMS")', 'button:has-text("SMS")']:
+        try:
+            el = page.locator(sel)
+            if await el.count() > 0:
+                print(f"[BOT] 2FA: seleccionando SMS/Text", flush=True)
+                await el.first.click()
+                await page.wait_for_timeout(1500)
+                break
+        except Exception:
+            pass
+
+    # 3. Si hay selección de teléfono, elegir el que termina en 71
+    try:
+        # Buscar cualquier elemento cliqueable que contenga "71" (parte del número)
+        candidates = await page.locator('button, div[role="button"], label, li').all()
+        for el in candidates:
             try:
-                btn = page.locator(selector)
-                if await btn.count() > 0:
-                    print(f"[BOT] Navegando a código: clic en '{selector}'", flush=True)
-                    await btn.first.click()
-                    await page.wait_for_timeout(2500)
+                txt = (await el.inner_text()).strip()
+                if "71" in txt and len(txt) < 60:
+                    print(f"[BOT] 2FA: seleccionando teléfono terminado en 71: '{txt[:50]}'", flush=True)
+                    await el.click()
+                    await page.wait_for_timeout(1500)
                     break
             except Exception:
                 pass
+    except Exception:
+        pass
 
-        # Selectores del campo de código (varias versiones de Facebook)
+    # 4. Confirmar / enviar código (Continue / Send code)
+    for sel in ['button:has-text("Continue")', 'input[value="Continue"]',
+                'button:has-text("Send code")', 'button:has-text("Send SMS")',
+                'button[type="submit"]']:
+        try:
+            el = page.locator(sel)
+            if await el.count() > 0:
+                print(f"[BOT] 2FA: confirmando envío de código", flush=True)
+                await el.first.click()
+                await page.wait_for_timeout(2000)
+                break
+        except Exception:
+            pass
+
+
+async def _submit_2fa_code(page: Page, code: str) -> bool:
+    """Rellena el campo de código 2FA y lo envía. _trigger_2fa_sms ya navegó a esta pantalla."""
+    try:
         CODE_SELECTOR = (
             '#approvals_code, [name="approvals_code"], input[name="code"], '
             'input[type="tel"], input[autocomplete="one-time-code"], '
@@ -388,10 +426,9 @@ async def _submit_2fa_code(page: Page, code: str) -> bool:
         try:
             await page.wait_for_selector(CODE_SELECTOR, timeout=15000)
         except Exception:
-            # Segundo dump si aún no aparece el input
             try:
-                pg_text2 = (await page.inner_text("body"))[:600]
-                print(f"[BOT] 2FA — input no encontrado. Página:\n{pg_text2}\n---", flush=True)
+                pg_text = (await page.inner_text("body"))[:600]
+                print(f"[BOT] 2FA — input no encontrado. Página:\n{pg_text}\n---", flush=True)
             except Exception:
                 pass
             print("[BOT] ❌ No se encontró campo de código 2FA", flush=True)
@@ -486,6 +523,8 @@ async def _fb_login(page: Page) -> bool:
                 print(f"[BOT] 2FA PAGE TEXT:\n{page_text}\n---", flush=True)
             except Exception as _diag_e:
                 print(f"[BOT] 2FA diag error: {_diag_e}", flush=True)
+            # Navegar pantallas intermedias Y disparar SMS al teléfono terminado en 71
+            await _trigger_2fa_sms(page)
             print("[BOT] ⚠️  2FA requerido — esperando código (hasta 5 min)...", flush=True)
             code = await _wait_for_2fa_code(timeout=300)
             if not code:
