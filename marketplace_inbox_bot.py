@@ -340,82 +340,80 @@ async def _trigger_2fa_sms(page: Page):
     """
     Navega las pantallas intermedias del 2FA de Facebook para llegar al campo de código.
     Selecciona el teléfono terminado en 71 y dispara el envío del SMS.
-    Se llama ANTES de esperar el código del usuario.
+    Usa JS directo para evitar checks de visibilidad de Playwright.
     """
-    # Esperar a que el SPA de Facebook renderice algo en el DOM (no solo domcontentloaded)
+    # Esperar a que la red se estabilice (SPA termina de cargar)
     try:
-        await page.wait_for_selector("button, a, input, form", timeout=12000)
+        await page.wait_for_load_state("networkidle", timeout=15000)
     except Exception:
         pass
     await page.wait_for_timeout(2000)
 
-    # Dump de diagnóstico — qué está mostrando Facebook en la página de 2FA
+    # Dump de diagnóstico vía JS (sin checks de visibilidad)
     try:
         pg_title = await page.title()
-        pg_text  = (await page.inner_text("body"))[:800]
-        print(f"[BOT] 2FA PAGE TITLE: {pg_title}", flush=True)
-        print(f"[BOT] 2FA PAGE TEXT:\n{pg_text}\n---", flush=True)
-    except Exception:
-        pass
+        pg_text  = await page.evaluate("document.body ? document.body.innerText.substring(0, 800) : 'NO BODY'")
+        pg_html  = await page.evaluate("document.body ? document.body.innerHTML.substring(0, 400) : 'NO HTML'")
+        print(f"[BOT] 2FA TITLE: {pg_title}", flush=True)
+        print(f"[BOT] 2FA TEXT: {pg_text}", flush=True)
+        print(f"[BOT] 2FA HTML: {pg_html}", flush=True)
+    except Exception as e:
+        print(f"[BOT] 2FA dump error: {e}", flush=True)
 
-    # 1. Si hay pantalla "Aprueba desde la app" → ir a otro método
-    for sel in ['a:has-text("Try Another Way")', 'button:has-text("Try Another Way")',
-                'a:has-text("Try a different method")', 'button:has-text("Try a different method")',
-                'a:has-text("Use a different method")', 'button:has-text("Use a different method")']:
-        try:
-            el = page.locator(sel)
-            if await el.count() > 0:
-                print(f"[BOT] 2FA: clic 'Try Another Way'", flush=True)
-                await el.first.click()
-                await page.wait_for_timeout(2500)
-                break
-        except Exception:
-            pass
-
-    # 2. Si hay selección de método, elegir SMS/Text
-    for sel in ['a:has-text("Text message")', 'button:has-text("Text message")',
-                'div[role="radio"]:has-text("Text")', 'label:has-text("Text message")',
-                'a:has-text("SMS")', 'button:has-text("SMS")']:
-        try:
-            el = page.locator(sel)
-            if await el.count() > 0:
-                print(f"[BOT] 2FA: seleccionando SMS/Text", flush=True)
-                await el.first.click()
-                await page.wait_for_timeout(1500)
-                break
-        except Exception:
-            pass
-
-    # 3. Si hay selección de teléfono, elegir el que termina en 71
-    try:
-        # Buscar cualquier elemento cliqueable que contenga "71" (parte del número)
-        candidates = await page.locator('button, div[role="button"], label, li').all()
-        for el in candidates:
+    # Función JS para buscar y hacer clic en botón/link que contenga texto
+    async def _js_click_text(texts: list[str]) -> bool:
+        for txt in texts:
             try:
-                txt = (await el.inner_text()).strip()
-                if "71" in txt and len(txt) < 60:
-                    print(f"[BOT] 2FA: seleccionando teléfono terminado en 71: '{txt[:50]}'", flush=True)
-                    await el.click()
-                    await page.wait_for_timeout(1500)
-                    break
+                clicked = await page.evaluate(f"""
+                    (txt) => {{
+                        const els = document.querySelectorAll('a, button, div[role="button"], span[role="button"]');
+                        for (const el of els) {{
+                            if (el.textContent && el.textContent.trim().toLowerCase().includes(txt.toLowerCase())) {{
+                                el.click();
+                                return el.textContent.trim();
+                            }}
+                        }}
+                        return null;
+                    }}
+                """, txt)
+                if clicked:
+                    print(f"[BOT] 2FA JS click: '{clicked[:60]}'", flush=True)
+                    await page.wait_for_timeout(2500)
+                    return True
             except Exception:
                 pass
-    except Exception:
-        pass
+        return False
 
-    # 4. Confirmar / enviar código (Continue / Send code)
-    for sel in ['button:has-text("Continue")', 'input[value="Continue"]',
-                'button:has-text("Send code")', 'button:has-text("Send SMS")',
-                'button[type="submit"]']:
-        try:
-            el = page.locator(sel)
-            if await el.count() > 0:
-                print(f"[BOT] 2FA: confirmando envío de código", flush=True)
-                await el.first.click()
-                await page.wait_for_timeout(2000)
-                break
-        except Exception:
-            pass
+    # 1. Navegar desde pantalla "Aprueba desde la app" a otro método
+    await _js_click_text(["Try Another Way", "Try a different method", "Use a different method",
+                          "Another way", "different method"])
+
+    # 2. Seleccionar SMS/Text si hay selección de método
+    await _js_click_text(["Text message", "SMS", "Text (SMS)"])
+
+    # 3. Seleccionar teléfono terminado en 71
+    try:
+        clicked_phone = await page.evaluate("""
+            () => {
+                const els = document.querySelectorAll('a, button, div[role="button"], label, li, span[role="button"]');
+                for (const el of els) {
+                    const txt = el.textContent ? el.textContent.trim() : '';
+                    if (txt.includes('71') && txt.length < 60) {
+                        el.click();
+                        return txt;
+                    }
+                }
+                return null;
+            }
+        """)
+        if clicked_phone:
+            print(f"[BOT] 2FA: teléfono seleccionado: '{clicked_phone[:50]}'", flush=True)
+            await page.wait_for_timeout(1500)
+    except Exception as e:
+        print(f"[BOT] 2FA phone select error: {e}", flush=True)
+
+    # 4. Confirmar envío (Continue / Send code)
+    await _js_click_text(["Continue", "Send code", "Send SMS", "Next", "Submit"])
 
 
 async def _submit_2fa_code(page: Page, code: str) -> bool:
