@@ -616,12 +616,15 @@ async def _ensure_messenger_logged_in(page: Page) -> bool:
             break
         await page.wait_for_timeout(1000)
 
-    # Cerrar modal de PIN de cifrado si aparece
-    close_btn = page.locator('[aria-label="Close"]').first
-    if await close_btn.count() > 0:
-        print("[BOT] Cerrando modal de PIN...", flush=True)
-        await close_btn.click(force=True)
-        await page.wait_for_timeout(1000)
+    # Cerrar modal de PIN de cifrado si aparece (no_wait_after evita timeout esperando navegación)
+    try:
+        close_btn = page.locator('[aria-label="Close"]').first
+        if await close_btn.count() > 0:
+            print("[BOT] Cerrando modal de PIN...", flush=True)
+            await close_btn.click(force=True, no_wait_after=True)
+            await page.wait_for_timeout(1000)
+    except Exception:
+        pass
 
     # Confirmar "Continue without restoring?" si aparece
     no_restore = page.locator('button:has-text("Don\'t restore messages")')
