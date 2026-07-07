@@ -659,23 +659,11 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
             print("[BOT] Sesión no válida — saltando ciclo", flush=True)
             return
 
-        # Intentar primero messenger.com/marketplace/, si falla probar facebook.com/marketplace/messages/
-        mp_url = None
-        for candidate in [
-            "https://www.messenger.com/marketplace/",
-            "https://www.facebook.com/marketplace/messages/",
-        ]:
-            await page.goto(candidate, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(3000)
-            print(f"[BOT] URL: {page.url[:80]}", flush=True)
-            if "login" not in page.url:
-                mp_url = candidate
-                break
-            print(f"[BOT] {candidate} redirigió a login — probando alternativa...", flush=True)
-
-        if mp_url is None:
-            print("[BOT] Ninguna URL de marketplace cargó — saltando ciclo", flush=True)
-            return
+        # messenger.com/ ya está cargado — las convs de Marketplace aparecen en el inbox principal
+        # No navegar a /marketplace/ (bloqueado desde IPs de datacenter)
+        print(f"[BOT] Escaneando inbox principal de messenger.com — url={page.url[:60]}", flush=True)
+        # Esperar que el SPA renderice la lista de threads en el sidebar
+        await page.wait_for_timeout(4000)
     except Exception as e:
         print(f"[BOT] Error cargando inbox: {e}", flush=True)
         return
@@ -742,9 +730,9 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
             state[f"preview_{thread_id}"] = preview_hash
         if to_process.index((href, name, thread_id, preview_hash)) < len(to_process) - 1:
             try:
-                await page.goto("https://www.messenger.com/marketplace/",
+                await page.goto("https://www.messenger.com/",
                                 wait_until="domcontentloaded", timeout=15000)
-                await page.wait_for_timeout(600)
+                await page.wait_for_timeout(1500)
             except Exception:
                 pass
 
