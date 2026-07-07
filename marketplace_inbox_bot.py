@@ -658,21 +658,24 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
         if not logged_in:
             print("[BOT] Sesión no válida — saltando ciclo", flush=True)
             return
-        await page.goto("https://www.messenger.com/marketplace/", wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(3000)
-        print(f"[BOT] URL: {page.url[:80]}", flush=True)
-        if "login" in page.url:
-            print("[BOT] Sesión inválida en marketplace — intentando re-login...", flush=True)
-            ok = await _fb_login(page)
-            if not ok:
-                print("[BOT] Login fallido — saltando ciclo", flush=True)
-                return
-            await page.goto("https://www.messenger.com/marketplace/", wait_until="domcontentloaded", timeout=30000)
+
+        # Intentar primero messenger.com/marketplace/, si falla probar facebook.com/marketplace/messages/
+        mp_url = None
+        for candidate in [
+            "https://www.messenger.com/marketplace/",
+            "https://www.facebook.com/marketplace/messages/",
+        ]:
+            await page.goto(candidate, wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(3000)
-            print(f"[BOT] Post-login URL: {page.url[:80]}", flush=True)
-            if "login" in page.url:
-                print("[BOT] Sigue sin sesión válida — saltando", flush=True)
-                return
+            print(f"[BOT] URL: {page.url[:80]}", flush=True)
+            if "login" not in page.url:
+                mp_url = candidate
+                break
+            print(f"[BOT] {candidate} redirigió a login — probando alternativa...", flush=True)
+
+        if mp_url is None:
+            print("[BOT] Ninguna URL de marketplace cargó — saltando ciclo", flush=True)
+            return
     except Exception as e:
         print(f"[BOT] Error cargando inbox: {e}", flush=True)
         return
