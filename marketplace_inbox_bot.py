@@ -339,15 +339,65 @@ async def _wait_for_2fa_code(timeout: int = 300) -> str | None:
 async def _submit_2fa_code(page: Page, code: str) -> bool:
     """Llena el código 2FA en el formulario de Facebook y lo envía."""
     try:
-        # El campo puede variar; intentar los selectores más comunes
-        await page.wait_for_selector(
-            '#approvals_code, [name="approvals_code"], input[name="code"], input[type="tel"], input[autocomplete="one-time-code"]',
-            timeout=10000,
+        await page.wait_for_timeout(3000)
+
+        # Dump de diagnóstico — qué está mostrando Facebook ahora
+        try:
+            pg_title = await page.title()
+            pg_text  = (await page.inner_text("body"))[:600]
+            print(f"[BOT] 2FA submit page title: {pg_title}", flush=True)
+            print(f"[BOT] 2FA submit page text:\n{pg_text}\n---", flush=True)
+        except Exception:
+            pass
+
+        # Facebook puede mostrar pantalla "Aprueba desde la app" antes del input de código.
+        # Intentar navegar al flujo de código SMS/email.
+        intermediate_btns = [
+            'a:has-text("Try Another Way")',
+            'button:has-text("Try Another Way")',
+            'a:has-text("Try a different method")',
+            'button:has-text("Try a different method")',
+            'a:has-text("Use a different method")',
+            'button:has-text("Use a different method")',
+            'a:has-text("Use SMS")',
+            'button:has-text("Use SMS")',
+            'a:has-text("Text message")',
+            'button:has-text("Text message")',
+            'a:has-text("Enter code")',
+            'button:has-text("Enter code")',
+        ]
+        for selector in intermediate_btns:
+            try:
+                btn = page.locator(selector)
+                if await btn.count() > 0:
+                    print(f"[BOT] Navegando a código: clic en '{selector}'", flush=True)
+                    await btn.first.click()
+                    await page.wait_for_timeout(2500)
+                    break
+            except Exception:
+                pass
+
+        # Selectores del campo de código (varias versiones de Facebook)
+        CODE_SELECTOR = (
+            '#approvals_code, [name="approvals_code"], input[name="code"], '
+            'input[type="tel"], input[autocomplete="one-time-code"], '
+            'input[aria-label*="code" i], input[placeholder*="code" i], '
+            'input[aria-label*="código" i], input[placeholder*="código" i]'
         )
-        await page.fill(
-            '#approvals_code, [name="approvals_code"], input[name="code"], input[type="tel"], input[autocomplete="one-time-code"]',
-            code,
-        )
+
+        try:
+            await page.wait_for_selector(CODE_SELECTOR, timeout=15000)
+        except Exception:
+            # Segundo dump si aún no aparece el input
+            try:
+                pg_text2 = (await page.inner_text("body"))[:600]
+                print(f"[BOT] 2FA — input no encontrado. Página:\n{pg_text2}\n---", flush=True)
+            except Exception:
+                pass
+            print("[BOT] ❌ No se encontró campo de código 2FA", flush=True)
+            return False
+
+        await page.fill(CODE_SELECTOR, code)
         await page.wait_for_timeout(500)
         await page.keyboard.press("Enter")
         await page.wait_for_timeout(6000)
@@ -355,7 +405,10 @@ async def _submit_2fa_code(page: Page, code: str) -> bool:
 
         # Facebook puede preguntar "Save this browser?" — guardar para no pedir 2FA de nuevo
         try:
-            save_btn = page.locator('button[name="submit[Save Browser]"], button:has-text("Save Browser"), button:has-text("Save")')
+            save_btn = page.locator(
+                'button[name="submit[Save Browser]"], button:has-text("Save Browser"), '
+                'button:has-text("Save"), button:has-text("Remember Browser")'
+            )
             if await save_btn.count() > 0:
                 await save_btn.first.click()
                 await page.wait_for_timeout(4000)
@@ -365,7 +418,7 @@ async def _submit_2fa_code(page: Page, code: str) -> bool:
 
         still_2fa = "two_step" in page.url or "checkpoint" in page.url
         if still_2fa:
-            print("[BOT] ❌ 2FA code no aceptado", flush=True)
+            print("[BOT] ❌ 2FA code no aceptado (sigue en checkpoint)", flush=True)
             return False
         return True
     except Exception as e:
@@ -415,6 +468,24 @@ async def _fb_login(page: Page) -> bool:
         print(f"[BOT] Post-login url={final_url[:80]}", flush=True)
 
         if "checkpoint" in final_url or "two_step" in final_url:
+            # Diagnosticar qué tipo de verificación pide Facebook
+            try:
+                await page.wait_for_timeout(2000)
+                page_title = await page.title()
+                page_text  = (await page.inner_text("body"))[:800]
+                has_code   = await page.locator(
+                    '#approvals_code,[name="approvals_code"],input[name="code"],'
+                    'input[type="tel"],input[autocomplete="one-time-code"]'
+                ).count()
+                has_approve = await page.locator(
+                    'button:has-text("Approve"),button:has-text("It Was Me"),'
+                    'input[value="Approve"],a:has-text("Approve")'
+                ).count()
+                print(f"[BOT] 2FA TITLE: {page_title}", flush=True)
+                print(f"[BOT] 2FA HAS_CODE_INPUT: {has_code}  HAS_APPROVE_BTN: {has_approve}", flush=True)
+                print(f"[BOT] 2FA PAGE TEXT:\n{page_text}\n---", flush=True)
+            except Exception as _diag_e:
+                print(f"[BOT] 2FA diag error: {_diag_e}", flush=True)
             print("[BOT] ⚠️  2FA requerido — esperando código (hasta 5 min)...", flush=True)
             code = await _wait_for_2fa_code(timeout=300)
             if not code:
