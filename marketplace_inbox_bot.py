@@ -791,6 +791,12 @@ async def run():
                 else:
                     raw_b64 = os.getenv("FB_COOKIES_B64", "")
                     cookies = json.loads(base64.b64decode(raw_b64).decode()) if raw_b64 else []
+                # Remover xs/c_user de messenger.com para que aparezca "Continue as"
+                # (ese diálogo establece la sesión completa con acceso a Marketplace)
+                cookies = [c for c in cookies if not (
+                    "messenger.com" in c.get("domain", "") and
+                    c.get("name") in ("xs", "c_user")
+                )]
                 if cookies:
                     await ctx.add_cookies(cookies)
 
