@@ -617,6 +617,25 @@ def marketplace_status():
     })
 
 
+@app.get("/marketplace/restart")
+def marketplace_restart():
+    """Reinicia el Marketplace Inbox Bot manualmente."""
+    alive = _mib_proc is not None and _mib_proc.poll() is None
+    if alive:
+        try:
+            _mib_proc.terminate()
+            import time as _t; _t.sleep(2)
+        except Exception:
+            pass
+    _start_marketplace_bot()
+    alive_after = _mib_proc is not None and _mib_proc.poll() is None
+    return jsonify({
+        "restarted": alive_after,
+        "pid": _mib_proc.pid if _mib_proc else None,
+        "last_error": _mib_error,
+    })
+
+
 @app.get("/marketplace/logs")
 def marketplace_logs():
     """Retorna los últimos logs del proceso marketplace_inbox_bot (desde archivo)."""
