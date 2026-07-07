@@ -586,7 +586,7 @@ async def _ensure_messenger_logged_in(page: Page) -> bool:
         print(f"[BOT] Timeout/error navigating to messenger.com: {e}", flush=True)
         return False
     print(f"[BOT] messenger loaded — url={page.url[:80]}", flush=True)
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(3000)
 
     # Si redirigió al login, intentar re-autenticación
     if "login" in page.url or "facebook.com" in page.url:
@@ -594,14 +594,27 @@ async def _ensure_messenger_logged_in(page: Page) -> bool:
         ok = await _fb_login(page)
         if not ok:
             return False
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(3000)
 
-    # Completar login si aparece "Continue as"
-    btn = page.locator('button:has-text("Continue as")')
-    if await btn.count() > 0:
-        print("[BOT] Completando login en Messenger...", flush=True)
-        await btn.first.click()
-        await page.wait_for_timeout(5000)
+    # Completar login si aparece "Continue as" — esperar hasta 8s para que el SPA renderice
+    for _ in range(8):
+        clicked = await page.evaluate("""
+            () => {
+                const els = document.querySelectorAll('button, div[role="button"]');
+                for (const el of els) {
+                    if (el.textContent && el.textContent.includes('Continue as')) {
+                        el.click();
+                        return el.textContent.trim();
+                    }
+                }
+                return null;
+            }
+        """)
+        if clicked:
+            print(f"[BOT] Messenger: clic 'Continue as' → '{clicked[:40]}'", flush=True)
+            await page.wait_for_timeout(4000)
+            break
+        await page.wait_for_timeout(1000)
 
     # Cerrar modal de PIN de cifrado si aparece
     close_btn = page.locator('[aria-label="Close"]').first
