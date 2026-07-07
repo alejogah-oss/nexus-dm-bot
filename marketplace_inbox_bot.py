@@ -38,8 +38,9 @@ COOKIES_FILE     = Path(__file__).parent / "browser_session/mp_session.json"
 STATE_FILE       = Path(__file__).parent / "marketplace_inbox_state.json"
 TWO_FA_CODE_FILE    = Path(__file__).parent / "browser_session/2fa_code.txt"
 TWO_FA_PENDING_FILE = Path(__file__).parent / "browser_session/2fa_pending.txt"
-# Siempre usar cookies (mp_session.json) — el perfil persistente falla en headless
-USE_COOKIES    = True
+# LOCAL_MODE=1 → usa perfil persistente (~/.fb_playwright_profile) en vez de cookies
+LOCAL_MODE     = os.environ.get("LOCAL_MODE", "0") == "1"
+USE_COOKIES    = not LOCAL_MODE
 POLL_SEC       = 60    # intervalo normal
 POLL_ACTIVE    = 10    # intervalo cuando hay conversación activa
 ACTIVE_WINDOW  = 300   # segundos en modo activo tras responder (5 min)
@@ -654,16 +655,24 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
     print(f"\n[BOT] Revisando inbox Marketplace — {time.strftime('%H:%M:%S')}")
 
     try:
-        logged_in = await _ensure_messenger_logged_in(page)
-        if not logged_in:
-            print("[BOT] Sesión no válida — saltando ciclo", flush=True)
-            return
-
-        # messenger.com/ ya está cargado — las convs de Marketplace aparecen en el inbox principal
-        # No navegar a /marketplace/ (bloqueado desde IPs de datacenter)
-        print(f"[BOT] Escaneando inbox principal de messenger.com — url={page.url[:60]}", flush=True)
-        # Esperar que el SPA renderice la lista de threads en el sidebar
-        await page.wait_for_timeout(4000)
+        if LOCAL_MODE:
+            # Perfil completo — ir directo a marketplace inbox
+            print("[BOT] LOCAL: goto messenger.com/marketplace/...", flush=True)
+            await page.goto("https://www.messenger.com/marketplace/",
+                            wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(4000)
+            print(f"[BOT] LOCAL: url={page.url[:80]}", flush=True)
+            if "login" in page.url:
+                print("[BOT] LOCAL: redirigió a login — sesión expirada", flush=True)
+                return
+        else:
+            logged_in = await _ensure_messenger_logged_in(page)
+            if not logged_in:
+                print("[BOT] Sesión no válida — saltando ciclo", flush=True)
+                return
+            # messenger.com/ ya está cargado (marketplace URL bloqueado en datacenter)
+            print(f"[BOT] Escaneando inbox de messenger.com — url={page.url[:60]}", flush=True)
+            await page.wait_for_timeout(4000)
     except Exception as e:
         print(f"[BOT] Error cargando inbox: {e}", flush=True)
         return
@@ -760,51 +769,72 @@ async def run():
     print(f"  Ciclos: cada {POLL_SEC}s, browser cierra/abre por ciclo")
     print("=" * 50)
 
-    # Mantener el driver Playwright vivo — solo cerrar el browser entre ciclos
     async with async_playwright() as p:
         print("[MIB] playwright driver listo", flush=True)
         cycle = 0
-        while True:
-            cycle += 1
-            print(f"\n[MIB] === CICLO {cycle} === {time.strftime('%H:%M:%S')}", flush=True)
-            browser = None
-            try:
-                browser = await p.chromium.launch(headless=True, args=LAUNCH_ARGS)
-                print(f"[MIB] chromium up v{browser.version}", flush=True)
-                ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
 
-                # Preferir cookies guardadas (login desde Render) sobre env var stale
-                if COOKIES_FILE.exists():
-                    cookies = json.loads(COOKIES_FILE.read_text())
-                else:
-                    raw_b64 = os.getenv("FB_COOKIES_B64", "")
-                    cookies = json.loads(base64.b64decode(raw_b64).decode()) if raw_b64 else []
-                # Remover xs/c_user de messenger.com para que aparezca "Continue as"
-                # (ese diálogo establece la sesión completa con acceso a Marketplace)
-                cookies = [c for c in cookies if not (
-                    "messenger.com" in c.get("domain", "") and
-                    c.get("name") in ("xs", "c_user")
-                )]
-                if cookies:
-                    await ctx.add_cookies(cookies)
+        if LOCAL_MODE:
+            # LOCAL: abrir el perfil UNA vez y mantenerlo vivo entre ciclos
+            # (cerrar y reabrir invalida la sesión de Facebook)
+            local_args = ["--no-sandbox", "--disable-blink-features=AutomationControlled",
+                          "--no-first-run", "--no-default-browser-check"]
+            ctx = await p.chromium.launch_persistent_context(
+                str(USER_DATA_DIR),
+                headless=False,          # headless=False para evitar detección y coincidir con refresh_mp_session.py
+                args=local_args,
+                viewport={"width": 1280, "height": 900},
+            )
+            print(f"[MIB] LOCAL: persistent ctx abierto — perfil={USER_DATA_DIR}", flush=True)
+            page = ctx.pages[0] if ctx.pages else await ctx.new_page()
 
-                page = await ctx.new_page()
-                # El bloqueador se aplica DESPUÉS del login en check_inbox
-                # para que la página 2FA cargue completa (SPA necesita todos los recursos)
-                await check_inbox(page, state, quick=False)
-                _save_state(state)
-            except Exception as e:
-                print(f"[MIB] Ciclo {cycle} error: {e}", flush=True)
-            finally:
-                if browser:
+            while True:
+                cycle += 1
+                print(f"\n[MIB] === CICLO {cycle} === {time.strftime('%H:%M:%S')}", flush=True)
+                try:
+                    await check_inbox(page, state, quick=False)
+                    _save_state(state)
+                except Exception as e:
+                    print(f"[MIB] Ciclo {cycle} error: {e}", flush=True)
+                    # Si la página murió, abrir una nueva en el mismo ctx
                     try:
-                        await browser.close()
-                        print("[MIB] chromium cerrado", flush=True)
+                        page = await ctx.new_page()
                     except Exception:
-                        pass
+                        break
+                print(f"[MIB] Durmiendo {POLL_SEC}s...", flush=True)
+                await asyncio.sleep(POLL_SEC)
+        else:
+            # RENDER: abrir y cerrar browser por ciclo (no tiene perfil persistente)
+            while True:
+                cycle += 1
+                print(f"\n[MIB] === CICLO {cycle} === {time.strftime('%H:%M:%S')}", flush=True)
+                browser = None
+                try:
+                    browser = await p.chromium.launch(headless=True, args=LAUNCH_ARGS)
+                    print(f"[MIB] chromium up v{browser.version}", flush=True)
+                    ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
 
-            print(f"[MIB] Durmiendo {POLL_SEC}s...", flush=True)
-            await asyncio.sleep(POLL_SEC)
+                    if COOKIES_FILE.exists():
+                        cookies = json.loads(COOKIES_FILE.read_text())
+                    else:
+                        raw_b64 = os.getenv("FB_COOKIES_B64", "")
+                        cookies = json.loads(base64.b64decode(raw_b64).decode()) if raw_b64 else []
+                    if cookies:
+                        await ctx.add_cookies(cookies)
+
+                    page = await ctx.new_page()
+                    await check_inbox(page, state, quick=False)
+                    _save_state(state)
+                except Exception as e:
+                    print(f"[MIB] Ciclo {cycle} error: {e}", flush=True)
+                finally:
+                    if browser:
+                        try:
+                            await browser.close()
+                            print("[MIB] chromium cerrado", flush=True)
+                        except Exception:
+                            pass
+                print(f"[MIB] Durmiendo {POLL_SEC}s...", flush=True)
+                await asyncio.sleep(POLL_SEC)
 
 
 if __name__ == "__main__":
