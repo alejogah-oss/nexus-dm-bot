@@ -342,6 +342,11 @@ async def _trigger_2fa_sms(page: Page):
     Selecciona el teléfono terminado en 71 y dispara el envío del SMS.
     Se llama ANTES de esperar el código del usuario.
     """
+    # Esperar a que el SPA de Facebook renderice algo en el DOM (no solo domcontentloaded)
+    try:
+        await page.wait_for_selector("button, a, input, form", timeout=12000)
+    except Exception:
+        pass
     await page.wait_for_timeout(2000)
 
     # Dump de diagnóstico — qué está mostrando Facebook en la página de 2FA
@@ -649,6 +654,17 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
         print(f"[BOT] Error cargando inbox: {e}", flush=True)
         return
 
+    # Sesión válida — activar bloqueador para reducir RAM en el scraping del inbox
+    async def _block_heavy(route):
+        if route.request.resource_type in ("image", "stylesheet", "font", "media", "other"):
+            await route.abort()
+        else:
+            await route.continue_()
+    try:
+        await page.route("**/*", _block_heavy)
+    except Exception:
+        pass
+
     try:
         links = await page.locator('a[href*="/marketplace/t/"]').all()
         if not links:
@@ -743,13 +759,6 @@ async def run():
                 print(f"[MIB] chromium up v{browser.version}", flush=True)
                 ctx = await browser.new_context(user_agent=UA, viewport={"width": 1280, "height": 900})
 
-                # Bloquear imágenes/CSS/media — reduce uso de RAM ~150MB
-                async def _block_heavy(route):
-                    if route.request.resource_type in ("image", "stylesheet", "font", "media", "other"):
-                        await route.abort()
-                    else:
-                        await route.continue_()
-
                 # Preferir cookies guardadas (login desde Render) sobre env var stale
                 if COOKIES_FILE.exists():
                     cookies = json.loads(COOKIES_FILE.read_text())
@@ -760,7 +769,8 @@ async def run():
                     await ctx.add_cookies(cookies)
 
                 page = await ctx.new_page()
-                await page.route("**/*", _block_heavy)
+                # El bloqueador se aplica DESPUÉS del login en check_inbox
+                # para que la página 2FA cargue completa (SPA necesita todos los recursos)
                 await check_inbox(page, state, quick=False)
                 _save_state(state)
             except Exception as e:
