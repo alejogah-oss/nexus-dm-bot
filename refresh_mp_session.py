@@ -5,7 +5,7 @@ Ejecutar en Terminal:
 Abre un browser. Inicia sesión con tucarroconalejo@gmail.com.
 Cuando el script diga "Sesión lista", el bot empieza automáticamente en el mismo browser.
 """
-import asyncio, json, sys, time
+import asyncio, json, random, sys, time
 from pathlib import Path
 from playwright.async_api import async_playwright
 
@@ -72,10 +72,29 @@ async def main():
         state = _load_state()
         cycle = 0
         while True:
+            # Horario humano (8am-10pm): de madrugada Alejo duerme — el bot también.
+            # Los mensajes de la noche se contestan en el catch-up de la mañana.
+            hour = time.localtime().tm_hour
+            h_start, h_end = _mib.ACTIVE_HOURS
+            if not (h_start <= hour < h_end):
+                print(f"[MIB] Fuera de horario ({hour}h) — durmiendo ~20 min", flush=True)
+                await asyncio.sleep(random.uniform(900, 1500))
+                continue
+
             cycle += 1
-            print(f"\n[MIB] === CICLO {cycle} === {time.strftime('%H:%M:%S')}", flush=True)
+            now = time.time()
+            active = {tid: exp for tid, exp in _mib._active_threads.items() if exp > now}
+            quick = bool(active)
+            # Jitter: nunca dos esperas iguales — activo 8-15s, idle 45-90s
+            poll = random.uniform(8, 15) if quick else random.uniform(45, 90)
+
+            if quick:
+                print(f"\n[MIB] === CICLO {cycle} (activo x{len(active)}) === {time.strftime('%H:%M:%S')}", flush=True)
+            else:
+                print(f"\n[MIB] === CICLO {cycle} === {time.strftime('%H:%M:%S')}", flush=True)
+
             try:
-                await check_inbox(page, state, quick=False)
+                await check_inbox(page, state, quick=quick)
                 _save_state(state)
             except Exception as e:
                 print(f"[MIB] Ciclo {cycle} error: {e}", flush=True)
@@ -84,8 +103,8 @@ async def main():
                 except Exception:
                     print("[MIB] No se pudo abrir nueva página — reinicia el script", flush=True)
                     break
-            print(f"[MIB] Durmiendo {POLL_SEC}s...", flush=True)
-            await asyncio.sleep(POLL_SEC)
+            print(f"[MIB] Durmiendo {poll:.0f}s...", flush=True)
+            await asyncio.sleep(poll)
 
 
 asyncio.run(main())

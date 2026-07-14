@@ -6,7 +6,7 @@ y responde con la misma IA de dm_bot. Corre en loop localmente.
 Uso:
     venv/bin/python3 marketplace_inbox_bot.py
 """
-import sys, os
+import sys, os, random
 print(f"[MIB] STARTED pid={os.getpid()} python={sys.executable}", flush=True)
 
 import asyncio
@@ -47,7 +47,77 @@ ACTIVE_WINDOW  = 300   # segundos en modo activo tras responder (5 min)
 
 _active_until: float = 0.0              # timestamp hasta cuando está en modo activo
 _active_threads: dict[str, float] = {}  # {thread_id: expires_at}
-MAX_THREADS  = 15        # máximo de threads a revisar por ciclo
+MAX_THREADS  = 3         # solo los 3 más recientes por ciclo (más humano, menos detección)
+
+ACTIVE_HOURS = (8, 22)   # horario humano: responder solo 8am-10pm
+_last_full_load: float = 0.0  # último goto/reload real del inbox (el sidebar vive por WebSocket)
+
+
+def _jitter(a: float, b: float) -> float:
+    return random.uniform(a, b)
+
+
+async def _human_sleep(a: float, b: float):
+    await asyncio.sleep(random.uniform(a, b))
+
+
+# ── Inventario real (precios) ─────────────────────────────────────────────────
+
+INVENTORY_URL = "https://tucarroconalejo.com/api.php?action=list"
+_inventory_cache: dict = {"ts": 0.0, "vehicles": []}
+
+
+def _get_inventory() -> list:
+    """Inventario real del sitio (con precios). Caché de 10 min."""
+    now = time.time()
+    if now - _inventory_cache["ts"] > 600 or not _inventory_cache["vehicles"]:
+        try:
+            import requests
+            r = requests.get(INVENTORY_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            _inventory_cache["vehicles"] = r.json().get("vehicles", [])
+            _inventory_cache["ts"] = now
+        except Exception as e:
+            print(f"  [BOT] Error cargando inventario: {e}", flush=True)
+    return _inventory_cache["vehicles"]
+
+
+def _norm_model(s: str) -> str:
+    return str(s).lower().replace("-", " ").strip()
+
+
+def _enrich_car(car: dict) -> dict:
+    """Completa price/trim/vin/color desde el inventario real.
+    El header del thread solo da año+modelo — sin esto el prompt calcula con $0."""
+    vehicles = _get_inventory()
+    model_l = _norm_model(car.get("model", ""))
+    yr = car.get("yr")
+    if not vehicles or not model_l:
+        return car
+
+    # Match exacto: el modelo del API está contenido en el texto del header
+    cands = [v for v in vehicles
+             if v.get("yr") == yr and _norm_model(v.get("model", "")) in model_l]
+    if not cands:
+        # Fallback: el header está contenido en el modelo del API
+        cands = [v for v in vehicles
+                 if v.get("yr") == yr and model_l in _norm_model(v.get("model", ""))]
+    if not cands:
+        return car
+
+    # Si el header trae el trim (ej. "Camry XSE"), preferir esos
+    with_trim = [v for v in cands if v.get("trim") and _norm_model(v["trim"]) in model_l]
+    pool = with_trim or cands
+    # Precio más bajo del grupo — el rango arranca "desde"
+    best = min(pool, key=lambda v: v.get("price") or 9e9)
+
+    car["price"] = best.get("price") or 0
+    if not car.get("trim"):
+        car["trim"] = best.get("trim", "")
+    if not car.get("color"):
+        car["color"] = best.get("color", "")
+    if not car.get("vin"):
+        car["vin"] = best.get("vin", "")
+    return car
 
 # Historial de conversaciones en memoria {thread_id: [messages]}
 _conversations: dict[str, list] = {}
@@ -67,15 +137,32 @@ def _save_state(state: dict):
 # ── Helpers de browser ────────────────────────────────────────────────────────
 
 async def _type_and_send(page: Page, text: str):
-    """Escribe un mensaje en el cuadro activo y lo envía."""
+    """Escribe un mensaje en el cuadro de mensaje y lo envía."""
+    await page.wait_for_selector('[contenteditable="true"][role="textbox"]', timeout=20000)
     box = page.locator('[contenteditable="true"][role="textbox"]').first
     await box.click(force=True)
     await page.wait_for_timeout(400)
     await box.press("Control+a")
     await box.press("Delete")
-    await box.type(text, delay=30)
-    await page.wait_for_timeout(400)
-    await page.keyboard.press("Enter")
+    # Tecleo humano: velocidad variable por tecla + pausas de "pensar" tras puntuación
+    for ch in text:
+        await box.type(ch, delay=0)
+        await page.wait_for_timeout(random.randint(40, 120))
+        if ch in ".!?," and random.random() < 0.35:
+            await page.wait_for_timeout(random.randint(400, 1400))
+    await page.wait_for_timeout(random.randint(400, 900))
+    # Enviar clickeando el botón (aria-label="Press enter to send"). El Enter por
+    # teclado NO dispara el envío en esta UI de Messenger — verificado 8 jul 2026.
+    sent = False
+    send_btn = page.locator('[aria-label="Press enter to send"]').last
+    try:
+        if await send_btn.count() > 0:
+            await send_btn.click(timeout=4000)
+            sent = True
+    except Exception:
+        pass
+    if not sent:
+        await box.press("Enter")
     await page.wait_for_timeout(1500)
 
 
@@ -183,6 +270,30 @@ async def _get_car_context(page: Page) -> dict | None:
 
 # ── Procesamiento de thread ───────────────────────────────────────────────────
 
+async def _open_thread(page: Page, thread_id: str) -> bool:
+    """Abre un thread. En LOCAL_MODE clickea la fila del sidebar (transición SPA,
+    como un humano — el sidebar sigue vivo). Fallback a goto si no está visible."""
+    if LOCAL_MODE:
+        try:
+            link = page.locator(f'a[href*="/marketplace/t/{thread_id}"]').first
+            if await link.count() > 0:
+                await link.click(timeout=5000)
+                await page.wait_for_timeout(int(_jitter(1500, 3000)))
+                if thread_id in page.url:
+                    return True
+        except Exception:
+            pass
+    url = (f"https://www.messenger.com/marketplace/t/{thread_id}" if LOCAL_MODE
+           else f"https://www.messenger.com/t/{thread_id}")
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(1200)
+        return True
+    except Exception as e:
+        print(f"  [BOT] Error cargando thread: {e}")
+        return False
+
+
 async def process_thread(page: Page, state: dict, thread_url: str, sender_name: str):
     """Abre un thread, lee mensajes y responde si hay uno nuevo sin responder."""
 
@@ -190,12 +301,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     print(f"  [BOT] Revisando: {sender_name} ({thread_id})")
 
-    try:
-        await page.goto(f"https://www.messenger.com/t/{thread_id}",
-                        wait_until="domcontentloaded", timeout=20000)
-        await page.wait_for_timeout(1200)
-    except Exception as e:
-        print(f"  [BOT] Error cargando thread: {e}")
+    if not await _open_thread(page, thread_id):
         return
 
     messages = await _extract_messages(page)
@@ -216,6 +322,16 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     print(f"  [BOT] Nuevo mensaje de {sender_name}: \"{last_msg[:70]}\"")
 
+    # Humano: leer el mensaje antes de responder — pausa + scroll ocasional
+    if random.random() < 0.35:
+        try:
+            await page.mouse.wheel(0, -random.randint(150, 400))
+            await _human_sleep(0.8, 2.0)
+            await page.mouse.wheel(0, random.randint(150, 400))
+        except Exception:
+            pass
+    await _human_sleep(3, 8)
+
     # Obtener contexto del carro desde el nombre del thread (ej: "Benito · 2026 Toyota rav4 plug-in hybrid")
     car = await _get_car_context(page)
     # Fallback: parsear desde sender_name si header falla
@@ -225,6 +341,20 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         if m:
             car = {"yr": int(m.group(1)), "model": m.group(2).strip(),
                    "trim": "", "color": "", "down_payment": 0, "vin": ""}
+
+    # SEGURIDAD (3er candado): solo responder conversaciones de Marketplace reales
+    # (con carro/listing). Sin contexto de carro no es un listing → no tocar. Junto
+    # con el inbox /marketplace/ y el selector /marketplace/t/ — verificado 8 jul 2026.
+    if not car:
+        print(f"  [BOT] Sin listing de Marketplace — SALTANDO {thread_id}", flush=True)
+        return
+
+    # Completar precio/trim/vin desde el inventario real — el header solo da año+modelo
+    car = _enrich_car(car)
+    if car.get("price"):
+        print(f"  [BOT] Inventario: {car['yr']} {car['model']} {car.get('trim', '')} — ${car['price']:,}", flush=True)
+    else:
+        print(f"  [BOT] ⚠️ Sin precio en inventario para {car['yr']} {car['model']} — el bot NO dará números", flush=True)
 
     history = _conversations.get(thread_id, messages[:-1])
 
@@ -656,14 +786,41 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
 
     try:
         if LOCAL_MODE:
-            # Perfil completo — ir directo a marketplace inbox
-            print("[BOT] LOCAL: goto messenger.com/marketplace/...", flush=True)
-            await page.goto("https://www.messenger.com/marketplace/",
-                            wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(4000)
-            print(f"[BOT] LOCAL: url={page.url[:80]}", flush=True)
+            # Comportamiento humano: el sidebar de Messenger se actualiza SOLO por
+            # WebSocket — como una pestaña abierta. Solo cargar/recargar la página si:
+            # no estamos en marketplace, sesión caída, sidebar vacío, o pasó ~1h
+            # desde la última carga real (un humano también refresca de vez en cuando).
+            global _last_full_load
+            try:
+                sidebar_links = await page.locator('a[href*="/marketplace/t/"]').count()
+            except Exception:
+                sidebar_links = 0
+            need_load = (
+                "messenger.com" not in page.url
+                or "login" in page.url
+                or "marketplace" not in page.url
+                or sidebar_links == 0
+                or (time.time() - _last_full_load) > _jitter(2700, 4500)
+            )
+            if need_load:
+                print("[BOT] LOCAL: goto messenger.com/marketplace/ ...", flush=True)
+                await page.goto("https://www.messenger.com/marketplace/",
+                                wait_until="domcontentloaded", timeout=30000)
+                # Forzar recarga real: Messenger es SPA y re-navegar a la misma URL desde
+                # un thread abierto NO re-renderiza la lista — verificado 8 jul 2026.
+                try:
+                    await page.reload(wait_until="domcontentloaded", timeout=30000)
+                except Exception:
+                    pass
+                try:
+                    await page.wait_for_selector('a[href*="/marketplace/t/"]', timeout=20000)
+                except Exception:
+                    pass
+                await page.wait_for_timeout(3000)
+                _last_full_load = time.time()
+                print(f"[BOT] LOCAL: url={page.url[:80]}", flush=True)
             if "login" in page.url:
-                print("[BOT] LOCAL: redirigió a login — sesión expirada", flush=True)
+                print("[BOT] LOCAL: redirigió a login — sesión expirada, re-loguear", flush=True)
                 return
         else:
             logged_in = await _ensure_messenger_logged_in(page)
@@ -677,23 +834,34 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
         print(f"[BOT] Error cargando inbox: {e}", flush=True)
         return
 
-    # Sesión válida — activar bloqueador para reducir RAM en el scraping del inbox
-    async def _block_heavy(route):
-        if route.request.resource_type in ("image", "stylesheet", "font", "media", "other"):
-            await route.abort()
-        else:
-            await route.continue_()
+    # Bloqueador de recursos SOLO en Render (RAM limitada). En local (Mac) NO se
+    # aplica: bloquear stylesheet/media/"other" impedía que la lista de
+    # conversaciones de messenger.com terminara de renderizar (0 threads) — verificado 8 jul 2026.
+    if not LOCAL_MODE:
+        async def _block_heavy(route):
+            if route.request.resource_type in ("image", "stylesheet", "font", "media", "other"):
+                await route.abort()
+            else:
+                await route.continue_()
+        try:
+            await page.route("**/*", _block_heavy)
+        except Exception:
+            pass
+
+    # La lista de conversaciones (SPA) tarda varios segundos en renderizar;
+    # esperar a que aparezcan los links en vez de un sleep fijo — verificado 8 jul 2026.
     try:
-        await page.route("**/*", _block_heavy)
+        await page.wait_for_selector('a[href*="/t/"]', timeout=15000)
     except Exception:
         pass
+    await page.wait_for_timeout(2500)  # buffer: los links /marketplace/t/ renderizan un poco después
 
+    # SOLO threads de Marketplace. NO caer a /t/ genérico: eso incluye DMs normales,
+    # chats personales, y chocaría con el bot del webhook (doble respuesta) — verificado 8 jul 2026.
     try:
         links = await page.locator('a[href*="/marketplace/t/"]').all()
-        if not links:
-            links = await page.locator('a[href*="/t/"]').all()
     except Exception:
-        print("[BOT] No se encontraron threads")
+        print("[BOT] No se encontraron threads de Marketplace")
         return
 
     seen_ids  = set()
@@ -732,12 +900,20 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
     skipped = len(threads) - len(to_process)
     print(f"[BOT] {len(threads)} threads — {len(to_process)} con cambios, {skipped} sin cambios")
 
-    for href, name, thread_id, preview_hash in to_process:
+    for idx, (href, name, thread_id, preview_hash) in enumerate(to_process):
+        # Humano: viste la notificación pero terminas lo que estabas haciendo.
+        # Conversación activa → rápido (8-25s); mensaje nuevo en frío → 30-120s.
+        is_active = _active_threads.get(thread_id, 0) > time.time()
+        delay = _jitter(8, 25) if is_active else _jitter(30, 120)
+        print(f"  [BOT] Esperando {delay:.0f}s antes de abrir {name[:30]} (humano)...", flush=True)
+        await asyncio.sleep(delay)
+
         await process_thread(page, state, href, name)
         # Guardar preview hash para evitar recargar en próximo ciclo
         if preview_hash:
             state[f"preview_{thread_id}"] = preview_hash
-        if to_process.index((href, name, thread_id, preview_hash)) < len(to_process) - 1:
+        # En LOCAL el sidebar sigue vivo — no hace falta navegar entre threads
+        if not LOCAL_MODE and idx < len(to_process) - 1:
             try:
                 await page.goto("https://www.messenger.com/",
                                 wait_until="domcontentloaded", timeout=15000)
@@ -800,8 +976,9 @@ async def run():
                         page = await ctx.new_page()
                     except Exception:
                         break
-                print(f"[MIB] Durmiendo {POLL_SEC}s...", flush=True)
-                await asyncio.sleep(POLL_SEC)
+                _sleep = random.randint(240, 540)  # intervalo aleatorio 4-9 min: menos detectable
+                print(f"[MIB] Durmiendo {_sleep}s...", flush=True)
+                await asyncio.sleep(_sleep)
         else:
             # RENDER: abrir y cerrar browser por ciclo (no tiene perfil persistente)
             while True:
@@ -833,8 +1010,9 @@ async def run():
                             print("[MIB] chromium cerrado", flush=True)
                         except Exception:
                             pass
-                print(f"[MIB] Durmiendo {POLL_SEC}s...", flush=True)
-                await asyncio.sleep(POLL_SEC)
+                _sleep = random.randint(240, 540)  # intervalo aleatorio 4-9 min: menos detectable
+                print(f"[MIB] Durmiendo {_sleep}s...", flush=True)
+                await asyncio.sleep(_sleep)
 
 
 if __name__ == "__main__":
