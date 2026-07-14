@@ -150,9 +150,8 @@ _CORS_HEADERS = {
 }
 
 WEB_WELCOME = (
-    "¡Hola! Soy el asistente de Alejo 👋 "
-    "Tenemos más de 430 Toyotas disponibles en Hollywood Toyota, Florida. "
-    "¿Qué modelo te interesa?"
+    "¡Hola! 👋 Bienvenido a Toyota Hollywood — tenemos más de 430 Toyotas disponibles. "
+    "Para atenderte mejor, ¿cuál es tu nombre?"
 )
 
 

@@ -224,11 +224,30 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
         lead_data["vehicle_vin"]   = car.get("vin", "")
         lead_data["down_payment"]  = car.get("down_payment", "")
 
-    name  = " ".join(filter(None, [lead_data.get("first_name"), lead_data.get("last_name")])) or "Sin nombre"
-    phone = lead_data.get("phone", "no capturado")
+    name  = " ".join(filter(None, [lead_data.get("first_name"), lead_data.get("last_name")])).strip()
+    phone = (lead_data.get("phone") or "").strip()
     model = lead_data.get("vehicle_model", "no especificado")
     trim  = lead_data.get("vehicle_trim", "")
     conv_url = conversation_url(sender_id, platform)
+
+    # Mínimo para CRM: nombre Y teléfono. Si falta alguno, no se crea el lead
+    # todavía — solo se avisa a Alejo por WhatsApp para que no se pierda la
+    # señal. crm_sent queda False para reintentar en el próximo HOT LEAD.
+    if not name or not phone:
+        missing = [f for f, ok in (("nombre", bool(name)), ("teléfono", bool(phone))) if not ok]
+        print(f"  ⚠️  CRM — Lead incompleto (falta {', '.join(missing)}) — NO se crea en CRM aún")
+        from pulse import pulse_notify
+        pulse_notify(
+            event="HOT_LEAD",
+            detail=(
+                f"🔥 Señal de interés — falta {', '.join(missing)} para registrar en CRM\n"
+                f"Nombre: {name or '—'} | Tel: {phone or '—'}\n"
+                f"Canal: {platform.upper()}\n"
+                f"Chat: {conv_url}"
+            )
+        )
+        return {"ok": True, "skipped": True, "reason": "incomplete_data", "missing": missing}
+
     print(f"  Nombre: {name} | Tel: {phone} | Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}")
     print(f"  Conversación: {conv_url}")
 
