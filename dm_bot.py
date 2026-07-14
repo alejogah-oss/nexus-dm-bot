@@ -227,14 +227,20 @@ def track_activity(sender_id: str, platform: str, message_count: int, is_hot: bo
 def _marketplace_voice(car: dict) -> str:
     """Dynamic system prompt injected with the specific car the buyer messaged from."""
     price = int(car.get("price") or 0)
+    price_hi = int(car.get("price_hi") or 0)
     if price > 0:
-        otd = int(price * 1.07) + 2097
-        precio_info = (
-            f"MSRP: ${price:,}\n"
-            f"OTD ESTIMADO: entre ${otd - 500:,} y ${otd + 2000:,} (incluye taxes 7% + $2,097 de registro y fees)"
-        )
-        regla_precio = "2. Da el rango OTD del vehículo de arriba."
-        mensualidad_alt = f'- Si no quiere: "Sin intereses serían ~${int(otd / 72):,}/mes a 72 meses — la tasa real la sabemos al hacer la solicitud."'
+        otd_base = int(price * 1.07) + 2097
+        if price_hi > price:
+            # Rango real del inventario: trim de entrada → trim más caro en stock
+            precio_info = (
+                f"PRECIO: desde ${price:,} hasta ${price_hi:,} dependiendo de paquetes y trim.\n"
+                f"El precio base (${price:,}) es de la versión de entrada del modelo. Taxes y fees van aparte."
+            )
+            regla_precio = f'2. Da el rango: "Va desde ${price:,} y sube hasta ~${price_hi:,} dependiendo del trim y los paquetes — ¿qué versión estás viendo?" Aclara que taxes y fees van aparte.'
+        else:
+            precio_info = f"PRECIO: ${price:,} (único trim disponible en stock). Taxes y fees van aparte."
+            regla_precio = f'2. Da el precio: "${price:,} más taxes y fees."'
+        mensualidad_alt = f'- Si no quiere: "En la versión base, sin intereses serían ~${int(otd_base / 72):,}/mes a 72 meses — la tasa real la sabemos al hacer la solicitud."'
     else:
         precio_info = "PRECIO: NO DISPONIBLE en el sistema para este vehículo. PROHIBIDO dar cualquier número de precio, OTD o mensualidad."
         regla_precio = '2. NUNCA inventes un número. Di: "Déjame confirmarte el precio exacto — ¿me das tu número y te lo mando en unos minutos?" (aprovecha para pedir el número).'

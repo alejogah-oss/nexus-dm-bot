@@ -104,6 +104,11 @@ def _enrich_car(car: dict) -> dict:
     if not cands:
         return car
 
+    # Quedarse con el modelo MÁS específico: "Corolla Hatchback" no debe
+    # mezclarse con "Corolla" sedán (ambos matchean por contención)
+    best_len = max(len(_norm_model(v.get("model", ""))) for v in cands)
+    cands = [v for v in cands if len(_norm_model(v.get("model", ""))) == best_len]
+
     # Si el header trae el trim (ej. "Camry XSE"), preferir esos
     with_trim = [v for v in cands if v.get("trim") and _norm_model(v["trim"]) in model_l]
     pool = with_trim or cands
@@ -111,6 +116,9 @@ def _enrich_car(car: dict) -> dict:
     best = min(pool, key=lambda v: v.get("price") or 9e9)
 
     car["price"] = best.get("price") or 0
+    # Rango real del modelo en stock: el "hasta" es el trim más caro disponible
+    prices = [v["price"] for v in cands if v.get("price")]
+    car["price_hi"] = max(prices) if prices else 0
     if not car.get("trim"):
         car["trim"] = best.get("trim", "")
     if not car.get("color"):
@@ -885,6 +893,19 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
                 preview = (await link.locator('[dir="auto"]').nth(1).inner_text()).strip()
             except Exception:
                 preview = ""
+
+            # REGLA: no reiniciar conversaciones de más de 1 día — eso es otra
+            # estrategia (re-engagement). El sidebar marca la antigüedad al final
+            # de la fila: m/h = fresco, d/w/y = viejo → saltar.
+            try:
+                row_text = (await link.inner_text()).strip()
+                ages = __import__("re").findall(r"\b(\d+)\s*(m|h|d|w|y)\b", row_text)
+                if ages and ages[-1][1] in ("d", "w", "y"):
+                    print(f"  [BOT] {name[:35]} — {ages[-1][0]}{ages[-1][1]} sin actividad → saltando (>1 día)", flush=True)
+                    continue
+            except Exception:
+                pass  # si no se puede leer la edad, procesar normal
+
             threads.append((href, name, thread_id, preview))
         except Exception:
             continue
