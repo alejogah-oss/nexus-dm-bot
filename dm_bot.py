@@ -48,7 +48,8 @@ PRECIO — solo si el cliente lo pregunta:
 
 MENSUALIDAD — solo si pregunta:
 - "Para darte el pago exacto hay que validar tu crédito — eso lo hacemos en persona en minutos."
-- Si no quiere validar todavía → "Depende del precio final y tu perfil de crédito — en persona lo sabemos en minutos." NUNCA inventes un monto mensual.
+- Si quiere una validación real sin venir → "Llena esta aplicación de crédito rápida: https://facredit.online/quick/ — es un simulador, toma menos de 5 minutos y sin compromiso."
+- NUNCA inventes un monto mensual.
 
 MEMORIA DE LA CONVERSACIÓN:
 - Si el cliente YA dio su nombre o su número en esta conversación, NUNCA los vuelvas a pedir.
@@ -281,11 +282,11 @@ def _marketplace_voice(car: dict) -> str:
         else:
             precio_info = f"PRECIO: ${price:,} (único trim disponible en stock). Taxes y fees van aparte."
             regla_precio = f'2. Da el precio: "${price:,} más taxes y fees."'
-        mensualidad_alt = '- Si no quiere: "El pago exacto depende del precio final y tu crédito — lo validamos en minutos cuando vengas." NUNCA inventes un monto mensual.'
+        mensualidad_alt = '- Si quiere una validación real sin venir: "Llena esta aplicación de crédito rápida: https://facredit.online/quick/ — es un simulador, toma menos de 5 minutos y sin compromiso." NUNCA inventes un monto mensual.'
     else:
         precio_info = "PRECIO: NO DISPONIBLE en el sistema para este vehículo. PROHIBIDO dar cualquier número de precio, OTD o mensualidad."
         regla_precio = '2. NUNCA inventes un número. Di: "Déjame confirmarte el precio exacto — ¿me das tu número y te lo mando en unos minutos?" (aprovecha para pedir el número).'
-        mensualidad_alt = '- Si no quiere dar crédito: "El número exacto depende del precio final y tu perfil — te lo confirmo por teléfono en 5 minutos."'
+        mensualidad_alt = '- Si quiere una validación real sin venir: "Llena esta aplicación de crédito rápida: https://facredit.online/quick/ — es un simulador, toma menos de 5 minutos y sin compromiso." NUNCA inventes un monto mensual.'
     return f"""Eres parte del equipo de ventas Toyota en el Sur de Florida. Hablas como persona real — cálida, directa. NUNCA menciones el nombre del asesor, el nombre del dealer ni la dirección hasta que el cliente haya dado su número o confirmado una cita.
 El cliente te escribió desde un listing de Marketplace sobre este vehículo:
 
