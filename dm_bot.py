@@ -38,17 +38,21 @@ FLUJO GENERAL — para cualquier pregunta:
 
 PRECIO — solo si el cliente lo pregunta:
 1. Primero califica: "¿Lo estás pensando financiar o es cash?"
-2. Da el rango OTD: el precio OTD del vehículo va de [OTD - $500] a [OTD + $2,000] incluyendo taxes y fees.
-   OTD = MSRP × 1.07 + $2,097 (7% Broward + registro + doc fee + dealer fee).
+2. Da el rango REAL del modelo usando SOLO la lista "PRECIOS DEL INVENTARIO" de abajo: "va desde $X y sube hasta $Y dependiendo del trim y los paquetes". Aclara que taxes y fees van aparte.
 3. Pide el número: "¿Me das tu número para coordinarte?"
-4. Agenda la cita.
+- PROHIBIDO mencionar o calcular OTD, precios "out the door" o precios con taxes/fees incluidos. Jamás.
 - NUNCA des precio si el cliente no lo preguntó.
-- NUNCA inventes precio de un modelo que no está en la conversación.
+- NUNCA inventes un número que no esté en la lista. Si el modelo no aparece → "Déjame confirmarte el precio exacto — ¿me das tu número y te lo mando en unos minutos?"
+- Usados/certificados: el precio depende de la unidad específica — no des números, invita a verlos en persona.
 - NUNCA prometas financiamiento garantizado ni inventes tasas.
 
 MENSUALIDAD — solo si pregunta:
 - "Para darte el pago exacto hay que validar tu crédito — eso lo hacemos en persona en minutos."
-- Si no quiere validar todavía → "Sin contar intereses, serían aproximadamente $[OTD ÷ meses] al mes."
+- Si no quiere validar todavía → "Depende del precio final y tu perfil de crédito — en persona lo sabemos en minutos." NUNCA inventes un monto mensual.
+
+MEMORIA DE LA CONVERSACIÓN:
+- Si el cliente YA dio su nombre o su número en esta conversación, NUNCA los vuelvas a pedir.
+- Si ya quedó agendado, no reinicies la venta ni vuelvas a preguntar qué carro busca.
 
 CRÉDITO — solo si pregunta cómo aplicar:
 - "Puedes llenar este formulario rápido: https://facredit.online/quick/ — menos de 5 minutos, sin compromiso."
@@ -78,6 +82,44 @@ INVENTARIO — solo si insiste en ver opciones, comparte UNO:
 """
 
 
+# ── Tabla de precios reales del inventario (caché 10 min) ────────────────────
+
+_price_table_cache = {"ts": 0.0, "text": ""}
+
+
+def _price_table() -> str:
+    """Rangos reales por modelo (nuevos): desde trim de entrada hasta el más caro en stock."""
+    now = time.time()
+    if now - _price_table_cache["ts"] > 600 or not _price_table_cache["text"]:
+        try:
+            r = requests.get("https://tucarroconalejo.com/api.php?action=list",
+                             headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            groups: dict = {}
+            for v in r.json().get("vehicles", []):
+                if v.get("type") != "new" or not v.get("price"):
+                    continue
+                groups.setdefault((v.get("yr"), v.get("model")), []).append(v["price"])
+            lines = []
+            for (yr, model), prices in sorted(groups.items()):
+                lo, hi = min(prices), max(prices)
+                rango = f"desde ${lo:,} hasta ${hi:,}" if hi > lo else f"${lo:,} (único trim)"
+                lines.append(f"- {yr} {model}: {rango}")
+            if lines:
+                _price_table_cache["text"] = "\n".join(lines)
+                _price_table_cache["ts"] = now
+        except Exception as e:
+            print(f"[BOT] Error tabla de precios: {e}")
+    return _price_table_cache["text"]
+
+
+def _voice_with_prices() -> str:
+    """BOT_VOICE + precios reales del inventario inyectados."""
+    table = _price_table()
+    if not table:
+        return BOT_VOICE + "\n\nPRECIOS DEL INVENTARIO: no disponibles ahora — NUNCA des ningún número de precio; pide el número del cliente para confirmárselo."
+    return BOT_VOICE + f"\n\nPRECIOS DEL INVENTARIO (vehículos nuevos — usa SOLO estos números):\n{table}"
+
+
 def _claude_create(model: str, max_tokens: int, system: str, messages: list, retries: int = 3) -> str:
     """Calls Claude API with retry on 529 overload."""
     for attempt in range(retries):
@@ -98,7 +140,7 @@ def _claude_create(model: str, max_tokens: int, system: str, messages: list, ret
 def generate_reply(conversation_history: list, new_message: str) -> tuple[str, bool, bool]:
     """Returns (reply_text, is_hot_lead, credit_form_confirmed)."""
     messages = conversation_history + [{"role": "user", "content": new_message}]
-    reply = _claude_create("claude-sonnet-4-6", 160, BOT_VOICE, messages)
+    reply = _claude_create("claude-sonnet-4-6", 160, _voice_with_prices(), messages)
     is_hot = "[HOT LEAD]" in reply
     credit_form = "[CREDIT_FORM]" in reply
     clean = reply.replace("[HOT LEAD]", "").replace("[CREDIT_FORM]", "").strip()
@@ -229,7 +271,6 @@ def _marketplace_voice(car: dict) -> str:
     price = int(car.get("price") or 0)
     price_hi = int(car.get("price_hi") or 0)
     if price > 0:
-        otd_base = int(price * 1.07) + 2097
         if price_hi > price:
             # Rango real del inventario: trim de entrada → trim más caro en stock
             precio_info = (
@@ -240,7 +281,7 @@ def _marketplace_voice(car: dict) -> str:
         else:
             precio_info = f"PRECIO: ${price:,} (único trim disponible en stock). Taxes y fees van aparte."
             regla_precio = f'2. Da el precio: "${price:,} más taxes y fees."'
-        mensualidad_alt = f'- Si no quiere: "En la versión base, sin intereses serían ~${int(otd_base / 72):,}/mes a 72 meses — la tasa real la sabemos al hacer la solicitud."'
+        mensualidad_alt = '- Si no quiere: "El pago exacto depende del precio final y tu crédito — lo validamos en minutos cuando vengas." NUNCA inventes un monto mensual.'
     else:
         precio_info = "PRECIO: NO DISPONIBLE en el sistema para este vehículo. PROHIBIDO dar cualquier número de precio, OTD o mensualidad."
         regla_precio = '2. NUNCA inventes un número. Di: "Déjame confirmarte el precio exacto — ¿me das tu número y te lo mando en unos minutos?" (aprovecha para pedir el número).'
