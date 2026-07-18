@@ -46,6 +46,26 @@ def test_inventory_saves(tmp_path):
     assert (folder / "listing.json").exists() and (folder / "photos" / "01.jpg").exists() \
         and (folder / "video.mp4").exists() and (folder / "copy.md").exists()
 
+def test_auth_fails_closed_without_env_key():
+    with patch.dict(os.environ):
+        del os.environ["SCANNER_KEY"]
+        r = c.post("/api/scanner/vin", headers=H)
+        r2 = c.post("/api/scanner/vin")  # sin header tampoco pasa (None != None)
+    assert r.status_code == 401 and r2.status_code == 401
+
+def test_listing_title_truncated_100():
+    fake = json.dumps({"title": "X" * 150, "description": "d"})
+    with patch.object(scanner_api, "_claude_create", return_value=fake):
+        r = c.post("/api/scanner/listing", headers=H,
+                   json={"yr": "2021", "make": "Toyota", "model": "Corolla", "trim": "",
+                         "engine": "", "fuel": "", "body": "", "drive": "",
+                         "mileage": 42000, "price": 17500, "notes": ""})
+    assert len(r.json["title"]) == 100
+
+def test_listing_missing_keys_400():
+    r = c.post("/api/scanner/listing", headers=H, json={"yr": "2021"})
+    assert r.status_code == 400 and "faltan campos" in r.json["error"]
+
 def test_vin_missing_photo_400():
     assert c.post("/api/scanner/vin", headers=H).status_code == 400
 

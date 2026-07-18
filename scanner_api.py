@@ -21,7 +21,8 @@ def _bad(msg: str, code: int = 400):
 def require_key(f):
     @functools.wraps(f)
     def wrap(*a, **k):
-        if request.headers.get("X-Scanner-Key") != os.environ.get("SCANNER_KEY"):
+        expected = os.environ.get("SCANNER_KEY")
+        if not expected or request.headers.get("X-Scanner-Key") != expected:
             return jsonify({"error": "unauthorized"}), 401
         return f(*a, **k)
     return wrap
@@ -73,6 +74,9 @@ def gen_listing():
     car = request.get_json(silent=True)
     if not isinstance(car, dict):
         return _bad("body JSON inválido")
+    missing = [k for k in ("yr", "make", "model", "mileage", "price") if car.get(k) in ("", None)]
+    if missing:
+        return _bad("faltan campos: " + ", ".join(missing))
     try:
         text = _claude_create(COPY_MODEL, 1500, LISTING_SYSTEM,
                               [{"role": "user", "content": build_listing_prompt(car)}])

@@ -74,7 +74,7 @@ function goTo(n) {
   document.querySelectorAll(".progress-step").forEach((p) =>
     p.classList.toggle("active", Number(p.dataset.step) <= n));
   document.querySelectorAll(".progress-labels span").forEach((l) =>
-    l.classList.toggle("active", Number(l.dataset.label) === n));
+    l.classList.toggle("current", Number(l.dataset.label) === n));
   $("backBtn").classList.toggle("hidden", n === 1);
   $("nextBtnLabel").textContent = NEXT_LABELS[n];
   $("nextBtn").classList.toggle("hidden", n === 4);
@@ -133,7 +133,9 @@ async function scanVin(file) {
     $("vinField").value = res.vin || "";
     const badge = $("vinBadge");
     badge.textContent = res.valid ? "VIN ✓" : "VIN no válido — corrígelo";
-    badge.style.background = res.valid ? "" : "#EB0A1E";
+    const card = $("vinResultCard");
+    card.classList.toggle("valid", res.valid);
+    card.classList.toggle("invalid", !res.valid);
     const car = res.car || {};
     $("carYr").value = car.yr || ""; $("carMake").value = car.make || "";
     $("carModel").value = car.model || ""; $("carTrim").value = car.trim || "";
@@ -194,7 +196,7 @@ function renderThumbs() {
     img.src = p.url;
     const del = document.createElement("button");
     del.type = "button";
-    del.className = "btn-danger btn-sm";
+    del.className = "remove-photo";
     del.textContent = "✕";
     del.addEventListener("click", () => {
       URL.revokeObjectURL(p.url);
