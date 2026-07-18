@@ -76,6 +76,7 @@ function goTo(n) {
   document.querySelectorAll(".progress-labels span").forEach((l) =>
     l.classList.toggle("current", Number(l.dataset.label) === n));
   $("backBtn").classList.toggle("hidden", n === 1);
+  if (n !== 1 && typeof stopLiveScan === "function") stopLiveScan();
   $("nextBtnLabel").textContent = NEXT_LABELS[n];
   $("nextBtn").classList.toggle("hidden", n === 4);
   hideError();
@@ -130,7 +131,118 @@ async function shrinkForOcr(file, maxDim) {
   } catch (_) { return file; } // formato raro — sube el original
 }
 
-// ── PASO 1: VIN ─────────────────────────────────────────────────────
+// ── PASO 1: Escáner en vivo (código de barras de la etiqueta del VIN) ──
+// Validación de check digit en el cliente: filtra frames malos sin ir al servidor
+const VIN_MAP = {A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,J:1,K:2,L:3,M:4,N:5,P:7,R:9,
+                 S:2,T:3,U:4,V:5,W:6,X:7,Y:8,Z:9};
+const VIN_WEIGHTS = [8,7,6,5,4,3,2,10,0,9,8,7,6,5,4,3,2];
+function vinCheckDigitOk(vin) {
+  if (vin.length !== 17 || /[IOQ]/.test(vin) || !/^[A-Z0-9]+$/.test(vin)) return false;
+  let total = 0;
+  for (let i = 0; i < 17; i++) {
+    const c = vin[i];
+    const val = c >= "0" && c <= "9" ? Number(c) : VIN_MAP[c];
+    if (val === undefined) return false;
+    total += val * VIN_WEIGHTS[i];
+  }
+  const check = total % 11;
+  return vin[8] === (check === 10 ? "X" : String(check));
+}
+
+function extractVinFromScan(text) {
+  const up = text.toUpperCase()
+    .replace(/[IOQ]/g, (m) => ({ I: "1", O: "0", Q: "0" }[m]))
+    .replace(/[^A-Z0-9]/g, "");
+  for (let i = 0; i + 17 <= up.length; i++) {
+    const w = up.slice(i, i + 17);
+    if (vinCheckDigitOk(w)) return w;
+  }
+  return up.length === 17 ? up : ""; // 17 sin check válido: el servidor intenta repararlo
+}
+
+let zxingReader = null;
+let liveScanTimer = null;
+
+function stopLiveScan() {
+  if (zxingReader) { try { zxingReader.reset(); } catch (_) {} zxingReader = null; }
+  if (liveScanTimer) { clearTimeout(liveScanTimer); liveScanTimer = null; }
+  $("liveScanBox").classList.add("hidden");
+  $("liveScanBtn").classList.remove("hidden");
+  $("liveHint").textContent = "Buscando el código del VIN…";
+}
+
+$("liveStopBtn").addEventListener("click", stopLiveScan);
+
+$("liveScanBtn").addEventListener("click", () => {
+  if (typeof ZXing === "undefined") {
+    showError("El lector no cargó — usa la foto de la placa.", null);
+    return;
+  }
+  $("liveScanBtn").classList.add("hidden");
+  $("liveScanBox").classList.remove("hidden");
+  const hints = new Map();
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+    ZXing.BarcodeFormat.CODE_39, ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.DATA_MATRIX, ZXing.BarcodeFormat.QR_CODE,
+    ZXing.BarcodeFormat.PDF_417,
+  ]);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+  zxingReader = new ZXing.BrowserMultiFormatReader(hints);
+  liveScanTimer = setTimeout(() => {
+    if ($("liveHint")) $("liveHint").textContent =
+      "¿No lo encuentra? Acércate al código de la etiqueta de la puerta, o cancela y usa la foto.";
+  }, 12000);
+  zxingReader
+    .decodeFromVideoDevice(null, $("liveVideo"), (result) => {
+      if (!result) return; // frames sin código — seguir buscando
+      const vin = extractVinFromScan(result.getText());
+      if (!vin) return;
+      stopLiveScan();
+      if (navigator.vibrate) navigator.vibrate(80);
+      resolveScannedVin(vin);
+    })
+    .catch(() => {
+      stopLiveScan();
+      showError("No pude abrir la cámara — usa la foto de la placa.", null);
+    });
+});
+
+async function resolveScannedVin(vin) {
+  setBusy(true, "VIN detectado — buscando ficha…");
+  try {
+    const res = await api("/api/scanner/vin-decode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vin }),
+    });
+    fillVinResult(res);
+    hideError();
+  } catch (err) {
+    // sin señal: al menos deja el VIN puesto para seguir a mano
+    fillVinResult({ vin, valid: vinCheckDigitOk(vin), car: {} });
+    showError(err.message + " — el VIN quedó puesto, la ficha se puede llenar a mano.",
+              () => resolveScannedVin(vin));
+  } finally {
+    setBusy(false, NEXT_LABELS[step]);
+  }
+}
+
+function fillVinResult(res) {
+  $("vinField").value = res.vin || "";
+  const badge = $("vinBadge");
+  badge.textContent = res.valid ? "VIN ✓" : "VIN no válido — corrígelo";
+  const card = $("vinResultCard");
+  card.classList.toggle("valid", res.valid);
+  card.classList.toggle("invalid", !res.valid);
+  const car = res.car || {};
+  $("carYr").value = car.yr || ""; $("carMake").value = car.make || "";
+  $("carModel").value = car.model || ""; $("carTrim").value = car.trim || "";
+  $("carEngine").value = car.engine || ""; $("carFuel").value = car.fuel || "";
+  $("carBody").value = car.body || ""; $("carDrive").value = car.drive || "";
+  card.classList.remove("hidden");
+}
+
+// ── PASO 1: VIN por foto (respaldo) ─────────────────────────────────
 $("vinPhotoInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (file) scanVin(file);
@@ -147,18 +259,7 @@ async function scanVin(file) {
     const fd = new FormData();
     fd.append("photo", await shrinkForOcr(file), "photo.jpg");
     const res = await api("/api/scanner/vin", { method: "POST", body: fd });
-    $("vinField").value = res.vin || "";
-    const badge = $("vinBadge");
-    badge.textContent = res.valid ? "VIN ✓" : "VIN no válido — corrígelo";
-    const card = $("vinResultCard");
-    card.classList.toggle("valid", res.valid);
-    card.classList.toggle("invalid", !res.valid);
-    const car = res.car || {};
-    $("carYr").value = car.yr || ""; $("carMake").value = car.make || "";
-    $("carModel").value = car.model || ""; $("carTrim").value = car.trim || "";
-    $("carEngine").value = car.engine || ""; $("carFuel").value = car.fuel || "";
-    $("carBody").value = car.body || ""; $("carDrive").value = car.drive || "";
-    $("vinResultCard").classList.remove("hidden");
+    fillVinResult(res);
     hideError();
   } catch (err) {
     $("vinResultCard").classList.remove("hidden"); // permite digitar manual sin señal

@@ -61,12 +61,20 @@
     <!-- ── PASO 1: VIN ────────────────────────────────────────────── -->
     <section class="step active" data-step="1">
       <h2>Foto del VIN</h2>
-      <p class="hint">Acércate hasta que el VIN llene el ancho de la foto, sin reflejos, y dispara.</p>
+      <p class="hint">Apunta la cámara al código de barras de la etiqueta del VIN (marco de la puerta o parabrisas) — se detecta solo.</p>
+
+      <button class="btn btn-primary" id="liveScanBtn" type="button">📡 Escanear VIN con la cámara</button>
+
+      <div class="live-scan hidden" id="liveScanBox">
+        <video id="liveVideo" playsinline muted></video>
+        <p class="hint" id="liveHint">Buscando el código del VIN…</p>
+        <button class="btn btn-secondary" id="liveStopBtn" type="button">Cancelar</button>
+      </div>
 
       <div class="capture-box" id="vinCaptureBox">
         <img class="capture-preview hidden" id="vinPreviewImg" alt="Foto VIN">
-        <p id="vinCaptureHint">Aún no hay foto del VIN</p>
-        <label class="btn btn-primary" for="vinPhotoInput" id="vinCaptureLabel">Tomar foto del VIN</label>
+        <p id="vinCaptureHint">¿Sin código de barras a la vista? Usa una foto de la placa.</p>
+        <label class="btn btn-secondary" for="vinPhotoInput" id="vinCaptureLabel">Tomar foto del VIN</label>
         <input type="file" id="vinPhotoInput" accept="image/*" capture="environment" class="hidden">
       </div>
 
@@ -178,6 +186,7 @@
   </footer>
 </div>
 
+<script src="/static/scanner/vendor/zxing.min.js"></script>
 <script src="/static/scanner/app.js"></script>
 </body>
 </html>

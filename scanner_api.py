@@ -68,6 +68,21 @@ def scan_vin():
         car = {}  # NHTSA caído — la PWA deja llenar la ficha a mano
     return jsonify({"vin": vin, "valid": valid, "car": car})
 
+@bp.route("/api/scanner/vin-decode", methods=["POST"])
+@require_key
+def vin_decode():
+    """VIN ya leído (escáner en vivo del navegador) → validar + ficha NHTSA."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not body.get("vin"):
+        return _bad("falta el campo 'vin'")
+    vin = repair_vin(clean_vin(str(body["vin"])))
+    valid = validate_vin(vin)
+    try:
+        car = decode_vin(vin) if valid else {}
+    except Exception:
+        car = {}
+    return jsonify({"vin": vin, "valid": valid, "car": car})
+
 @bp.route("/api/scanner/odometer", methods=["POST"])
 @require_key
 def scan_odometer():

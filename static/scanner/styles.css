@@ -507,3 +507,12 @@ main {
 @media (min-width: 640px) {
   main { padding-top: 28px; }
 }
+
+/* ── Escáner en vivo (VIN por código de barras) ── */
+.live-scan { margin: 14px 0; }
+.live-scan video {
+  width: 100%; max-height: 46vh; object-fit: cover;
+  border-radius: 14px; border: 2px solid #EB0A1E; background: #000;
+  display: block; margin-bottom: 10px;
+}
+.live-scan .hint { text-align: center; margin-bottom: 10px; }

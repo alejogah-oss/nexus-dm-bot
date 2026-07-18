@@ -85,6 +85,14 @@ def test_vin_ocr_con_confusion_se_repara():
     assert r.json["vin"] == "1HGCM82633A004352" and r.json["valid"] is True
     assert ocr.call_count == 1
 
+def test_vin_decode_directo():
+    with patch.object(scanner_api, "decode_vin", return_value={"yr": "2003", "model": "Accord"}):
+        r = c.post("/api/scanner/vin-decode", headers=H, json={"vin": "1hgcm82633a004352"})
+    assert r.status_code == 200 and r.json["valid"] is True and r.json["car"]["yr"] == "2003"
+
+def test_vin_decode_sin_vin_400():
+    assert c.post("/api/scanner/vin-decode", headers=H, json={}).status_code == 400
+
 def test_vin_missing_photo_400():
     assert c.post("/api/scanner/vin", headers=H).status_code == 400
 
