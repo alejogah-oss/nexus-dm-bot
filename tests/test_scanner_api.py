@@ -45,3 +45,43 @@ def test_inventory_saves(tmp_path):
     folder = tmp_path / r.json["folder"].split("/")[-1]
     assert (folder / "listing.json").exists() and (folder / "photos" / "01.jpg").exists() \
         and (folder / "video.mp4").exists() and (folder / "copy.md").exists()
+
+def test_vin_missing_photo_400():
+    assert c.post("/api/scanner/vin", headers=H).status_code == 400
+
+def test_ocr_failure_502():
+    with patch.object(scanner_api, "_ocr", side_effect=RuntimeError("api caída")):
+        r = c.post("/api/scanner/odometer", headers=H,
+                   data={"photo": (io.BytesIO(b"jpg"), "odo.jpg")})
+    assert r.status_code == 502 and "reintenta" in r.json["error"]
+
+def test_nhtsa_down_returns_empty_car():
+    with patch.object(scanner_api, "_ocr", return_value="1HGCM82633A004352"), \
+         patch.object(scanner_api, "decode_vin", side_effect=RuntimeError("timeout")):
+        r = c.post("/api/scanner/vin", headers=H,
+                   data={"photo": (io.BytesIO(b"jpg"), "vin.jpg")})
+    assert r.status_code == 200 and r.json["valid"] is True and r.json["car"] == {}
+
+def test_listing_bad_json_400():
+    r = c.post("/api/scanner/listing", headers=H, data="no es json",
+               content_type="application/json")
+    assert r.status_code == 400
+
+def test_inventory_malformed_data_400():
+    r = c.post("/api/scanner/inventory", headers=H, data={"data": "{roto"})
+    assert r.status_code == 400
+
+def test_inventory_missing_keys_400(tmp_path):
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    r = c.post("/api/scanner/inventory", headers=H, data={
+        "data": json.dumps({"vin": "1HGCM82633A004352", "yr": "2021"}),
+        "photos": (io.BytesIO(b"a"), "1.jpg")})
+    assert r.status_code == 400 and "faltan campos" in r.json["error"]
+
+def test_inventory_no_photos_400(tmp_path):
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    data = {"vin": "1HGCM82633A004352", "yr": "2021", "model": "Corolla", "trim": "SE",
+            "color": "Blanco", "price": 17500, "mileage": 42000,
+            "title": "t", "description": "d", "notes": ""}
+    r = c.post("/api/scanner/inventory", headers=H, data={"data": json.dumps(data)})
+    assert r.status_code == 400 and "foto" in r.json["error"]

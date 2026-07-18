@@ -807,10 +807,13 @@ def _watchdog_marketplace_bot():
     t.start()
 
 
-# Arrancar servicios de fondo — corre en el worker al importar el módulo
-_keep_alive()
-_start_marketplace_bot()
-_watchdog_marketplace_bot()
+# Arrancar servicios de fondo — SOLO en Render (env RENDER la setea la plataforma)
+# o forzado explícito con ENABLE_INBOX_BOT=1. Un import local (tests, scripts)
+# nunca debe lanzar el bot con la sesión de Facebook.
+if os.getenv("RENDER") or os.getenv("ENABLE_INBOX_BOT") == "1":
+    _keep_alive()
+    _start_marketplace_bot()
+    _watchdog_marketplace_bot()
 
 
 if __name__ == "__main__":

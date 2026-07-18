@@ -38,7 +38,11 @@ async function api(path, options) {
   opts.headers = Object.assign({}, opts.headers, { "X-Scanner-Key": getKey() });
   const r = await fetch(path, opts);
   if (r.status === 401) { showKeyOverlay(); throw new Error("Clave inválida — revísala."); }
-  if (!r.ok) throw new Error("Error del servidor (" + r.status + ")");
+  if (!r.ok) {
+    let msg = "Error del servidor (" + r.status + ")";
+    try { const j = await r.json(); if (j.error) msg = j.error; } catch (_) {}
+    throw new Error(msg);
+  }
   return r.json();
 }
 
