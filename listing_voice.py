@@ -21,6 +21,12 @@ Responde SOLO con un objeto JSON, sin texto antes ni después, sin markdown, sin
 ```json, sin explicaciones:
 {"title": "...", "description": "..."}
 
+La respuesta completa debe ser JSON válido, parseable directamente con \
+json.loads(). Dentro de los valores de "title" y "description" (strings JSON), \
+todo salto de línea va escapado como \\n — nunca uses un salto de línea literal \
+sin escapar dentro del string. Los bloques, párrafos y bullets que pide esta guía \
+se separan con \\n (o \\n\\n entre bloques), nunca con un Enter real.
+
 REGLAS DEL "title":
 - Máximo 100 caracteres.
 - Año + Marca + Modelo + Trim, directo, sin relleno ni emojis.
