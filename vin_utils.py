@@ -18,6 +18,37 @@ def validate_vin(vin: str) -> bool:
     expected = "X" if check == 10 else str(check)
     return vin[8] == expected
 
+# Confusiones típicas de OCR en placas de VIN (metal estampado, reflejos)
+_OCR_CONFUSIONS = {"5": "S", "S": "5", "8": "B", "B": "8", "2": "Z", "Z": "2",
+                   "6": "G", "G": "6", "0": "D", "D": "0", "1": "T", "T": "1"}
+
+def clean_vin(raw: str) -> str:
+    """Normaliza una lectura OCR: I→1, O→0, Q→0 (nunca existen en un VIN),
+    descarta caracteres inválidos y, si sobra texto (ej. prefijo 'VIN:'),
+    busca la ventana de 17 caracteres cuyo check digit valide."""
+    up = raw.strip().upper().translate(str.maketrans({"I": "1", "O": "0", "Q": "0"}))
+    s = "".join(c for c in up if c in _TRANSLIT)
+    if len(s) <= 17:
+        return s
+    for i in range(len(s) - 16):
+        window = s[i:i + 17]
+        if validate_vin(window):
+            return window
+    return s[-17:]  # sin ventana válida: lo más probable es junk al inicio
+
+def repair_vin(vin: str) -> str:
+    """Si el check digit falla, prueba sustituciones únicas de confusión OCR.
+    Devuelve el primer candidato válido, o el VIN original si ninguno valida."""
+    if len(vin) != 17 or validate_vin(vin):
+        return vin
+    for i, c in enumerate(vin):
+        alt = _OCR_CONFUSIONS.get(c)
+        if alt:
+            candidate = vin[:i] + alt + vin[i + 1:]
+            if validate_vin(candidate):
+                return candidate
+    return vin
+
 def decode_vin(vin: str) -> dict:
     r = requests.get(NHTSA_URL.format(vin=vin.strip().upper()), timeout=15)
     res = (r.json().get("Results") or [{}])[0]

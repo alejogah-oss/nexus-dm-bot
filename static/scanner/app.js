@@ -113,6 +113,23 @@ $("nextBtn").addEventListener("click", () => {
   }
 });
 
+// ── Compresión de fotos para OCR (rápido en LTE, bajo el límite de la API) ──
+async function shrinkForOcr(file, maxDim) {
+  maxDim = maxDim || 2000;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && file.size < 3 * 1048576) { bmp.close(); return file; }
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.85));
+    return blob || file;
+  } catch (_) { return file; } // formato raro — sube el original
+}
+
 // ── PASO 1: VIN ─────────────────────────────────────────────────────
 $("vinPhotoInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
@@ -128,7 +145,7 @@ async function scanVin(file) {
   setBusy(true, "Leyendo VIN…");
   try {
     const fd = new FormData();
-    fd.append("photo", file);
+    fd.append("photo", await shrinkForOcr(file), "photo.jpg");
     const res = await api("/api/scanner/vin", { method: "POST", body: fd });
     $("vinField").value = res.vin || "";
     const badge = $("vinBadge");
@@ -166,7 +183,7 @@ async function scanOdometer(file) {
   setBusy(true, "Leyendo millaje…");
   try {
     const fd = new FormData();
-    fd.append("photo", file);
+    fd.append("photo", await shrinkForOcr(file), "photo.jpg");
     const res = await api("/api/scanner/odometer", { method: "POST", body: fd });
     $("mileageField").value = res.mileage || "";
     hideError();

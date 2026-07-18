@@ -66,6 +66,25 @@ def test_listing_missing_keys_400():
     r = c.post("/api/scanner/listing", headers=H, json={"yr": "2021"})
     assert r.status_code == 400 and "faltan campos" in r.json["error"]
 
+def test_vin_retry_con_sonnet_cuando_haiku_falla():
+    # Haiku devuelve basura → el endpoint reintenta con Sonnet y logra VIN válido
+    with patch.object(scanner_api, "_ocr", side_effect=["XXXX", "1HGCM82633A004352"]) as ocr, \
+         patch.object(scanner_api, "decode_vin", return_value={"yr": "2003"}):
+        r = c.post("/api/scanner/vin", headers=H,
+                   data={"photo": (io.BytesIO(b"jpg"), "vin.jpg")})
+    assert r.status_code == 200 and r.json["valid"] is True
+    assert ocr.call_count == 2
+    assert ocr.call_args_list[1].kwargs.get("model") == scanner_api.COPY_MODEL
+
+def test_vin_ocr_con_confusion_se_repara():
+    # OCR lee B donde había 8 — repair_vin lo corrige sin segunda llamada
+    with patch.object(scanner_api, "_ocr", return_value="1HGCMB2633A004352") as ocr, \
+         patch.object(scanner_api, "decode_vin", return_value={}):
+        r = c.post("/api/scanner/vin", headers=H,
+                   data={"photo": (io.BytesIO(b"jpg"), "vin.jpg")})
+    assert r.json["vin"] == "1HGCM82633A004352" and r.json["valid"] is True
+    assert ocr.call_count == 1
+
 def test_vin_missing_photo_400():
     assert c.post("/api/scanner/vin", headers=H).status_code == 400
 

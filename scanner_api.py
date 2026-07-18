@@ -2,7 +2,7 @@
 import base64, functools, json, os, re
 from pathlib import Path
 from flask import Blueprint, jsonify, request
-from vin_utils import validate_vin, decode_vin
+from vin_utils import validate_vin, decode_vin, clean_vin, repair_vin
 from listing_voice import LISTING_SYSTEM, build_listing_prompt
 from dm_bot import _claude_create
 import anthropic
@@ -27,11 +27,22 @@ def require_key(f):
         return f(*a, **k)
     return wrap
 
-def _ocr(photo, instruction: str) -> str:
-    """Claude Haiku vision: devuelve solo el texto pedido."""
+VIN_OCR_PROMPT = (
+    "Esta foto muestra el VIN de un vehículo (placa del parabrisas, etiqueta del "
+    "marco de la puerta o documento). Un VIN tiene EXACTAMENTE 17 caracteres, solo "
+    "mayúsculas y dígitos, y NUNCA contiene las letras I, O ni Q. Transcríbelo con "
+    "máximo cuidado carácter por carácter; confusiones típicas que debes evitar: "
+    "S vs 5, B vs 8, Z vs 2, G vs 6, D vs 0. Si hay varios textos en la imagen, el "
+    "VIN es la cadena de 17 caracteres. Responde SOLO los 17 caracteres, sin "
+    "espacios, guiones ni texto adicional."
+)
+
+def _ocr(photo, instruction: str, model: str = OCR_MODEL) -> str:
+    """Claude vision: devuelve solo el texto pedido."""
+    photo.seek(0)
     b64 = base64.standard_b64encode(photo.read()).decode()
     media = photo.mimetype if photo.mimetype in ("image/jpeg", "image/png", "image/webp") else "image/jpeg"
-    r = _client.messages.create(model=OCR_MODEL, max_tokens=50, messages=[{
+    r = _client.messages.create(model=model, max_tokens=100, messages=[{
         "role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": media, "data": b64}},
             {"type": "text", "text": instruction}]}])
@@ -44,10 +55,12 @@ def scan_vin():
     if not photo:
         return _bad("falta el archivo 'photo'")
     try:
-        raw = _ocr(photo, "Lee el VIN (17 caracteres) de esta foto. Responde SOLO el VIN, sin texto extra.")
+        vin = repair_vin(clean_vin(_ocr(photo, VIN_OCR_PROMPT)))
+        if not validate_vin(vin):
+            # Haiku no logró un VIN válido — segundo intento con Sonnet (mejor visión)
+            vin = repair_vin(clean_vin(_ocr(photo, VIN_OCR_PROMPT, model=COPY_MODEL)))
     except Exception:
         return _bad("no se pudo leer la foto — reintenta", 502)
-    vin = re.sub(r"[^A-HJ-NPR-Z0-9]", "", raw.upper())[:17]
     valid = validate_vin(vin)
     try:
         car = decode_vin(vin) if valid else {}
