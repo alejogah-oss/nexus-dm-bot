@@ -1,0 +1,509 @@
+/* NEXUS Scanner — styles.css
+   Identidad: rojo Toyota #EB0A1E, negro #0A0A0A, títulos display bold,
+   cuerpo Inter/system. Sin dependencias externas (CDN-free) para uso
+   sin señal en el lote. Tap targets >= 56px, alto contraste para sol directo. */
+
+:root {
+  --red: #EB0A1E;
+  --red-dark: #B5060F;
+  --black: #0A0A0A;
+  --bg: #0A0A0A;
+  --panel: #171717;
+  --panel-2: #212121;
+  --border: #333333;
+  --text: #FAFAFA;
+  --text-dim: #B3B3B3;
+  --green: #2ECC71;
+  --amber: #FFB020;
+
+  --font-display: "Impact", "Arial Black", "Helvetica Neue", system-ui, sans-serif;
+  --font-body: "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
+
+  --tap: 56px;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+button, input, textarea {
+  font-family: inherit;
+  font-size: 17px;
+}
+
+/* ── Header + progress ─────────────────────────────────────────── */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--black);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 16px 12px;
+}
+
+.app-header .brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.app-header .brand h1 {
+  font-size: 22px;
+  color: var(--text);
+}
+
+.app-header .brand h1 span { color: var(--red); }
+
+.key-badge {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: var(--font-body);
+  text-transform: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: transparent;
+}
+
+.progress-track {
+  display: flex;
+  gap: 6px;
+}
+
+.progress-step {
+  flex: 1;
+  height: 6px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.progress-step > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--red);
+  transition: width .25s ease;
+}
+
+.progress-step.done > i { width: 100%; }
+.progress-step.active > i { width: 100%; background: var(--red); }
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.progress-labels span.current { color: var(--red); font-weight: 700; }
+
+/* ── Main / steps ──────────────────────────────────────────────── */
+main {
+  flex: 1;
+  padding: 20px 16px 140px;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.step { display: none; }
+.step.active { display: block; }
+
+.step h2 {
+  font-size: 26px;
+  margin-bottom: 4px;
+}
+
+.step .hint {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 0 0 18px;
+}
+
+/* ── Cards / fields ────────────────────────────────────────────── */
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.field:last-child { margin-bottom: 0; }
+
+.field label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+}
+
+.field input[type="text"],
+.field input[type="number"],
+.field textarea {
+  width: 100%;
+  min-height: var(--tap);
+  background: var(--panel-2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 12px 14px;
+  outline: none;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--red);
+}
+
+.field textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ── Capture (camera) buttons ──────────────────────────────────── */
+.capture-box {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 24px 16px;
+  text-align: center;
+  margin-bottom: 16px;
+  background: var(--panel);
+}
+
+.capture-box.has-photo {
+  border-style: solid;
+  border-color: var(--green);
+  padding: 12px;
+}
+
+.capture-preview {
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: 10px;
+  display: block;
+  margin: 0 auto 12px;
+}
+
+.capture-box p {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 0 0 14px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--tap);
+  border-radius: 12px;
+  border: none;
+  font-weight: 700;
+  font-size: 17px;
+  cursor: pointer;
+  padding: 0 20px;
+  transition: transform .08s ease, opacity .15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.btn:active { transform: scale(0.97); }
+
+.btn-primary {
+  background: var(--red);
+  color: #fff;
+}
+
+.btn-primary:active { background: var(--red-dark); }
+
+.btn-secondary {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1.5px solid var(--border);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1.5px solid var(--border);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--red);
+  border: 1.5px solid var(--red);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.btn-sm {
+  min-height: 40px;
+  width: auto;
+  font-size: 14px;
+  padding: 0 14px;
+}
+
+.btn-block-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Photo grid (step 3) ───────────────────────────────────────── */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.photo-thumb {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+
+.photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-thumb .remove-photo {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(10,10,10,0.85);
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.video-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.video-status .remove-video {
+  color: var(--red);
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+/* ── VIN result card ───────────────────────────────────────────── */
+.result-card {
+  background: var(--panel);
+  border: 1px solid var(--green);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.result-card.invalid {
+  border-color: var(--amber);
+}
+
+.result-card .badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-bottom: 12px;
+}
+
+.result-card.valid .badge { background: rgba(46,204,113,0.15); color: var(--green); }
+.result-card.invalid .badge { background: rgba(255,176,32,0.15); color: var(--amber); }
+
+/* ── Copy step ─────────────────────────────────────────────────── */
+.copy-block {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+  white-space: pre-wrap;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.copy-block .copy-title {
+  font-family: var(--font-display);
+  text-transform: none;
+  font-size: 19px;
+  color: var(--text);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.folder-result {
+  background: rgba(46,204,113,0.1);
+  border: 1px solid var(--green);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-top: 16px;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+/* ── Error / retry ─────────────────────────────────────────────── */
+.error-banner {
+  background: rgba(235,10,30,0.12);
+  border: 1.5px solid var(--red);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+.error-banner.show { display: block; }
+
+.error-banner p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(255,255,255,0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Footer nav (fixed, thumb reach) ──────────────────────────── */
+.footer-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--black);
+  border-top: 1px solid var(--border);
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 10px;
+  z-index: 10;
+}
+
+.footer-nav .btn-secondary {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0 18px;
+}
+
+.footer-nav .btn-primary {
+  flex: 1;
+}
+
+/* ── Key prompt overlay ────────────────────────────────────────── */
+.key-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.key-overlay .card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.key-overlay h2 {
+  font-size: 24px;
+  margin-bottom: 6px;
+}
+
+.key-overlay p {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 0 0 18px;
+}
+
+.hidden { display: none !important; }
+
+@media (min-width: 640px) {
+  main { padding-top: 28px; }
+}

@@ -9,7 +9,7 @@ import os
 import uuid
 
 import requests as req_lib
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_file
 from dotenv import load_dotenv
 from dm_bot import handle_message, handle_get_started, handle_marketplace_message, generate_reply
 from comment_bot import handle_facebook_comment, handle_instagram_comment
@@ -21,6 +21,11 @@ load_dotenv()
 app = Flask(__name__)
 app.register_blueprint(scanner_bp)
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # video walkaround
+
+
+@app.get("/scanner")
+def scanner_pwa():
+    return send_file(os.path.join(os.path.dirname(__file__), "static/scanner/index.html"))
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nexus_alejo_2026")
 APP_SECRET   = os.getenv("META_APP_SECRET", "")

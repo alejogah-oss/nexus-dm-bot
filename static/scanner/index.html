@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>NEXUS Scanner</title>
+<meta name="theme-color" content="#EB0A1E">
+<meta name="description" content="Escanea VIN, odómetro y fotos para publicar inventario NEXUS en segundos.">
+<link rel="manifest" href="/static/scanner/manifest.json">
+<link rel="icon" href="/static/scanner/icon-512.png">
+<link rel="apple-touch-icon" href="/static/scanner/icon-512.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NEXUS Scanner">
+<link rel="stylesheet" href="/static/scanner/styles.css">
+</head>
+<body>
+
+<!-- ── Key prompt (una sola vez, se guarda en localStorage) ─────────── -->
+<div id="keyOverlay" class="key-overlay hidden">
+  <div class="card">
+    <h2>Acceso NEXUS Scanner</h2>
+    <p>Ingresa la clave del scanner para continuar. Se guarda en este dispositivo.</p>
+    <div class="field">
+      <label for="keyInput">Clave</label>
+      <input type="text" id="keyInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Scanner key">
+    </div>
+    <button class="btn btn-primary" id="keySaveBtn">Guardar y continuar</button>
+  </div>
+</div>
+
+<!-- ── App shell ──────────────────────────────────────────────────── -->
+<div id="app">
+  <header class="app-header">
+    <div class="brand">
+      <h1>NEXUS <span>SCANNER</span></h1>
+      <button class="key-badge" id="keyBadgeBtn" type="button">clave &#9998;</button>
+    </div>
+    <div class="progress-track">
+      <div class="progress-step" data-step="1"><i></i></div>
+      <div class="progress-step" data-step="2"><i></i></div>
+      <div class="progress-step" data-step="3"><i></i></div>
+      <div class="progress-step" data-step="4"><i></i></div>
+    </div>
+    <div class="progress-labels">
+      <span data-label="1">VIN</span>
+      <span data-label="2">Odómetro</span>
+      <span data-label="3">Fotos</span>
+      <span data-label="4">Copy</span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Error banner global (reintentar sin perder estado) -->
+    <div class="error-banner" id="errorBanner">
+      <p id="errorMsg">Sin señal — no se pudo conectar.</p>
+      <button class="btn btn-primary" id="retryBtn" type="button">Reintentar</button>
+    </div>
+
+    <!-- ── PASO 1: VIN ────────────────────────────────────────────── -->
+    <section class="step active" data-step="1">
+      <h2>Foto del VIN</h2>
+      <p class="hint">Apunta a la placa del VIN (parabrisas o puerta) y toma la foto.</p>
+
+      <div class="capture-box" id="vinCaptureBox">
+        <img class="capture-preview hidden" id="vinPreviewImg" alt="Foto VIN">
+        <p id="vinCaptureHint">Aún no hay foto del VIN</p>
+        <label class="btn btn-primary" for="vinPhotoInput" id="vinCaptureLabel">Tomar foto del VIN</label>
+        <input type="file" id="vinPhotoInput" accept="image/*" capture="environment" class="hidden">
+      </div>
+
+      <div class="result-card hidden" id="vinResultCard">
+        <span class="badge" id="vinBadge">VIN</span>
+        <div class="field">
+          <label for="vinField">VIN</label>
+          <input type="text" id="vinField" maxlength="17" autocapitalize="characters">
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="carYr">Año</label><input type="text" id="carYr"></div>
+          <div class="field"><label for="carMake">Marca</label><input type="text" id="carMake"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="carModel">Modelo</label><input type="text" id="carModel"></div>
+          <div class="field"><label for="carTrim">Trim</label><input type="text" id="carTrim"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="carEngine">Motor</label><input type="text" id="carEngine"></div>
+          <div class="field"><label for="carFuel">Combustible</label><input type="text" id="carFuel"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label for="carBody">Carrocería</label><input type="text" id="carBody"></div>
+          <div class="field"><label for="carDrive">Tracción</label><input type="text" id="carDrive"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── PASO 2: Odómetro / Precio ─────────────────────────────── -->
+    <section class="step" data-step="2">
+      <h2>Odómetro y precio</h2>
+      <p class="hint">Foto del tablero, luego confirma millaje, precio y color.</p>
+
+      <div class="capture-box" id="odoCaptureBox">
+        <img class="capture-preview hidden" id="odoPreviewImg" alt="Foto odómetro">
+        <p id="odoCaptureHint">Aún no hay foto del odómetro</p>
+        <label class="btn btn-primary" for="odoPhotoInput" id="odoCaptureLabel">Tomar foto del odómetro</label>
+        <input type="file" id="odoPhotoInput" accept="image/*" capture="environment" class="hidden">
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <label for="mileageField">Millaje</label>
+          <input type="number" id="mileageField" inputmode="numeric" placeholder="0">
+        </div>
+        <div class="field">
+          <label for="priceField">Precio (requerido)</label>
+          <input type="number" id="priceField" inputmode="numeric" placeholder="0" required>
+        </div>
+        <div class="field">
+          <label for="colorField">Color (requerido)</label>
+          <input type="text" id="colorField" placeholder="Ej. Blanco perla" required>
+        </div>
+        <div class="field">
+          <label for="notesField">Notas</label>
+          <textarea id="notesField" placeholder="Detalles adicionales, condición, extras..."></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── PASO 3: Fotos / Video ─────────────────────────────────── -->
+    <section class="step" data-step="3">
+      <h2>Fotos y video</h2>
+      <p class="hint">Agrega las fotos del vehículo. Video opcional (1).</p>
+
+      <div class="photo-grid" id="photoGrid"></div>
+
+      <label class="btn btn-secondary" for="photosInput">+ Agregar fotos</label>
+      <input type="file" id="photosInput" accept="image/*" capture="environment" multiple class="hidden">
+
+      <div style="height:14px"></div>
+
+      <div class="video-status hidden" id="videoStatus">
+        <span id="videoName">video.mp4</span>
+        <button class="remove-video" id="removeVideoBtn" type="button">Quitar</button>
+      </div>
+      <label class="btn btn-ghost hidden" for="videoInput" id="videoAddLabel">+ Agregar video (opcional)</label>
+      <input type="file" id="videoInput" accept="video/*" capture="environment" class="hidden">
+    </section>
+
+    <!-- ── PASO 4: Copy ───────────────────────────────────────────── -->
+    <section class="step" data-step="4">
+      <h2>Copy generado</h2>
+      <p class="hint">Genera el título y descripción, luego guarda en NEXUS.</p>
+
+      <button class="btn btn-primary hidden" id="genCopyBtn" type="button">Generar copy</button>
+
+      <div class="copy-block hidden" id="copyBlock">
+        <span class="copy-title" id="copyTitle"></span>
+        <span id="copyDescription"></span>
+      </div>
+
+      <div class="btn-block-group hidden" id="copyActions">
+        <button class="btn btn-secondary" id="copyBtn" type="button">Copiar título + descripción</button>
+        <button class="btn btn-primary" id="saveInventoryBtn" type="button">Guardar en NEXUS</button>
+      </div>
+
+      <div class="folder-result hidden" id="folderResult"></div>
+    </section>
+
+  </main>
+
+  <footer class="footer-nav">
+    <button class="btn btn-secondary" id="backBtn" type="button">Atrás</button>
+    <button class="btn btn-primary" id="nextBtn" type="button">
+      <span id="nextBtnLabel">Escanear VIN</span>
+      <span class="spinner hidden" id="nextBtnSpinner"></span>
+    </button>
+  </footer>
+</div>
+
+<script src="/static/scanner/app.js"></script>
+</body>
+</html>
