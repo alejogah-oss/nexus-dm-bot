@@ -27,8 +27,8 @@ PWA (celular) ──HTTPS──> backend nexus-automation (Flask, mismo servicio
                                         └─ inventario/<año-modelo-VIN>/  fotos/, video, listing.json, copy.md
 ```
 
-- `listing.json` usa el formato que `marketplace_poster` ya consume → "publicar después" = encolar, sin código nuevo de publicación.
-- El bot de Marketplace sigue APAGADO (checkpoint FB); la cola simplemente espera.
+- `listing.json` usa el formato que `marketplace_poster` ya consume, para conectar la publicación después sin migrar datos.
+- **La integración con el bot de Marketplace queda fuera de v1** (decisión Alejo 2026-07-18): el bot vive en el MacBook Pro y se retoma luego. V1 solo guarda inventario compatible.
 - Modelo IA: Haiku para OCR de VIN/odómetro (barato), Sonnet para el copy.
 
 ## Flujo de la PWA (4 pasos)
@@ -36,7 +36,7 @@ PWA (celular) ──HTTPS──> backend nexus-automation (Flask, mismo servicio
 1. **VIN** — cámara, captura, muestra ficha decodificada para confirmar.
 2. **Odómetro** — cámara, muestra millaje leído, editable. Campo de precio + notas opcionales (un solo dueño, llantas nuevas…).
 3. **Fotos/Video** — multi-captura, miniaturas reordenables, un video opcional.
-4. **Copy** — título (≤100 chars), descripción EN/ES, botón **Copiar**, botón **Guardar en NEXUS**, botón **Encolar publicación**.
+4. **Copy** — título (≤100 chars), descripción EN/ES, botón **Copiar**, botón **Guardar en NEXUS**.
 
 ## Manejo de errores
 
@@ -48,7 +48,7 @@ PWA (celular) ──HTTPS──> backend nexus-automation (Flask, mismo servicio
 
 | Tarea | Responsable |
 |---|---|
-| Endpoints backend + guardado inventario + cola | **wire** (subagente Sonnet) |
+| Endpoints backend + guardado inventario | **wire** (subagente Sonnet) |
 | UI de la PWA (flujo 4 pasos, PWA manifest) | **shot** dirige lo visual; frontend con flujo Magic/ui-ux-pro-max |
 | Prompt del copy bilingüe (voz, estructura, hooks) | **ink** (subagente Sonnet) |
 | Coordinación y revisión | Claude principal (mínimo token) |
@@ -60,4 +60,4 @@ PWA (celular) ──HTTPS──> backend nexus-automation (Flask, mismo servicio
 
 ## Fuera de alcance (v1)
 
-- Publicación automática inmediata (bot apagado), multiusuario, app nativa, extracción de frames del video.
+- Toda integración con `marketplace_poster` (cola y publicación — se retoma luego en el MacBook Pro), multiusuario, app nativa, extracción de frames del video.
