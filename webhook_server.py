@@ -14,10 +14,13 @@ from dotenv import load_dotenv
 from dm_bot import handle_message, handle_get_started, handle_marketplace_message, generate_reply
 from comment_bot import handle_facebook_comment, handle_instagram_comment
 from marketplace_agent import get_car_by_listing_id
+from scanner_api import bp as scanner_bp
 
 load_dotenv()
 
 app = Flask(__name__)
+app.register_blueprint(scanner_bp)
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # video walkaround
 
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nexus_alejo_2026")
 APP_SECRET   = os.getenv("META_APP_SECRET", "")
