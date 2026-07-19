@@ -80,3 +80,47 @@ def test_mark_publicado(tmp_path):
     assert r.status_code == 200 and r.json["published"] is True and r.json["published_at"]
     assert admin_api.read_status(folder)["published"] is True
     assert not admin_api._lock_file().exists()
+
+# ── Bugs de review sobre el lock "un carro a la vez" ────────────────
+
+def test_mark_no_borra_lock_de_otro_carro(tmp_path):
+    # Bug 1: admin_mark borraba el lock incondicionalmente, incluso si
+    # pertenecía a OTRO carro en publicación activa.
+    _car(tmp_path, slug="2019-Civic-004352")
+    _car(tmp_path, slug="2020-Accord-005555")
+    admin_api._lock_file().unlink(missing_ok=True)
+    with patch.object(admin_api, "_launch_publish", return_value=os.getpid()):
+        r = cl.post("/api/admin/publish/2019-Civic-004352", headers=H)
+        assert r.status_code == 200
+        # mark de B (otro carro) mientras A publica: NO debe tocar el lock de A
+        rm_b = cl.post("/api/admin/mark/2020-Accord-005555", headers=H)
+        assert rm_b.status_code == 200
+        assert admin_api._lock_file().exists()
+        # publish de A sigue bloqueado — el lock de A sigue vivo
+        r2 = cl.post("/api/admin/publish/2019-Civic-004352", headers=H)
+        assert r2.status_code == 409
+        # mark del propio carro A sí libera su lock
+        rm_a = cl.post("/api/admin/mark/2019-Civic-004352", headers=H)
+        assert rm_a.status_code == 200
+        assert not admin_api._lock_file().exists()
+    admin_api._lock_file().unlink(missing_ok=True)
+
+def test_pid_no_numerico_no_rompe_inventory(tmp_path):
+    # Bug 2: pid no numérico en un lock JSON válido causaba 500 (ValueError
+    # sin capturar) en vez de auto-limpiarse como el JSON corrupto.
+    _car(tmp_path)
+    admin_api._lock_file().write_text(json.dumps({"slug": "x", "pid": "abc"}))
+    r = cl.get("/api/admin/inventory", headers=H)
+    assert r.status_code == 200
+    assert r.json["publishing"] is None
+    assert not admin_api._lock_file().exists()
+
+def test_pid_invalido_no_bloquea_para_siempre(tmp_path):
+    # Bug 3: os.kill(pid, 0) con pid <= 0 no lanza excepción, así que un
+    # lock con pid -1/0 se interpretaba como "vivo" para siempre.
+    _car(tmp_path)
+    admin_api._lock_file().write_text(json.dumps({"slug": "x", "pid": -1}))
+    with patch.object(admin_api, "_launch_publish", return_value=os.getpid()):
+        r = cl.post("/api/admin/publish/2019-Civic-004352", headers=H)
+        assert r.status_code == 200  # no 409 perpetuo
+    admin_api._lock_file().unlink(missing_ok=True)

@@ -40,6 +40,8 @@ def _lock_file() -> Path:
     return _inv_dir() / ".publish.lock"
 
 def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
     try:
         os.kill(pid, 0)
         return True
@@ -52,10 +54,11 @@ def _current_lock() -> dict | None:
         return None
     try:
         info = json.loads(lf.read_text())
+        pid = int(info.get("pid", -1))
     except Exception:
         lf.unlink(missing_ok=True)
         return None
-    if not _pid_alive(int(info.get("pid", -1))):
+    if not _pid_alive(pid):
         lf.unlink(missing_ok=True)  # lock viejo de un proceso muerto
         return None
     return info
@@ -117,5 +120,7 @@ def admin_mark(slug):
         return jsonify({"error": "no existe"}), 404
     st = set_status(folder, published=True,
                     published_at=time.strftime("%Y-%m-%d %H:%M"), last_error=None)
-    _lock_file().unlink(missing_ok=True)
+    lock = _current_lock()
+    if lock and lock.get("slug") == slug:
+        _lock_file().unlink(missing_ok=True)
     return jsonify({"ok": True, **st})
