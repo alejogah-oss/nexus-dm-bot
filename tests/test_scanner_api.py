@@ -172,3 +172,10 @@ def test_inventory_no_photos_400(tmp_path):
             "title": "t", "description": "d", "notes": ""}
     r = c.post("/api/scanner/inventory", headers=H, data={"data": json.dumps(data)})
     assert r.status_code == 400 and "foto" in r.json["error"]
+
+def test_put_permite_editar_make(tmp_path):
+    slug = _guardar_carro(tmp_path)
+    r = c.put(f"/api/scanner/inventory/{slug}", headers=H, json={"make": "Honda"})
+    assert r.status_code == 200 and r.json["data"]["make"] == "Honda"
+    r2 = c.get(f"/api/scanner/inventory/{slug}", headers=H)
+    assert r2.json["data"]["make"] == "Honda"

@@ -413,7 +413,7 @@ async function saveInventory() {
   btn.textContent = "Guardando…";
   try {
     const data = {
-      vin: session.vin, yr: session.car.yr, model: session.car.model,
+      vin: session.vin, yr: session.car.yr, make: session.car.make, model: session.car.model,
       trim: session.car.trim, color: session.color, price: session.price,
       mileage: session.mileage, title: session.title,
       description: session.description, notes: session.notes,
@@ -428,6 +428,7 @@ async function saveInventory() {
     $("folderResult").textContent = "✓ Guardado en NEXUS: " + folder;
     $("folderResult").classList.remove("hidden");
     btn.textContent = "✓ Guardado";
+    $("newCarBtn").classList.remove("hidden");
     hideError();
   } catch (err) {
     btn.disabled = false;
@@ -562,6 +563,40 @@ $("pCopyBtn").addEventListener("click", async () => {
 
 $("pBackBtn").addEventListener("click", () => { showPendList(); $("pendBtn").click(); });
 $("pendCloseBtn").addEventListener("click", () => $("pendView").classList.add("hidden"));
+
+// ── Escanear otro carro: reinicia todo y vuelve al paso 1 ───────────
+$("newCarBtn").addEventListener("click", () => {
+  session.photos.forEach((p) => URL.revokeObjectURL(p.url));
+  session.vin = ""; session.car = {};
+  session.mileage = null; session.price = null; session.color = ""; session.notes = "";
+  session.photos = []; session.video = null;
+  session.title = ""; session.description = ""; session.saved = false;
+
+  // Limpiar campos y previews
+  ["vinField", "carYr", "carMake", "carModel", "carTrim", "carEngine", "carFuel",
+   "carBody", "carDrive", "mileageField", "priceField", "colorField", "notesField",
+   "copyTitle", "copyDescription", "f-title", "f-desc"].forEach((id) => {
+    const el = $(id);
+    if (el) { if ("value" in el) el.value = ""; else el.textContent = ""; }
+  });
+  $("vinResultCard").classList.add("hidden");
+  $("vinPreviewImg").classList.add("hidden");
+  $("odoPreviewImg").classList.add("hidden");
+  $("vinCaptureHint").classList.remove("hidden");
+  $("odoCaptureHint").classList.remove("hidden");
+  $("vinCaptureLabel").textContent = "Tomar foto del VIN";
+  $("odoCaptureLabel").textContent = "Tomar foto del odómetro";
+  $("photoGrid").innerHTML = "";
+  $("videoStatus").classList.add("hidden");
+  $("copyBlock").classList.add("hidden");
+  $("copyActions").classList.add("hidden");
+  $("copyPhotoPreview").classList.add("hidden");
+  $("folderResult").classList.add("hidden");
+  $("newCarBtn").classList.add("hidden");
+  const sb = $("saveInventoryBtn");
+  sb.disabled = false; sb.textContent = "Guardar en NEXUS";
+  goTo(1);
+});
 
 // ── No perder la sesión por accidente ───────────────────────────────
 window.addEventListener("beforeunload", (e) => {
