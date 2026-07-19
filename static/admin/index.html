@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Administrador — Tu Carro con Alejo</title>
+<meta name="theme-color" content="#EB0A1E">
+<link rel="stylesheet" href="/static/admin/admin.css">
+</head>
+<body>
+<div id="keyOverlay" class="overlay hidden">
+  <div class="card">
+    <h2>Administrador</h2>
+    <p>Ingresa la clave para continuar.</p>
+    <input type="text" id="keyInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Clave">
+    <button class="btn-primary" id="keySaveBtn">Entrar</button>
+  </div>
+</div>
+<header>
+  <h1>ADMINISTRADOR <span>Tu Carro con Alejo</span></h1>
+  <p id="publishingBanner" class="banner hidden"></p>
+</header>
+<main id="cars"><p class="hint">Cargando…</p></main>
+
+<div id="editModal" class="overlay hidden">
+  <div class="card">
+    <h2>Editar carro</h2>
+    <label>Título <input id="eTitle" maxlength="100"></label>
+    <label>Descripción <textarea id="eDesc" rows="8"></textarea></label>
+    <label>Marca <input id="eMake"></label>
+    <label>Precio <input id="ePrice" type="number" inputmode="numeric"></label>
+    <label>Millaje <input id="eMileage" type="number" inputmode="numeric"></label>
+    <label>Color <input id="eColor"></label>
+    <button id="eSaveBtn" class="btn-primary">Guardar cambios</button>
+    <button id="eCancelBtn" class="ghost">Cancelar</button>
+  </div>
+</div>
+<script src="/static/admin/admin.js"></script>
+</body>
+</html>

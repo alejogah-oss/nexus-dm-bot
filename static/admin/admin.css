@@ -1,0 +1,306 @@
+/* NEXUS Admin — admin.css
+   Identidad: rojo Toyota #EB0A1E, negro #0A0A0A, fuente Inter/system.
+   Dark mode fijo, responsive (una columna en móvil). */
+
+:root {
+  --red: #EB0A1E;
+  --red-dark: #B5060F;
+  --black: #0A0A0A;
+  --bg: #0A0A0A;
+  --panel: #171717;
+  --panel-2: #212121;
+  --border: #333333;
+  --text: #FAFAFA;
+  --text-dim: #B3B3B3;
+  --green: #2ECC71;
+  --amber: #FFB020;
+
+  --font-display: "Impact", "Arial Black", "Helvetica Neue", system-ui, sans-serif;
+  --font-body: "Inter", -apple-system, "Helvetica Neue", Arial, sans-serif;
+
+  --tap: 48px;
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+h1, h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+button, input, textarea {
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.hidden { display: none !important; }
+
+.hint {
+  color: var(--text-dim);
+  font-size: 14px;
+  text-align: center;
+  padding: 20px 0;
+}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--black);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 20px;
+}
+
+header h1 {
+  font-size: 22px;
+  color: var(--text);
+}
+
+header h1 span {
+  color: var(--red);
+  display: block;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+/* ── Banner de publicación en curso ────────────────────────────── */
+.banner {
+  margin: 12px 0 0;
+  background: rgba(255, 176, 32, 0.12);
+  border: 1.5px solid var(--amber);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--amber);
+  font-family: var(--font-body);
+  text-transform: none;
+}
+
+/* ── Main / grid de tarjetas ────────────────────────────────────── */
+main#cars {
+  padding: 20px;
+  max-width: 900px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 720px) {
+  main#cars { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Tarjeta de carro ───────────────────────────────────────────── */
+.car-card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  gap: 14px;
+}
+
+.car-card .car-photo {
+  width: 96px;
+  height: 96px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--panel-2);
+}
+
+.car-card .car-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.car-card .car-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.car-card .car-title {
+  font-weight: 700;
+  font-size: 16px;
+  margin: 0 0 4px;
+  padding-right: 90px;
+  overflow-wrap: break-word;
+}
+
+.car-card .car-meta {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+
+.car-card .car-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 480px) {
+  .car-card { flex-direction: column; }
+  .car-card .car-photo { width: 100%; height: 160px; }
+  .car-card .car-title { padding-right: 90px; }
+}
+
+/* ── Badge de estado ────────────────────────────────────────────── */
+.badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 4px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.badge.pending { background: rgba(255, 176, 32, 0.15); color: var(--amber); }
+.badge.published { background: rgba(46, 204, 113, 0.15); color: var(--green); }
+.badge.failed { background: rgba(235, 10, 30, 0.15); color: var(--red); }
+
+/* ── Botones ────────────────────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  border-radius: 10px;
+  border: none;
+  background: var(--red);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 16px;
+  transition: transform .08s ease, opacity .15s ease;
+}
+
+.btn-primary:active { background: var(--red-dark); transform: scale(0.97); }
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1.5px solid var(--border);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 16px;
+}
+
+.ghost:active { border-color: var(--red); color: var(--text); }
+
+/* ── Overlay (clave / modal editar) ────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.92);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.overlay .card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.overlay .card h2 {
+  font-size: 22px;
+  margin-bottom: 2px;
+}
+
+.overlay .card p {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 0 0 4px;
+}
+
+.overlay .card label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.overlay .card input,
+.overlay .card textarea {
+  width: 100%;
+  min-height: var(--tap);
+  background: var(--panel-2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  outline: none;
+  text-transform: none;
+  font-size: 15px;
+}
+
+.overlay .card textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.overlay .card input:focus,
+.overlay .card textarea:focus {
+  border-color: var(--red);
+}
+
+.overlay .card button {
+  width: 100%;
+}
