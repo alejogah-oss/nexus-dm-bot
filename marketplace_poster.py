@@ -481,28 +481,49 @@ async def post_scanner_car(page, fields: dict, photo_paths: list) -> bool:
     return True
 
 
+def record_publish_error(slug: str, msg: str) -> None:
+    """Escribe last_error en el listing.json del carro del scanner (para el badge 🔴)."""
+    inv = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
+    lj = Path(inv) / slug / "listing.json"
+    try:
+        data = json.loads(lj.read_text())
+    except Exception:
+        return
+    data["last_error"] = str(msg)[:300]
+    lj.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+
 async def publish_scanner_car(slug: str) -> None:
     """Lee inventario/<slug>/ y abre Chrome VISIBLE con el formulario lleno.
-    Deja el navegador abierto para que Alejo revise y publique manualmente."""
-    inv = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
-    folder = Path(inv) / slug
-    car = json.loads((folder / "listing.json").read_text())
-    fields = scanner_car_fields(car)
-    photos_dir = folder / "photos"
-    photo_paths = [str(p) for p in sorted(photos_dir.glob("*.jpg"))] if photos_dir.exists() else []
+    Deja el navegador abierto para que Alejo revise y publique manualmente.
+    Si el llenado falla (sesión FB expirada, cambio de DOM), corre como
+    subproceso desacoplado, así que nadie más se entera — por eso escribimos
+    last_error en el listing.json para que el badge 🔴 del panel se dispare."""
+    try:
+        inv = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
+        folder = Path(inv) / slug
+        car = json.loads((folder / "listing.json").read_text())
+        fields = scanner_car_fields(car)
+        photos_dir = folder / "photos"
+        photo_paths = [str(p) for p in sorted(photos_dir.glob("*.jpg"))] if photos_dir.exists() else []
 
-    with open(SESSION_FILE) as f:
-        storage = json.load(f)
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, slow_mo=300)
-        ctx = await browser.new_context(viewport={"width": 1280, "height": 900},
-                                        storage_state=storage)
-        page = await ctx.new_page()
-        print(f"\n  📦 {fields['year']} {fields['make']} {fields['model']} — "
-              f"{fields['mileage']} mi — ${fields['price']}")
-        await post_scanner_car(page, fields, photo_paths)
-        # NO cerramos el browser: Alejo revisa y da Publicar. Se cierra al terminar él.
-        await asyncio.sleep(3600)
+        with open(SESSION_FILE) as f:
+            storage = json.load(f)
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False, slow_mo=300)
+            ctx = await browser.new_context(viewport={"width": 1280, "height": 900},
+                                            storage_state=storage)
+            page = await ctx.new_page()
+            print(f"\n  📦 {fields['year']} {fields['make']} {fields['model']} — "
+                  f"{fields['mileage']} mi — ${fields['price']}")
+            ok = await post_scanner_car(page, fields, photo_paths)
+            if not ok:
+                record_publish_error(slug, "no se encontró el formulario — ¿sesión FB expirada?")
+                return
+            # NO cerramos el browser: Alejo revisa y da Publicar. Se cierra al terminar él.
+            await asyncio.sleep(3600)
+    except Exception as e:
+        record_publish_error(slug, str(e))
 
 
 if __name__ == "__main__":

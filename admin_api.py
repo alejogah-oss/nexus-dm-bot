@@ -3,13 +3,20 @@
 Opera SOLO sobre el inventario del scanner (scanner_api.INVENTORY_DIR).
 Auth: misma SCANNER_KEY que el scanner (require_key). El bot corre en el Mac Pro.
 """
-import json, os, subprocess, sys, time
+import json, os, subprocess, sys, threading, time
 from pathlib import Path
 from flask import Blueprint, jsonify
 import scanner_api
 from scanner_api import require_key
 
 admin_bp = Blueprint("admin", __name__)
+
+# Serializa la sección crítica de admin_publish (check-del-lock + launch +
+# escritura del lock). app.run() en Flask 3.x es threaded=True por defecto
+# (necesario para las subidas grandes de video del scanner), así que dos
+# requests casi simultáneos (doble-clic) podían pasar ambos el check y
+# lanzar dos Chrome. Ver .superpowers/sdd/task-6-report.md.
+_PUBLISH_MUTEX = threading.Lock()
 
 def _inv_dir() -> Path:
     return Path(scanner_api.INVENTORY_DIR)
@@ -104,12 +111,13 @@ def admin_publish(slug):
     folder = scanner_api._folder_for(slug)
     if not folder:
         return jsonify({"error": "no existe"}), 404
-    lock = _current_lock()
-    if lock:
-        return jsonify({"error": "ya hay una publicación en curso", "slug": lock.get("slug")}), 409
-    pid = _launch_publish(slug)
-    _lock_file().write_text(json.dumps({"slug": slug, "pid": pid}))
-    set_status(folder, last_error=None)
+    with _PUBLISH_MUTEX:
+        lock = _current_lock()
+        if lock:
+            return jsonify({"error": "ya hay una publicación en curso", "slug": lock.get("slug")}), 409
+        pid = _launch_publish(slug)
+        _lock_file().write_text(json.dumps({"slug": slug, "pid": pid}))
+        set_status(folder, last_error=None)
     return jsonify({"ok": True, "slug": slug})
 
 @admin_bp.route("/api/admin/mark/<slug>", methods=["POST"])

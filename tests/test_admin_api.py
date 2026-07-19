@@ -124,3 +124,32 @@ def test_pid_invalido_no_bloquea_para_siempre(tmp_path):
         r = cl.post("/api/admin/publish/2019-Civic-004352", headers=H)
         assert r.status_code == 200  # no 409 perpetuo
     admin_api._lock_file().unlink(missing_ok=True)
+
+# ── FIX 1 (review final): race del lock — check-then-write no atómico ──
+
+def test_publish_mutex_existe_y_serializa_seccion_critica(tmp_path):
+    import threading
+    # el mutex a nivel de módulo debe existir y ser un lock real
+    assert isinstance(admin_api._PUBLISH_MUTEX, type(threading.Lock()))
+    _car(tmp_path)
+    admin_api._lock_file().unlink(missing_ok=True)
+    with patch.object(admin_api, "_launch_publish", return_value=os.getpid()):
+        # dos publish secuenciales bajo el mutex: el primero pasa, el segundo
+        # ve el lock ya escrito y devuelve 409 (no dos Chrome lanzados)
+        r1 = cl.post("/api/admin/publish/2019-Civic-004352", headers=H)
+        assert r1.status_code == 200
+        r2 = cl.post("/api/admin/publish/2019-Civic-004352", headers=H)
+        assert r2.status_code == 409
+    admin_api._lock_file().unlink(missing_ok=True)
+
+def test_publish_slug_inexistente_404_no_toma_mutex_bloqueado(tmp_path):
+    # el 404 de slug inexistente debe devolverse ANTES de tomar el mutex,
+    # incluso si el mutex está tomado por otro hilo.
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    admin_api._lock_file().unlink(missing_ok=True)
+    assert admin_api._PUBLISH_MUTEX.acquire(blocking=False)
+    try:
+        r = cl.post("/api/admin/publish/noexiste", headers=H)
+        assert r.status_code == 404
+    finally:
+        admin_api._PUBLISH_MUTEX.release()

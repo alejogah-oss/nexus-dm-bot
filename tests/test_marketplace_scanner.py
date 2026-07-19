@@ -1,3 +1,4 @@
+import json
 import marketplace_poster
 
 def test_scanner_car_fields_usa_datos_reales():
@@ -18,3 +19,27 @@ def test_scanner_car_fields_make_fallback():
     f = marketplace_poster.scanner_car_fields({"model": "Corolla", "yr": "2020",
                                                "mileage": 10, "price": 20000, "color": "White"})
     assert f["make"] == "Toyota" and f["exterior_color"] == "White"
+
+# ── FIX 2 (review final): badge 🔴 "Falló" nunca se dispara ──────────
+
+def test_record_publish_error_escribe_last_error(tmp_path, monkeypatch):
+    slug = "2019-Civic-004352"
+    folder = tmp_path / slug
+    folder.mkdir()
+    (folder / "listing.json").write_text(json.dumps({
+        "vin": "1HGCM82633A004352", "yr": "2019", "make": "Honda",
+        "model": "Civic", "title": "2019 Honda Civic EX",
+    }))
+    monkeypatch.setenv("INVENTORY_DIR", str(tmp_path))
+
+    marketplace_poster.record_publish_error(slug, "boom")
+
+    data = json.loads((folder / "listing.json").read_text())
+    assert data["last_error"] == "boom"
+    # no borra los datos originales del carro
+    assert data["make"] == "Honda" and data["title"] == "2019 Honda Civic EX"
+
+def test_record_publish_error_slug_inexistente_no_lanza(tmp_path, monkeypatch):
+    monkeypatch.setenv("INVENTORY_DIR", str(tmp_path))
+    # no debe lanzar excepción aunque el slug/listing.json no exista
+    marketplace_poster.record_publish_error("no-existe-este-slug", "boom")
