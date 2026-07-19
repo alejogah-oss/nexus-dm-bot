@@ -1,10 +1,9 @@
 """Endpoints del VIN Scanner PWA. Auth: X-Scanner-Key == env SCANNER_KEY."""
-import base64, functools, json, os, re
+import base64, functools, json, os, re, traceback
 from pathlib import Path
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 from vin_utils import validate_vin, decode_vin, clean_vin, repair_vin
 from listing_voice import LISTING_SYSTEM, build_listing_prompt
-from dm_bot import _claude_create
 import anthropic
 
 bp = Blueprint("scanner", __name__)
@@ -17,6 +16,17 @@ REQUIRED_LISTING_KEYS = ("vin", "yr", "model", "trim", "color", "price", "mileag
 
 def _bad(msg: str, code: int = 400):
     return jsonify({"error": msg}), code
+
+def _copy_call(prompt: str) -> str:
+    """Genera el copy con Sonnet 5. Thinking desactivado (vía extra_body para
+    compatibilidad con SDKs viejos) y extracción del bloque de TEXTO — en
+    Sonnet 5 content[0] puede ser un bloque thinking, nunca leer por índice."""
+    r = _client.messages.create(
+        model=COPY_MODEL, max_tokens=3000, system=LISTING_SYSTEM,
+        messages=[{"role": "user", "content": prompt}],
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+    return "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
 
 def require_key(f):
     @functools.wraps(f)
@@ -106,11 +116,12 @@ def gen_listing():
     if missing:
         return _bad("faltan campos: " + ", ".join(missing))
     try:
-        text = _claude_create(COPY_MODEL, 1500, LISTING_SYSTEM,
-                              [{"role": "user", "content": build_listing_prompt(car)}])
+        text = _copy_call(build_listing_prompt(car))
         m = re.search(r"\{.*\}", text, re.DOTALL)
         out = json.loads(m.group()) if m else {"title": "", "description": text}
     except Exception:
+        print("[SCANNER] /listing falló:", flush=True)
+        traceback.print_exc()
         return _bad("no se pudo generar el copy — reintenta", 502)
     out["title"] = out.get("title", "")[:100]
     return jsonify(out)
@@ -139,3 +150,83 @@ def save_inventory():
     (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
     (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
     return jsonify({"folder": str(folder)})
+
+# ── Pendientes por subir: listar, ver, editar ───────────────────────
+
+_SLUG_RE = re.compile(r"^[A-Za-z0-9-]+$")
+
+def _folder_for(slug: str):
+    """Carpeta de inventario validada (sin path traversal)."""
+    if not _SLUG_RE.match(slug or ""):
+        return None
+    folder = Path(INVENTORY_DIR) / slug
+    return folder if (folder / "listing.json").exists() else None
+
+@bp.route("/api/scanner/inventory", methods=["GET"])
+@require_key
+def list_inventory():
+    items = []
+    root = Path(INVENTORY_DIR)
+    if root.exists():
+        for d in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            lj = d / "listing.json"
+            if not lj.is_file():
+                continue
+            try:
+                data = json.loads(lj.read_text())
+            except ValueError:
+                continue
+            photos_dir = d / "photos"
+            items.append({
+                "slug": d.name, "title": data.get("title", ""),
+                "yr": data.get("yr", ""), "model": data.get("model", ""),
+                "trim": data.get("trim", ""), "price": data.get("price"),
+                "mileage": data.get("mileage"),
+                "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
+                "video": (d / "video.mp4").exists(),
+            })
+    return jsonify({"items": items})
+
+@bp.route("/api/scanner/inventory/<slug>", methods=["GET"])
+@require_key
+def get_inventory_item(slug):
+    folder = _folder_for(slug)
+    if not folder:
+        return _bad("no existe", 404)
+    data = json.loads((folder / "listing.json").read_text())
+    photos_dir = folder / "photos"
+    return jsonify({"slug": slug, "data": data,
+                    "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
+                    "video": (folder / "video.mp4").exists()})
+
+@bp.route("/api/scanner/inventory/<slug>", methods=["PUT"])
+@require_key
+def update_inventory_item(slug):
+    folder = _folder_for(slug)
+    if not folder:
+        return _bad("no existe", 404)
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return _bad("body JSON inválido")
+    data = json.loads((folder / "listing.json").read_text())
+    for k in ("title", "description", "price", "mileage", "color", "notes"):
+        if k in body:
+            data[k] = body[k]
+    data["title"] = str(data.get("title", ""))[:100]
+    (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
+    return jsonify({"ok": True, "data": data})
+
+@bp.route("/api/scanner/inventory/<slug>/photo/<int:n>", methods=["GET"])
+def inventory_photo(slug, n):
+    # Los <img> no mandan headers: auth por query param ?key=
+    expected = os.environ.get("SCANNER_KEY")
+    if not expected or request.args.get("key") != expected:
+        return jsonify({"error": "unauthorized"}), 401
+    folder = _folder_for(slug)
+    if not folder:
+        return _bad("no existe", 404)
+    p = folder / "photos" / f"{n:02d}.jpg"
+    if not p.is_file():
+        return _bad("no existe", 404)
+    return send_file(p, mimetype="image/jpeg")

@@ -354,6 +354,7 @@ async function generateCopy() {
   $("genCopyBtn").classList.add("hidden");
   $("copyBlock").classList.add("hidden");
   $("copyActions").classList.add("hidden");
+  renderCopyPreview();
   try {
     const body = Object.assign({}, session.car, {
       mileage: session.mileage, price: session.price,
@@ -434,6 +435,133 @@ async function saveInventory() {
     showError(err.message + " — tus fotos siguen aquí, reintenta.", saveInventory);
   }
 }
+
+// ── Previsualización de fotos en el paso Copy ───────────────────────
+function renderCopyPreview() {
+  const grid = $("copyPhotoPreview");
+  grid.innerHTML = "";
+  session.photos.forEach((p) => {
+    const img = document.createElement("img");
+    img.src = p.url;
+    grid.appendChild(img);
+  });
+  grid.classList.toggle("hidden", session.photos.length === 0);
+}
+
+// ── Pendientes por subir ────────────────────────────────────────────
+let pendSlug = null;
+
+function showPendList() {
+  pendSlug = null;
+  $("pendDetail").classList.add("hidden");
+  $("pendList").classList.remove("hidden");
+  $("pendTitle").textContent = "Pendientes por subir";
+}
+
+$("pendBtn").addEventListener("click", async () => {
+  $("pendView").classList.remove("hidden");
+  showPendList();
+  const list = $("pendList");
+  list.innerHTML = '<p class="hint">Cargando…</p>';
+  try {
+    const res = await api("/api/scanner/inventory", { method: "GET" });
+    list.innerHTML = "";
+    if (!res.items.length) {
+      list.innerHTML = '<p class="hint">No hay carros guardados todavía.</p>';
+      return;
+    }
+    res.items.forEach((it) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "pend-item";
+      const img = document.createElement("img");
+      img.src = "/api/scanner/inventory/" + it.slug + "/photo/1?key=" + encodeURIComponent(getKey());
+      img.alt = "";
+      const info = document.createElement("div");
+      info.className = "pend-info";
+      const name = document.createElement("div");
+      name.className = "pend-name";
+      name.textContent = it.title || (it.yr + " " + it.model + " " + it.trim);
+      const meta = document.createElement("div");
+      meta.className = "pend-meta";
+      meta.textContent = "$" + (it.price || 0).toLocaleString() + " · " +
+        (it.mileage || 0).toLocaleString() + " mi · " + it.photos + " fotos" +
+        (it.video ? " · 🎥" : "");
+      info.appendChild(name);
+      info.appendChild(meta);
+      btn.appendChild(img);
+      btn.appendChild(info);
+      btn.addEventListener("click", () => openPendiente(it.slug));
+      list.appendChild(btn);
+    });
+  } catch (err) {
+    list.innerHTML = '<p class="hint">Error: ' + err.message + "</p>";
+  }
+});
+
+async function openPendiente(slug) {
+  try {
+    const res = await api("/api/scanner/inventory/" + slug, { method: "GET" });
+    pendSlug = slug;
+    const d = res.data;
+    $("pendTitle").textContent = (d.yr || "") + " " + (d.model || "") + " " + (d.trim || "");
+    $("pTitle").value = d.title || "";
+    $("pDesc").value = d.description || "";
+    $("pPrice").value = d.price || "";
+    $("pMileage").value = d.mileage || "";
+    const grid = $("pendPhotos");
+    grid.innerHTML = "";
+    for (let i = 1; i <= res.photos; i++) {
+      const img = document.createElement("img");
+      img.src = "/api/scanner/inventory/" + slug + "/photo/" + i + "?key=" + encodeURIComponent(getKey());
+      grid.appendChild(img);
+    }
+    $("pendList").classList.add("hidden");
+    $("pendDetail").classList.remove("hidden");
+  } catch (err) {
+    showError(err.message, () => openPendiente(slug));
+  }
+}
+
+$("pSaveBtn").addEventListener("click", async () => {
+  if (!pendSlug) return;
+  const btn = $("pSaveBtn");
+  btn.disabled = true;
+  btn.textContent = "Guardando…";
+  try {
+    await api("/api/scanner/inventory/" + pendSlug, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: $("pTitle").value.trim(),
+        description: $("pDesc").value.trim(),
+        price: parseInt($("pPrice").value, 10) || 0,
+        mileage: parseInt($("pMileage").value, 10) || 0,
+      }),
+    });
+    btn.textContent = "✓ Guardado";
+  } catch (err) {
+    btn.textContent = "Guardar cambios";
+    alert("No se pudo guardar: " + err.message);
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = "Guardar cambios"; }, 2000);
+  }
+});
+
+$("pCopyBtn").addEventListener("click", async () => {
+  const text = $("pTitle").value.trim() + "\n\n" + $("pDesc").value.trim();
+  try { await navigator.clipboard.writeText(text); } catch (_) {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+  }
+  $("pCopyBtn").textContent = "✓ Copiado";
+  setTimeout(() => { $("pCopyBtn").textContent = "Copiar título + descripción"; }, 2000);
+});
+
+$("pBackBtn").addEventListener("click", () => { showPendList(); $("pendBtn").click(); });
+$("pendCloseBtn").addEventListener("click", () => $("pendView").classList.add("hidden"));
 
 // ── No perder la sesión por accidente ───────────────────────────────
 window.addEventListener("beforeunload", (e) => {

@@ -26,7 +26,7 @@ def test_odometer_endpoint():
 
 def test_listing_endpoint():
     fake = json.dumps({"title": "2021 Toyota Corolla SE", "description": "desc"})
-    with patch.object(scanner_api, "_claude_create", return_value=fake):
+    with patch.object(scanner_api, "_copy_call", return_value=fake):
         r = c.post("/api/scanner/listing", headers=H,
                    json={"yr": "2021", "make": "Toyota", "model": "Corolla", "trim": "SE",
                          "engine": "", "fuel": "", "body": "", "drive": "",
@@ -55,7 +55,7 @@ def test_auth_fails_closed_without_env_key():
 
 def test_listing_title_truncated_100():
     fake = json.dumps({"title": "X" * 150, "description": "d"})
-    with patch.object(scanner_api, "_claude_create", return_value=fake):
+    with patch.object(scanner_api, "_copy_call", return_value=fake):
         r = c.post("/api/scanner/listing", headers=H,
                    json={"yr": "2021", "make": "Toyota", "model": "Corolla", "trim": "",
                          "engine": "", "fuel": "", "body": "", "drive": "",
@@ -124,6 +124,46 @@ def test_inventory_missing_keys_400(tmp_path):
         "data": json.dumps({"vin": "1HGCM82633A004352", "yr": "2021"}),
         "photos": (io.BytesIO(b"a"), "1.jpg")})
     assert r.status_code == 400 and "faltan campos" in r.json["error"]
+
+def _guardar_carro(tmp_path, titulo="Corolla lindo"):
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    data = {"vin": "1HGCM82633A004352", "yr": "2021", "model": "Corolla", "trim": "SE",
+            "color": "Blanco", "price": 17500, "mileage": 42000,
+            "title": titulo, "description": "descripcion larga", "notes": ""}
+    r = c.post("/api/scanner/inventory", headers=H, data={
+        "data": json.dumps(data),
+        "photos": [(io.BytesIO(b"a"), "1.jpg"), (io.BytesIO(b"b"), "2.jpg")]})
+    return r.json["folder"].split("/")[-1]
+
+def test_pendientes_list(tmp_path):
+    slug = _guardar_carro(tmp_path)
+    r = c.get("/api/scanner/inventory", headers=H)
+    assert r.status_code == 200 and len(r.json["items"]) == 1
+    item = r.json["items"][0]
+    assert item["slug"] == slug and item["photos"] == 2 and item["video"] is False
+    assert item["title"] == "Corolla lindo"
+
+def test_pendiente_get_y_update(tmp_path):
+    slug = _guardar_carro(tmp_path)
+    r = c.get(f"/api/scanner/inventory/{slug}", headers=H)
+    assert r.status_code == 200 and r.json["data"]["price"] == 17500
+    r2 = c.put(f"/api/scanner/inventory/{slug}", headers=H,
+               json={"price": 16900, "title": "Nuevo titulo"})
+    assert r2.status_code == 200 and r2.json["data"]["price"] == 16900
+    r3 = c.get(f"/api/scanner/inventory/{slug}", headers=H)
+    assert r3.json["data"]["title"] == "Nuevo titulo"
+
+def test_pendiente_slug_invalido_404(tmp_path):
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    assert c.get("/api/scanner/inventory/../etc", headers=H).status_code == 404
+    assert c.get("/api/scanner/inventory/noexiste", headers=H).status_code == 404
+
+def test_pendiente_photo_auth_por_query(tmp_path):
+    slug = _guardar_carro(tmp_path)
+    assert c.get(f"/api/scanner/inventory/{slug}/photo/1").status_code == 401
+    r = c.get(f"/api/scanner/inventory/{slug}/photo/1?key=testkey")
+    assert r.status_code == 200 and r.data == b"a"
+    assert c.get(f"/api/scanner/inventory/{slug}/photo/9?key=testkey").status_code == 404
 
 def test_inventory_no_photos_400(tmp_path):
     scanner_api.INVENTORY_DIR = str(tmp_path)

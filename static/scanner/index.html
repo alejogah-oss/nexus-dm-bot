@@ -34,7 +34,10 @@
   <header class="app-header">
     <div class="brand">
       <h1>NEXUS <span>SCANNER</span></h1>
-      <button class="key-badge" id="keyBadgeBtn" type="button">clave &#9998;</button>
+      <div>
+        <button class="key-badge" id="pendBtn" type="button">&#128203; pendientes</button>
+        <button class="key-badge" id="keyBadgeBtn" type="button">clave &#9998;</button>
+      </div>
     </div>
     <div class="progress-track">
       <div class="progress-step" data-step="1"><i></i></div>
@@ -162,6 +165,8 @@
 
       <button class="btn btn-primary hidden" id="genCopyBtn" type="button">Generar copy</button>
 
+      <div class="photo-grid preview-grid hidden" id="copyPhotoPreview"></div>
+
       <div class="copy-block hidden" id="copyBlock">
         <span class="copy-title" id="copyTitle"></span>
         <span id="copyDescription"></span>
@@ -184,6 +189,30 @@
       <span class="spinner hidden" id="nextBtnSpinner"></span>
     </button>
   </footer>
+</div>
+
+<!-- ── Pendientes por subir ─────────────────────────────────────────── -->
+<div id="pendView" class="key-overlay hidden">
+  <div class="card pend-card">
+    <h2 id="pendTitle">Pendientes por subir</h2>
+
+    <div id="pendList"><p class="hint">Cargando…</p></div>
+
+    <div id="pendDetail" class="hidden">
+      <div class="photo-grid preview-grid" id="pendPhotos"></div>
+      <div class="field"><label for="pTitle">Título</label><input id="pTitle" maxlength="100"></div>
+      <div class="field"><label for="pDesc">Descripción</label><textarea id="pDesc" rows="10"></textarea></div>
+      <div class="field-row">
+        <div class="field"><label for="pPrice">Precio</label><input id="pPrice" type="number" inputmode="numeric"></div>
+        <div class="field"><label for="pMileage">Millaje</label><input id="pMileage" type="number" inputmode="numeric"></div>
+      </div>
+      <button class="btn btn-secondary" id="pCopyBtn" type="button">Copiar título + descripción</button>
+      <button class="btn btn-primary" id="pSaveBtn" type="button">Guardar cambios</button>
+      <button class="btn btn-ghost" id="pBackBtn" type="button">&#8592; Volver a la lista</button>
+    </div>
+
+    <button class="btn btn-secondary" id="pendCloseBtn" type="button">Cerrar</button>
+  </div>
 </div>
 
 <script src="/static/scanner/vendor/zxing.min.js"></script>

@@ -516,3 +516,26 @@ main {
   display: block; margin-bottom: 10px;
 }
 .live-scan .hint { text-align: center; margin-bottom: 10px; }
+
+/* ── Pendientes + previsualización ── */
+.pend-card { max-height: 88vh; overflow-y: auto; width: min(560px, 94vw); }
+.pend-item {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: #161616; border: 1px solid #2a2a2a; border-radius: 12px;
+  padding: 10px; margin-bottom: 10px; cursor: pointer; text-align: left;
+  color: inherit; font: inherit;
+}
+.pend-item:active { border-color: #EB0A1E; }
+.pend-item img {
+  width: 64px; height: 64px; object-fit: cover; border-radius: 8px;
+  background: #000; flex-shrink: 0;
+}
+.pend-item .pend-info { min-width: 0; }
+.pend-item .pend-name {
+  font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pend-item .pend-meta { font-size: 0.85rem; opacity: 0.7; }
+.preview-grid { display: flex; gap: 8px; overflow-x: auto; padding: 6px 0; margin-bottom: 12px; }
+.preview-grid img {
+  width: 84px; height: 84px; object-fit: cover; border-radius: 10px; flex-shrink: 0;
+}
