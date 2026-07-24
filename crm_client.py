@@ -230,11 +230,15 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     trim  = lead_data.get("vehicle_trim", "")
     conv_url = conversation_url(sender_id, platform)
 
-    # Mínimo para CRM: nombre Y teléfono. Si falta alguno, no se crea el lead
-    # todavía — solo se avisa a Alejo por WhatsApp para que no se pierda la
-    # señal. crm_sent queda False para reintentar en el próximo HOT LEAD.
-    if not name or not phone:
-        missing = [f for f, ok in (("nombre", bool(name)), ("teléfono", bool(phone))) if not ok]
+    # Mínimo para CRM: nombre. El bot marca [HOT LEAD] con solo una de varias
+    # señales (confirma visita, pregunta financiamiento, etc.) que no siempre
+    # incluyen el teléfono — exigir también el teléfono aquí dejaba la mayoría
+    # de leads nuevos sin registrar en el CRM (solo llegaba el WhatsApp).
+    # El nombre casi siempre está disponible vía perfil de Meta; el teléfono,
+    # cuando lo tengamos, va en el payload igual — si no, el CRM lo recibe
+    # vacío y Alejo lo completa desde la conversación.
+    if not name:
+        missing = ["nombre"]
         print(f"  ⚠️  CRM — Lead incompleto (falta {', '.join(missing)}) — NO se crea en CRM aún")
         from pulse import pulse_notify
         pulse_notify(
