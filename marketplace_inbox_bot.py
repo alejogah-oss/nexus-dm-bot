@@ -456,7 +456,13 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         log_event("HOT_LEAD", f"Marketplace personal | {sender_name} | {last_msg[:80]}", "marketplace")
         if car:
             track_hot_lead(car)
-            extract_appointment_from_conversation(full_history, car, thread_id, "marketplace")
+
+    # Se intenta extraer la cita en CADA respuesta, no solo cuando el modelo marcó
+    # [HOT LEAD] en ese mensaje exacto — el cliente puede confirmar la fecha en un
+    # turno posterior sin que el modelo repita la etiqueta. _has_open_appointment()
+    # evita crear duplicados si ya hay una cita pending/confirmed para este thread.
+    if car:
+        extract_appointment_from_conversation(full_history, car, thread_id, "marketplace")
 
     # SHOWROOM_DECLINED — igual que dm_bot.handle_marketplace_message
     if is_declined:

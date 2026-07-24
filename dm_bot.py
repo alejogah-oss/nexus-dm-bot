@@ -437,7 +437,11 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
         push_hot_lead(sender_id, platform, history, car=car)
         log_event("HOT_LEAD", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} | {text[:80]}", platform)
         track_hot_lead(car)
-        extract_appointment_from_conversation(history, car, sender_id, platform)
+
+    # Igual que en marketplace_inbox_bot.py: se intenta en cada respuesta, no solo
+    # cuando el modelo marcó [HOT LEAD] en ese mensaje — _has_open_appointment()
+    # evita duplicados.
+    extract_appointment_from_conversation(history, car, sender_id, platform)
 
     if is_declined:
         print(f"\n📋 SHOWROOM DECLINED — {platform.upper()} | {sender_id[:12]}...")
