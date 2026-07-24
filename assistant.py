@@ -82,6 +82,8 @@ def morning_briefing():
     recent = [e for e in events if e["ts"].startswith(yesterday_str)]
     hot_leads = [e for e in recent if e["type"] == "HOT_LEAD"]
     declined = [e for e in recent if e["type"] == "SHOWROOM_DECLINED"]
+    chats_started = [e for e in recent if e["type"] == "CHAT_STARTED"]
+    chats_total = len([e for e in events if e["type"] == "CHAT_STARTED"])
 
     # Follow-ups pendientes (SHOWROOM_DECLINED hace 3 días, no seguidos)
     three_days_ago = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
@@ -106,8 +108,10 @@ def morning_briefing():
         f"📅 {day_name}",
         "",
         f"📊 AYER ({yesterday_str.split('-')[2]}/{yesterday_str.split('-')[1]}):",
+        f"  💬 Chats atendidos: {len(chats_started)}",
         f"  🔥 Hot Leads: {len(hot_leads)}",
         f"  📋 Leads fríos: {len(declined)}",
+        f"  📈 Total histórico de chats: {chats_total}",
         "",
     ]
 
