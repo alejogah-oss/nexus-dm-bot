@@ -95,7 +95,7 @@ def google_calendar_link(date_pref: str, time_pref: str, customer_name: str, car
     params = urllib.parse.urlencode({
         "text":     f"Cita Toyota — {customer_name}",
         "dates":    f"{start.strftime(fmt)}/{end.strftime(fmt)}",
-        "details":  f"Carro: {car}\nCliente: {customer_name}\nContacto: Alejo (954) 310-6671",
+        "details":  f"Carro: {car}\nCliente: {customer_name}\nContacto: Alejo (954) 910-6671",
         "location": DEALER_ADDRESS,
     })
     return f"https://calendar.google.com/calendar/r/eventedit?{params}"
@@ -123,6 +123,15 @@ def _save(appointments: list):
 # ─────────────────────────────────────────────
 # Create
 # ─────────────────────────────────────────────
+
+def _has_open_appointment(customer_id: str) -> bool:
+    """True si ya existe una cita pending/confirmed para este cliente — evita duplicados."""
+    appointments = _load()
+    return any(
+        a.get("customer_id") == customer_id and a.get("status") != "cancelled"
+        for a in appointments
+    )
+
 
 def create_appointment(
     customer_id: str,
@@ -281,6 +290,9 @@ def extract_appointment_from_conversation(history: list, car: dict, sender_id: s
     Si encuentra fecha, crea la cita automáticamente.
     Retorna el dict de la cita o None si no se detectó fecha.
     """
+    if _has_open_appointment(sender_id):
+        return None
+
     if not history:
         return None
 
