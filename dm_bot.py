@@ -415,6 +415,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
         send_instagram_reply(sender_id, clean_reply)
     else:
         send_facebook_reply(sender_id, clean_reply)
+    print(f"[MP-{platform.upper()}] 💬 {clean_reply}", flush=True)
 
     # Registrar mensaje en analytics (siempre, para todo listing)
     track_message(car)
