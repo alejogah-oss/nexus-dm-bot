@@ -428,6 +428,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     try:
         await _type_and_send(page, reply)
         print(f"  [BOT] ✅ Respondido a {sender_name}")
+        print(f"  [BOT] 💬 {reply}", flush=True)
         # Activar modo rápido: revisar este thread cada 10s durante 5 min
         global _active_until, _active_threads
         _active_until = time.time() + ACTIVE_WINDOW
