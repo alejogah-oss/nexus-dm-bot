@@ -127,11 +127,23 @@ def test_tiene_rama_para_decisor_ausente():
     assert "tráelo(a) también" in p
 
 
+def test_decisor_ausente_cierra_con_horarios_concretos_no_pregunta_abierta():
+    # Alineado con BOT_VOICE (commit b554137): la rama DECISOR AUSENTE debe
+    # cerrar con el pivot de horarios concretos, no con una pregunta abierta
+    # tipo "¿qué día les queda bien?".
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("DECISOR AUSENTE")
+    assert idx != -1
+    seccion = p[idx:idx + 700]
+    assert "Tengo espacio hoy en la tarde o mañana en la mañana" in seccion
+    assert "¿qué día les queda bien" not in seccion.lower()
+
+
 def test_decisor_ausente_no_aplica_si_hay_despedida_o_rechazo():
     p = _marketplace_voice(CAR_CON_RANGO)
     idx = p.find("DECISOR AUSENTE")
     assert idx != -1
-    seccion = p[idx:idx + 900]
+    seccion = p[idx:idx + 1000]
     assert "RECHAZOS" in seccion
     assert "CIERRE DE CONVERSACIÓN" in seccion
     assert "salida educada" in seccion or "NO es señal de compra" in seccion
@@ -172,3 +184,15 @@ def test_un_solo_trim_aclara_que_no_hay_rango():
 def test_usados_da_valor_antes_de_pedir_whatsapp():
     p = _marketplace_voice(CAR_CON_RANGO)
     assert "Sí manejamos usados en ese rango" in p
+
+
+def test_direccion_solo_tras_horario_y_numero_confirmados():
+    # Alineado con BOT_VOICE: el gate de nombre/dirección del dealer requiere
+    # AMBOS (horario confirmado Y número dado) — no basta con uno de los dos.
+    # Debe matchear el AND de FLUJO DE AGENDAMIENTO paso 4 ("Con día + número").
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("NUNCA menciones el nombre del asesor")
+    assert idx != -1
+    seccion = p[idx:idx + 200]
+    assert "confirmado una cita y dado su número" in seccion
+    assert "confirmado una cita o dado su número" not in seccion
