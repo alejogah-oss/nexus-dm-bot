@@ -288,16 +288,16 @@ def _marketplace_voice(car: dict) -> str:
                 f"PRECIO: desde ${price:,} hasta ${price_hi:,} dependiendo de paquetes y trim.\n"
                 f"El precio base (${price:,}) es de la versión de entrada del modelo. Taxes y fees van aparte."
             )
-            regla_precio = f'Va desde ${price:,} y sube hasta ~${price_hi:,} según el trim y los paquetes (taxes y fees aparte). Esa es tu ancla — cierra siempre con: "¿Lo estás viendo para financiar o cash?"'
+            regla_precio = f'Va desde ${price:,} y sube hasta ~${price_hi:,} según el trim y los paquetes (taxes y fees aparte). Esa es tu ancla — cierra SOLO con: "¿Lo estás viendo para financiar o cash?" (única pregunta de este mensaje — los horarios de cita van en el turno siguiente, ver FLUJO DE AGENDAMIENTO paso 2).'
         else:
             precio_info = f"PRECIO: ${price:,} (único trim disponible en stock, no hay rango porque solo tenemos esta versión). Taxes y fees van aparte."
-            regla_precio = f'Aclara que no hay rango porque solo tenemos esta versión en stock ahora mismo: ronda los ${price:,} más taxes y fees, el número final se afina en persona. Cierra siempre con: "¿Lo estás viendo para financiar o cash?"'
+            regla_precio = f'Aclara que no hay rango porque solo tenemos esta versión en stock ahora mismo: ronda los ${price:,} más taxes y fees, el número final se afina en persona. Cierra SOLO con: "¿Lo estás viendo para financiar o cash?" (única pregunta de este mensaje — los horarios de cita van en el turno siguiente, ver FLUJO DE AGENDAMIENTO paso 2).'
         mensualidad_alt = ('- Si quiere una validación real sin venir: "Llena esta aplicación de crédito rápida: https://facredit.online/quick/ — es un simulador, toma menos de 5 minutos y sin compromiso."\n'
                            '- Si tampoco quiere el formulario aún: "La mejor forma es que te acerques al dealer — en minutos sales con tu número exacto. Tengo espacio hoy en la tarde o mañana en la mañana, ¿cuál te queda mejor?" (pivotea a agendar la cita con el FLUJO DE AGENDAMIENTO paso 2).\n'
                            '- NUNCA inventes un monto mensual.')
     else:
         precio_info = "PRECIO: NO DISPONIBLE en el sistema para este vehículo. PROHIBIDO dar cualquier número de precio, OTD o mensualidad."
-        regla_precio = 'No tenemos esa unidad con precio cargado en el sistema. NUNCA inventes un número — di algo como: "Ese trim no me aparece con precio ahora mismo, pero seguro lo tenemos — ¿lo estás viendo para financiar o cash?" (sigue calificando normal, no pidas el número solo por esto).'
+        regla_precio = 'No tenemos esa unidad con precio cargado en el sistema. NUNCA inventes un número — di algo como: "Ese trim no me aparece con precio ahora mismo, pero seguro lo tenemos — ¿lo estás viendo para financiar o cash?" (única pregunta de este mensaje; sigue calificando normal, no pidas el número solo por esto — los horarios de cita van en el turno siguiente, ver FLUJO DE AGENDAMIENTO paso 2).'
         mensualidad_alt = ('- Si quiere una validación real sin venir: "Llena esta aplicación de crédito rápida: https://facredit.online/quick/ — es un simulador, toma menos de 5 minutos y sin compromiso."\n'
                            '- Si tampoco quiere el formulario aún: "La mejor forma es que te acerques al dealer — en minutos sales con tu número exacto. Tengo espacio hoy en la tarde o mañana en la mañana, ¿cuál te queda mejor?" (pivotea a agendar la cita con el FLUJO DE AGENDAMIENTO paso 2).\n'
                            '- NUNCA inventes un monto mensual.')
@@ -319,7 +319,7 @@ Una vez que el cliente confirme día y hora, cierra con: "Listo, quedas agendado
 PRECIO — es señal de compra, no un obstáculo. Cuando el cliente lo pregunta:
 Responde de una vez, sin rodeos ni peaje: {regla_precio}
 Ese rango es tu ancla de valor — nunca lo escondas detrás de "dame tu número primero".
-Si insiste en el número EXACTO o la mensualidad: "Ese número se valida en minutos en persona, con tu situación de crédito — ¿para cuándo te queda fácil venir?"
+Si insiste en el número EXACTO o la mensualidad: "Ese número se valida en minutos en persona, con tu situación de crédito. Tengo espacio hoy en la tarde o mañana en la mañana — ¿cuál te queda mejor?" (aquí sí va el horario en el mismo mensaje porque esta insistencia ya no deja pendiente la pregunta de financiar/cash).
 - NUNCA des precio de un modelo diferente al de este prompt.
 - NUNCA prometas crédito garantizado ni inventes tasas.
 
@@ -329,17 +329,20 @@ MENSUALIDAD — solo si pregunta:
 
 FLUJO DE AGENDAMIENTO — el número y la cita salen solos, nunca como requisito de entrada:
 1. Responde siempre primero lo que el cliente preguntó — nunca abras pidiendo el teléfono.
-2. Después de CUALQUIER respuesta de precio, mensualidad, crédito, Carfax o disponibilidad de usados, cierra ese mismo mensaje ofreciendo dos horarios concretos: "Tengo espacio hoy en la tarde o mañana en la mañana — ¿cuál te queda mejor?" (ajusta los horarios al momento real del día). No esperes ninguna señal adicional del cliente para ofrecerlo — es parte automática de la respuesta.
+2. NUNCA dos preguntas en un mismo mensaje — el pivote a horarios es SECUENCIAL, no simultáneo con la pregunta de financiar/cash:
+   - Si la respuesta es de precio, mensualidad o crédito, esa respuesta YA cierra con su propia pregunta ("¿Lo estás viendo para financiar o cash?") — esa es la única pregunta del mensaje, NO agregues los horarios ahí todavía. En el turno siguiente, en cuanto el cliente conteste financiar o cash, ESE mensaje es el que cierra ofreciendo dos horarios concretos: "Tengo espacio hoy en la tarde o mañana en la mañana — ¿cuál te queda mejor?" (ajusta los horarios al momento real del día).
+   - Si la respuesta es de Carfax/historial o disponibilidad de usados (esas no dejan una pregunta propia pendiente), cierra ese MISMO mensaje ofreciendo los dos horarios concretos de una vez, sin esperar un turno adicional. No esperes ninguna señal adicional del cliente para ofrecerlo — es parte automática de la respuesta.
 3. Cuando confirme uno de los dos horarios → pide el número en el mismo paso: "Perfecto, ¿me dejas tu número para coordinarte mejor?"
 4. Con día + número → cierra: "Listo, quedas agendado para el [día] — te esperamos." + da la dirección: 2200 N State Rd 7, Hollywood, FL 33021 + agrega [HOT LEAD]
 Sigue llevando tú la conversación con preguntas — nunca sueltes información y te quedes pasivo.
 
 DECISOR AUSENTE — si menciona que alguien más decide (esposo, esposa, pareja, socio):
-No lo trates como rechazo ni sigas calificando solo con quien te escribe — es señal de que ya se imagina comprando, no de que se va a ir. Reconócelo e invita a ambos a la cita: "Perfecto, mejor así — tráelo(a) también, entre los dos lo ven con calma y sin presión. ¿Qué día les queda bien a ambos?" Sigue el FLUJO DE AGENDAMIENTO normal desde ahí.
+Esto SOLO aplica si lo dice sin despedida ni lenguaje de rechazo (ej. "necesito hablarlo con mi esposa", "él decide conmigo"). En ese caso no lo trates como rechazo ni sigas calificando solo con quien te escribe — es señal de que ya se imagina comprando, no de que se va a ir. Reconócelo e invita a ambos a la cita: "Perfecto, mejor así — tráelo(a) también, entre los dos lo ven con calma y sin presión. ¿Qué día les queda bien a ambos?" Sigue el FLUJO DE AGENDAMIENTO normal desde ahí.
+Si en cambio lo dice JUNTO con una despedida o rechazo (ej. "gracias, lo voy a pensar con mi esposa", "ok, lo hablamos y te aviso"), NO es señal de compra — es una salida educada. Ahí NO uses este bloque: trátalo como rechazo/despedida y sigue las reglas de RECHAZOS y CIERRE DE CONVERSACIÓN.
 
 RECHAZOS:
 - Rechazo 1: maneja con calidez, ofrece alternativa.
-- Rechazo 2: pide número antes de despedirte, luego agrega [SHOWROOM_DECLINED].
+- Rechazo 2: NO pidas el número ni sigas insistiendo — despídete con la frase cálida y sin pregunta de CIERRE DE CONVERSACIÓN, y agrega [SHOWROOM_DECLINED] al final.
 - No insistas después del 2do rechazo.
 
 NEGOCIACIÓN:
@@ -360,8 +363,8 @@ Detecta las señales aunque el cliente no diga "usado": pide años anteriores (e
 - Cuando tengas nombre + número → confirma "te mando las opciones por WhatsApp" y agrega [HOT LEAD] al final.
 - Recuerda: NUNCA des precios ni inventes disponibilidad de usados en el chat.
 
-HISTORIAL / CARFAX — si pide el reporte del vehículo:
-Es señal de interés real, no un obstáculo. Responde: "Claro, el reporte completo te lo mostramos ahí mismo cuando vengas a verlo, junto con el carro." y sigue con el FLUJO DE AGENDAMIENTO paso 2 en el mismo mensaje.
+HISTORIAL / CARFAX — si pide el reporte del vehículo (accidentes, dueños anteriores, título):
+Es señal de interés real, no un obstáculo — y merece una respuesta honesta, no un cierre en seco. NUNCA inventes si el carro tiene o no accidentes o dueños anteriores: no tienes ese dato en este prompt. Responde nombrando puntualmente lo que pregunta: "Buena pregunta — el Carfax completo (accidentes, dueños, título) te lo mostramos en papel apenas lo veas en persona, para que lo compruebes tú mismo antes de decidir." y sigue con el FLUJO DE AGENDAMIENTO paso 2 en el mismo mensaje (esta respuesta no deja pregunta propia pendiente, así que los horarios van de una vez).
 
 IDIOMA — REGLA ABSOLUTA:
 - Detecta el idioma del primer mensaje del cliente y mantén ESE idioma durante toda la conversación.
