@@ -11,6 +11,7 @@ print(f"[MIB] STARTED pid={os.getpid()} python={sys.executable}", flush=True)
 
 import asyncio
 import base64
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -43,7 +44,7 @@ LOCAL_MODE     = os.environ.get("LOCAL_MODE", "0") == "1"
 USE_COOKIES    = not LOCAL_MODE
 POLL_SEC       = 60    # intervalo normal
 POLL_ACTIVE    = 10    # intervalo cuando hay conversación activa
-ACTIVE_WINDOW  = 300   # segundos en modo activo tras responder (5 min)
+ACTIVE_WINDOW  = 1800  # segundos en modo activo tras responder (30 min — conversación caliente)
 
 _active_until: float = 0.0              # timestamp hasta cuando está en modo activo
 _active_threads: dict[str, float] = {}  # {thread_id: expires_at}
@@ -51,6 +52,17 @@ MAX_THREADS  = 3         # solo los 3 más recientes por ciclo (más humano, men
 
 ACTIVE_HOURS = (8, 22)   # horario humano: responder solo 8am-10pm
 _last_full_load: float = 0.0  # último goto/reload real del inbox (el sidebar vive por WebSocket)
+
+_car_resolution_failures: dict[str, int] = {}   # {f"{thread_id}:{msg_hash}": intentos}
+CAR_RESOLUTION_ALERT_THRESHOLD = 5              # ~5 ciclos de polling normal (~5 min)
+
+
+def _track_car_resolution_failure(failures: dict[str, int], key: str, threshold: int = CAR_RESOLUTION_ALERT_THRESHOLD) -> tuple[int, bool]:
+    """Incrementa el contador de fallos de resolución de carro para `key`.
+    Retorna (conteo_actual, True solo el ciclo exacto en que se cruza el threshold)."""
+    count = failures.get(key, 0) + 1
+    failures[key] = count
+    return count, count == threshold
 
 
 def _jitter(a: float, b: float) -> float:
@@ -323,7 +335,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         return
 
     last_msg = messages[-1]["content"]
-    msg_hash = hash(last_msg.strip())
+    msg_hash = hashlib.md5(last_msg.strip().encode()).hexdigest()
 
     if state.get(thread_id) == msg_hash:
         return  # Ya respondimos a este mensaje
@@ -350,15 +362,41 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
             car = {"yr": int(m.group(1)), "model": m.group(2).strip(),
                    "trim": "", "color": "", "down_payment": 0, "vin": ""}
 
+    # Fallback 2: caché persistente — el thread ya fue identificado como listing
+    # en un ciclo anterior (el modo activo pasa sender_name vacío y el header
+    # de Messenger ya no expone el título — verificado 15 jul 2026)
+    if not car and isinstance(state.get(f"car_{thread_id}"), dict):
+        car = dict(state[f"car_{thread_id}"])
+
     # SEGURIDAD (3er candado): solo responder conversaciones de Marketplace reales
     # (con carro/listing). Sin contexto de carro no es un listing → no tocar. Junto
     # con el inbox /marketplace/ y el selector /marketplace/t/ — verificado 8 jul 2026.
     if not car:
-        print(f"  [BOT] Sin listing de Marketplace — SALTANDO {thread_id}", flush=True)
+        key = f"{thread_id}:{msg_hash}"
+        fails, should_alert = _track_car_resolution_failure(_car_resolution_failures, key)
+        print(f"  [BOT] Sin listing de Marketplace — SALTANDO {thread_id} (intento {fails})", flush=True)
+        if should_alert:
+            pulse_notify(
+                "MARKETPLACE_ERROR",
+                f"El bot lleva {fails} ciclos sin poder identificar el carro del thread "
+                f"{thread_id} ({sender_name or 'sin nombre'}) — el cliente no ha recibido "
+                f"respuesta. Revisa: https://www.messenger.com/marketplace/t/{thread_id}"
+            )
+        # Auto-cura: si el sidebar dio ID numérico en vez del nombre, forzar un
+        # goto/reload real en el próximo scan completo para recuperar los títulos
+        # (sin esto el thread queda mudo hasta la recarga horaria)
+        global _last_full_load
+        _last_full_load = 0.0
         return
+    _car_resolution_failures.pop(f"{thread_id}:{msg_hash}", None)
 
     # Completar precio/trim/vin desde el inventario real — el header solo da año+modelo
     car = _enrich_car(car)
+    state[f"car_{thread_id}"] = {
+        "yr": car["yr"], "model": car["model"], "trim": car.get("trim", ""),
+        "color": car.get("color", ""), "down_payment": car.get("down_payment", 0),
+        "vin": car.get("vin", ""),
+    }
     if car.get("price"):
         print(f"  [BOT] Inventario: {car['yr']} {car['model']} {car.get('trim', '')} — ${car['price']:,}", flush=True)
     else:
@@ -366,18 +404,8 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     history = _conversations.get(thread_id, messages[:-1])
 
-    # Intro en primer contacto
-    if not history and car:
-        intro = (
-            f"¡Hola! Vi que te interesa el {car['yr']} Toyota {car['model']} "
-            f"{car.get('trim', '')}. "
-            f"¿Tienes alguna pregunta sobre el carro?"
-        ).strip()
-        try:
-            await _type_and_send(page, intro)
-            history = [{"role": "assistant", "content": intro}]
-        except Exception:
-            pass
+    # Primer contacto: sin saludo fijo — el modelo genera la apertura él mismo
+    # (instrucción APERTURA en _marketplace_voice) respetando el idioma del cliente.
 
     # Generar respuesta
     system = _marketplace_voice(car) if car else _marketplace_voice(
