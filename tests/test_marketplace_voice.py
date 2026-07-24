@@ -25,16 +25,95 @@ def test_insistencia_numero_exacto_usa_horarios_concretos():
 
 
 def test_precio_no_hace_dos_preguntas_en_un_mismo_mensaje():
+    # A pedido de Alejo (jul 24 2026): ahora hay DOS preguntas de calificación
+    # antes del precio (financiar/cash + "para cuándo"), pero cada una debe
+    # vivir en su propio paso/mensaje — nunca combinadas en un solo texto.
     p = _marketplace_voice(CAR_CON_RANGO)
-    # regla_precio (usada en la respuesta de precio) debe cerrar SOLO con
-    # financiar/cash — los horarios van en el turno siguiente, no en el mismo
-    # bloque de instrucción de precio.
     idx = p.find("PRECIO — es señal de compra")
     assert idx != -1
-    seccion_precio = p[idx:idx + 400]
-    assert seccion_precio.count("¿Lo estás viendo para financiar o cash?") == 1
-    assert "Tengo espacio hoy en la tarde o mañana en la mañana" not in seccion_precio
-    assert "los horarios de cita van en el turno siguiente" in seccion_precio
+    seccion_precio = p[idx:idx + 1200]
+
+    idx_paso1 = seccion_precio.find("1. Financiar o cash")
+    idx_paso2 = seccion_precio.find("2. Para cuándo lo necesita")
+    idx_paso3 = seccion_precio.find("3. Con AMBAS respuestas")
+    assert idx_paso1 != -1 and idx_paso2 != -1 and idx_paso3 != -1
+    assert idx_paso1 < idx_paso2 < idx_paso3
+
+    paso1 = seccion_precio[idx_paso1:idx_paso2]
+    paso2 = seccion_precio[idx_paso2:idx_paso3]
+    paso3 = seccion_precio[idx_paso3:idx_paso3 + 400]
+
+    # Paso 1 pregunta SOLO financiar/cash, sin mencionar la segunda pregunta.
+    assert "¿lo estás viendo para financiar o cash?" in paso1.lower()
+    assert "para cuándo" not in paso1.lower()
+
+    # Paso 2 pregunta SOLO la segunda calificación, sin repetir financiar/cash.
+    assert "¿para cuándo la estarías necesitando?" in paso2.lower()
+    assert "financiar o cash?" not in paso2.lower()
+
+    # Paso 3 (donde por fin se da el precio) ya no lleva ninguna pregunta de
+    # calificación — el pivot a horarios queda para el FLUJO DE AGENDAMIENTO.
+    assert "financiar o cash?" not in paso3.lower()
+    assert "¿para cuándo la estarías necesitando?" not in paso3.lower()
+    assert "sin pregunta de calificación" in paso3.lower()
+    assert "Tengo espacio hoy en la tarde o mañana en la mañana" not in paso3
+
+
+def test_precio_agrega_segunda_pregunta_de_calificacion_antes_de_cotizar():
+    # Punto central del pedido de Alejo: no basta con financiar/cash, debe
+    # haber una SEGUNDA pregunta de calificación real (timeline) antes de dar
+    # cualquier número.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    assert "¿para cuándo la estarías necesitando?" in p.lower()
+    idx = p.find("PRECIO — es señal de compra")
+    assert idx != -1
+    seccion_precio = p[idx:idx + 1200]
+    assert "dos preguntas rápidas" in seccion_precio.lower()
+    assert "no la repitas" in seccion_precio.lower() or "no repitas" in seccion_precio.lower()
+
+
+def test_precio_no_gatea_el_rango_detras_del_numero_de_telefono():
+    # El rango/ancla de precio se gatea SOLO con las 2 preguntas de
+    # calificación (financiar/cash + para cuándo) — nunca con pedir el
+    # teléfono. El teléfono sigue siendo parte aparte del FLUJO DE AGENDAMIENTO.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("PRECIO — es señal de compra")
+    assert idx != -1
+    idx_fin = p.find("MENSUALIDAD — solo si pregunta")
+    assert idx_fin != -1
+    seccion_precio = p[idx:idx_fin]
+    assert "número de teléfono" in seccion_precio.lower()
+    assert "eso es aparte" in seccion_precio.lower()
+    # Los pasos que preguntan (1 y 2) no deben pedir el teléfono como
+    # condición para llegar al precio.
+    idx_paso1 = seccion_precio.find("1. Financiar o cash")
+    idx_paso3 = seccion_precio.find("3. Con AMBAS respuestas")
+    pasos_1_2 = seccion_precio[idx_paso1:idx_paso3]
+    assert "dame tu número" not in pasos_1_2.lower()
+    assert "me dejas tu número" not in pasos_1_2.lower()
+
+
+def test_precio_insistencia_sin_contestar_no_se_estonewallea():
+    # Si el cliente reinsiste en el número sin contestar la calificación, el
+    # bot debe ceder tras 1-2 reinsistencias — nunca un stonewall total.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("PRECIO — es señal de compra")
+    assert idx != -1
+    seccion_precio = p[idx:idx + 1800]
+    assert "reinsiste en el número sin contestar" in seccion_precio.lower()
+    assert "no lo estonewalles" in seccion_precio.lower()
+    assert "segunda reinsistencia dale el número" in seccion_precio.lower()
+
+
+def test_precio_numero_exacto_sigue_requiriendo_visita():
+    # El gate del número EXACTO / mensualidad (requiere pasar por el dealer)
+    # es un comportamiento ya existente que NO debe tocarse con este cambio.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("Si insiste en el número EXACTO")
+    assert idx != -1
+    sub_caso = p[idx:idx + 300]
+    assert "se valida en minutos en persona" in sub_caso
+    assert "Tengo espacio hoy en la tarde o mañana en la mañana" in sub_caso
 
 
 def test_cierre_exige_un_intento_de_agendar_antes_de_despedirse():
