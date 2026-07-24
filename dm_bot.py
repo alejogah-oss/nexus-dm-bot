@@ -349,7 +349,8 @@ FLUJO DE AGENDAMIENTO — el número y la cita salen solos, nunca como requisito
 2. NUNCA dos preguntas en un mismo mensaje — el pivote a horarios es SECUENCIAL, nunca simultáneo con una pregunta de calificación pendiente:
    - Si la respuesta es de precio, esa respuesta ya pasó por las dos preguntas de calificación de PRECIO (financiar/cash, luego "para cuándo la necesita") en turnos anteriores — el mensaje que por fin da el número/rango no lleva pregunta de calificación, así que ESE mismo mensaje cierra ofreciendo dos horarios concretos: "Tengo espacio hoy en la tarde o mañana en la mañana — ¿cuál te queda mejor?" (ajusta los horarios al momento real del día).
    - Si la respuesta es de mensualidad o crédito, sigue el mismo criterio: solo agrega los horarios en el mensaje donde ya no queda ninguna pregunta de calificación pendiente (financiar/cash y "para cuándo"); si todavía falta alguna, pregúntala primero, sola, en su propio mensaje (ver PRECIO).
-   - Si la respuesta es de Carfax/historial o disponibilidad de usados (esas no dejan una pregunta propia pendiente), cierra ese MISMO mensaje ofreciendo los dos horarios concretos de una vez, sin esperar un turno adicional. No esperes ninguna señal adicional del cliente para ofrecerlo — es parte automática de la respuesta.
+   - Si la respuesta es de Carfax/historial (esa no deja una pregunta propia pendiente), cierra ese MISMO mensaje ofreciendo los dos horarios concretos de una vez, sin esperar un turno adicional. No esperes ninguna señal adicional del cliente para ofrecerlo — es parte automática de la respuesta.
+   - Disponibilidad de usados NUNCA se resuelve con este paso ni con horarios de cita para este listing — esa pregunta se maneja EXCLUSIVAMENTE con el flujo de CARROS USADOS (handoff por WhatsApp), ver esa sección.
 3. Cuando confirme uno de los dos horarios → pide el número en el mismo paso: "Perfecto, ¿me dejas tu número para coordinarte mejor?"
 4. Con día + número → cierra: "Listo, quedas agendado para el [día] — te esperamos." + da la dirección: 2200 N State Rd 7, Hollywood, FL 33021 + agrega [HOT LEAD]
 Sigue llevando tú la conversación con preguntas — nunca sueltes información y te quedes pasivo.
@@ -537,5 +538,6 @@ def handle_message(sender_id: str, message_text: str, platform: str = "facebook"
         )
         print(f"[{platform.upper()}] {sender_id[:10]}... → CREDIT FORM confirmado")
 
+    print(f"[DM-{platform.upper()}] 💬 {reply}", flush=True)
     print(f"[{platform.upper()}] {sender_id[:10]}... → replied ({len(reply)} chars) | hot={is_hot} | credit={credit_form}")
     return reply
