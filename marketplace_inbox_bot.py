@@ -53,6 +53,19 @@ MAX_THREADS  = 3         # solo los 3 más recientes por ciclo (más humano, men
 ACTIVE_HOURS = (8, 22)   # horario humano: responder solo 8am-10pm
 _last_full_load: float = 0.0  # último goto/reload real del inbox (el sidebar vive por WebSocket)
 
+_session_expired_alert_sent: bool = False  # evita spamear la alerta mientras la sesión sigue caída
+
+
+def _session_alert_transition(currently_logged_in: bool, alert_already_sent: bool) -> tuple[bool, bool]:
+    """Decide si hay que enviar la alerta de sesión caída este ciclo.
+    Retorna (debe_alertar_ahora, nuevo_valor_de_alert_already_sent)."""
+    if currently_logged_in:
+        return False, False
+    if alert_already_sent:
+        return False, True
+    return True, True
+
+
 _car_resolution_failures: dict[str, int] = {}   # {f"{thread_id}:{msg_hash}": intentos}
 CAR_RESOLUTION_ALERT_THRESHOLD = 5              # ~5 ciclos de polling normal (~5 min)
 
@@ -862,7 +875,19 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
                 await page.wait_for_timeout(3000)
                 _last_full_load = time.time()
                 print(f"[BOT] LOCAL: url={page.url[:80]}", flush=True)
-            if "login" in page.url:
+            global _session_expired_alert_sent
+            session_ok = "login" not in page.url
+            should_alert, _session_expired_alert_sent = _session_alert_transition(
+                currently_logged_in=session_ok, alert_already_sent=_session_expired_alert_sent
+            )
+            if should_alert:
+                pulse_notify(
+                    "MARKETPLACE_ERROR",
+                    "La sesión de Facebook del bot de Marketplace expiró — nadie está "
+                    "recibiendo respuesta hasta que alguien la renueve manualmente (2FA). "
+                    "Corre en el Pro: venv/bin/python3 refresh_mp_session.py"
+                )
+            if not session_ok:
                 print("[BOT] LOCAL: redirigió a login — sesión expirada, re-loguear", flush=True)
                 return
         else:
