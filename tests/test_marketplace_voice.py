@@ -186,6 +186,55 @@ def test_usados_da_valor_antes_de_pedir_whatsapp():
     assert "Sí manejamos usados en ese rango" in p
 
 
+def test_flujo_agendamiento_paso2_no_incluye_disponibilidad_de_usados():
+    # Revisión final (jul 24 2026): FLUJO DE AGENDAMIENTO paso 2 y CARROS
+    # USADOS daban órdenes contradictorias para "disponibilidad de usados"
+    # (horarios concretos en el chat vs. handoff exclusivo por WhatsApp).
+    # El trigger list de paso 2 ya solo debe cubrir precio/mensualidad/
+    # crédito/Carfax — nunca disponibilidad de usados.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("FLUJO DE AGENDAMIENTO — el número")
+    assert idx != -1
+    idx_paso3 = p.find("3. Cuando confirme uno de los dos horarios", idx)
+    assert idx_paso3 != -1
+    seccion_flujo = p[idx:idx_paso3]
+
+    # El trigger que dispara "cierra este mismo mensaje con horarios" ya no
+    # agrupa Carfax con disponibilidad de usados — solo Carfax/historial.
+    assert "Carfax/historial" in seccion_flujo
+    assert "Carfax/historial o disponibilidad de usados" not in p
+
+    idx_trigger_carfax = seccion_flujo.find("Si la respuesta es de Carfax/historial")
+    assert idx_trigger_carfax != -1
+    idx_siguiente_bullet = seccion_flujo.find("\n   - ", idx_trigger_carfax + 1)
+    trigger_carfax = seccion_flujo[idx_trigger_carfax:idx_siguiente_bullet if idx_siguiente_bullet != -1 else None]
+    assert "disponibilidad de usados" not in trigger_carfax.lower()
+
+    # Debe dejar explícito que esa pregunta se resuelve exclusivamente en
+    # CARROS USADOS, para que no quede ambigüedad sobre cuál rama gana.
+    assert "CARROS USADOS" in seccion_flujo
+    assert "exclusivamente" in seccion_flujo.lower()
+
+
+def test_carros_usados_sigue_siendo_el_unico_camino_para_disponibilidad():
+    # La sección CARROS USADOS conserva intacto el handoff por WhatsApp y
+    # sigue prohibiendo dar disponibilidad/precios de usados en el chat.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("CARROS USADOS / EL LISTING NO ES LO QUE BUSCA")
+    assert idx != -1
+    idx_fin = p.find("HISTORIAL / CARFAX")
+    assert idx_fin != -1
+    seccion_usados = p[idx:idx_fin]
+
+    assert "NUNCA des precios ni inventes disponibilidad de usados en el chat" in seccion_usados
+    assert "te las mando por WhatsApp" in seccion_usados
+    assert "nombre, número de WhatsApp" in seccion_usados.lower() or "número de whatsapp" in seccion_usados.lower()
+    assert "[HOT LEAD]" in seccion_usados
+    # No debe ofrecer horarios de visita para este listing como salida de
+    # disponibilidad de usados — ese camino es exclusivo de FLUJO DE AGENDAMIENTO.
+    assert "Tengo espacio hoy en la tarde o mañana en la mañana" not in seccion_usados
+
+
 def test_direccion_solo_tras_horario_y_numero_confirmados():
     # Alineado con BOT_VOICE: el gate de nombre/dirección del dealer requiere
     # AMBOS (horario confirmado Y número dado) — no basta con uno de los dos.
