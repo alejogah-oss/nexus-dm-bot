@@ -807,11 +807,16 @@ def _watchdog_marketplace_bot():
     t.start()
 
 
-# Arrancar servicios de fondo — SOLO en Render (env RENDER la setea la plataforma)
-# o forzado explícito con ENABLE_INBOX_BOT=1. Un import local (tests, scripts)
-# nunca debe lanzar el bot con la sesión de Facebook.
-if os.getenv("RENDER") or os.getenv("ENABLE_INBOX_BOT") == "1":
+# Arrancar servicios de fondo — SOLO en Render (env RENDER la setea la plataforma).
+# Un import local (tests, scripts) nunca debe lanzar estos servicios.
+if os.getenv("RENDER"):
     _keep_alive()
+
+# El Marketplace Inbox Bot NUNCA debe correr en Render — Facebook bloquea la cuenta
+# cuando el login/scraping de messenger.com viene de una IP de datacenter (confirmado
+# 26 jul 2026: timeouts + "sesión no válida" repetidos). Debe correr solo desde una
+# máquina con IP residencial (Mac Pro). ENABLE_INBOX_BOT=1 no debe setearse en Render.
+if os.getenv("ENABLE_INBOX_BOT") == "1":
     _start_marketplace_bot()
     _watchdog_marketplace_bot()
 
