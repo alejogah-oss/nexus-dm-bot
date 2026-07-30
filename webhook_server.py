@@ -318,6 +318,18 @@ def vehicle_image(vehicle_id):
         if not vehicle:
             return "Vehicle not found", 404
         img_data = vehicle.get("img", "")
+        if not img_data and vehicle.get("id"):
+            # action=list excluye a propósito las fotos en base64 (payload pesado
+            # si se manda para los 300+ vehículos) — los carros del scanner
+            # siempre guardan foto en base64, así que se pide puntual por id.
+            try:
+                r = req_lib.get(
+                    f"https://tucarroconalejo.com/api.php?action=images&ids={vehicle['id']}",
+                    timeout=10,
+                )
+                img_data = (r.json().get("images") or {}).get(str(vehicle["id"]), "")
+            except Exception:
+                pass
         if not img_data:
             return "No image", 404
         if "base64," in img_data:
