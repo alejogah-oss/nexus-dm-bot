@@ -176,7 +176,7 @@ def _build_crm_note(conversation_history: list, platform: str, name: str,
 
 
 def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
-                  car: dict | None = None) -> dict:
+                  car: dict | None = None, ref: str | None = None) -> dict:
     """
     Full flow: extract data from conversation → send to CRM.
     First HOT_LEAD: creates CRM entry. Subsequent: sends WhatsApp update only.
@@ -276,6 +276,9 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     buyer = analyze_buyer(conversation_history)
 
     crm_note = _build_crm_note(conversation_history, platform, name, model, trim, conv_url)
+
+    if ref:
+        crm_note = f"[CAMPAÑA: {ref}]\n{crm_note}"
 
     if buyer:
         crm_note += (
