@@ -83,18 +83,25 @@ def receive_webhook():
             if not text:
                 continue
 
-            # Check if message came from a Marketplace listing
+            # Check if message came from a Marketplace listing, o si trae
+            # referral.ref / referral.ad_id de una campaña Click-to-Messenger
+            event_referral = event.get("referral", {}) or {}
+            msg_referral   = message.get("referral", {}) or {}
+
             listing_id = (
-                event.get("referral", {}).get("product", {}).get("id") or
-                message.get("referral", {}).get("product", {}).get("id")
+                event_referral.get("product", {}).get("id") or
+                msg_referral.get("product", {}).get("id")
             )
+            ad_ref = event_referral.get("ref") or msg_referral.get("ref")
+            ad_id  = event_referral.get("ad_id") or msg_referral.get("ad_id")
+
             if listing_id:
                 car = get_car_by_listing_id(listing_id)
                 if car:
-                    handle_marketplace_message(sender_id, text, car, platform="facebook")
+                    handle_marketplace_message(sender_id, text, car, platform="facebook", ref=ad_ref, ad_id=ad_id)
                     continue
 
-            handle_message(sender_id, text, platform="facebook")
+            handle_message(sender_id, text, platform="facebook", ref=ad_ref, ad_id=ad_id)
 
         # Instagram DMs + comentarios
         for change in entry.get("changes", []):
@@ -106,8 +113,11 @@ def receive_webhook():
                 for msg in value.get("messages", []):
                     sender_id = msg.get("from", {}).get("id")
                     text = msg.get("text", {}).get("body", "")
+                    msg_referral = msg.get("referral", {}) or {}
+                    ad_ref = msg_referral.get("ref")
+                    ad_id  = msg_referral.get("ad_id")
                     if sender_id and text:
-                        handle_message(sender_id, text, platform="instagram")
+                        handle_message(sender_id, text, platform="instagram", ref=ad_ref, ad_id=ad_id)
 
             # Instagram comentarios en posts/anuncios
             elif field == "comments":

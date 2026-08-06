@@ -230,13 +230,30 @@ def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
         )
         print(f"   ⚠️ Cambio de cita detectado: {note['prev_appointment']} → {note['appointment']}")
 
-    push_hot_lead(sender_id, platform, history)  # WhatsApp + CRM handled inside
+    campaign_ref = _campaign_context.get(sender_id, {}).get("ref")
+    push_hot_lead(sender_id, platform, history, ref=campaign_ref)  # WhatsApp + CRM handled inside
     log_event("HOT_LEAD", f"ID: {sender_id[:12]} | {message[:100]}", platform)
 
 
 # In-memory conversation stores
 _conversations: dict[str, list] = {}
 _mp_conversations: dict[str, list] = {}  # Marketplace threads (separate namespace)
+
+# Referral de campaña (Meta Ads Click-to-Messenger/Instagram) por sender_id — se
+# captura en el primer mensaje que lo trae y se conserva porque el HOT LEAD
+# (que dispara push_hot_lead) casi nunca es ese mismo mensaje.
+_campaign_context: dict[str, dict] = {}
+
+
+def _track_campaign_ref(sender_id: str, ref: str | None, ad_id: str | None):
+    """Guarda ref/ad_id la primera vez que aparecen para este sender_id."""
+    if not ref and not ad_id:
+        return
+    existing = _campaign_context.get(sender_id, {})
+    _campaign_context[sender_id] = {
+        "ref": ref or existing.get("ref"),
+        "ad_id": ad_id or existing.get("ad_id"),
+    }
 
 # Activity tracker — persisted to disk for frozen lead detection
 import json as _json
@@ -288,7 +305,8 @@ def track_activity(sender_id: str, platform: str, message_count: int, is_hot: bo
         print(f"[FROZEN] Lead reactivado — {sender_id[:12]} | {platform}")
         history = _conversations.get(sender_id, [])
         if history:
-            push_hot_lead(sender_id, platform, history)
+            campaign_ref = _campaign_context.get(sender_id, {}).get("ref")
+            push_hot_lead(sender_id, platform, history, ref=campaign_ref)
 
 
 def _marketplace_voice(car: dict) -> str:
@@ -416,11 +434,13 @@ def handle_get_started(sender_id: str, platform: str = "facebook"):
     print(f"[{platform.upper()}] {sender_id[:10]}... → GET_STARTED bienvenida enviada")
 
 
-def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: str = "facebook") -> str:
+def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: str = "facebook",
+                                ref: str | None = None, ad_id: str | None = None) -> str:
     """
     Handles DMs from Marketplace listings. Knows the specific car,
     pushes for showroom visit, detects HOT LEAD and SHOWROOM_DECLINED.
     """
+    _track_campaign_ref(sender_id, ref, ad_id)
     history = _mp_conversations.get(sender_id, [])
     is_new_chat = not history
 
@@ -452,6 +472,8 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
     if is_new_chat:
         log_event("CHAT_STARTED", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} | {text[:80]}", platform)
 
+    campaign_ref = _campaign_context.get(sender_id, {}).get("ref")
+
     if is_hot:
         print(f"\n🔥 MARKETPLACE HOT LEAD — {platform.upper()} | {sender_id[:12]}...")
         note = save_note(sender_id, platform, history)
@@ -465,7 +487,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
                     f"Hora: {note['timestamp']}"
                 )
             )
-        push_hot_lead(sender_id, platform, history, car=car)
+        push_hot_lead(sender_id, platform, history, car=car, ref=campaign_ref)
         log_event("HOT_LEAD", f"Marketplace {car['yr']} {car['model']} {car.get('trim','')} | {text[:80]}", platform)
         track_hot_lead(car)
 
@@ -477,7 +499,7 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
     if is_declined:
         print(f"\n📋 SHOWROOM DECLINED — {platform.upper()} | {sender_id[:12]}...")
         print(f"   Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']}")
-        push_hot_lead(sender_id, platform, history, car=car)
+        push_hot_lead(sender_id, platform, history, car=car, ref=campaign_ref)
         pulse_notify(
             event="SHOWROOM_DECLINED",
             detail=f"Carro: {car['yr']} Toyota {car['model']} {car.get('trim','')} {car['color']} | Platform: {platform.upper()}"
@@ -489,8 +511,10 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
     return clean_reply
 
 
-def handle_message(sender_id: str, message_text: str, platform: str = "facebook") -> str:
+def handle_message(sender_id: str, message_text: str, platform: str = "facebook",
+                    ref: str | None = None, ad_id: str | None = None) -> str:
     """Main handler — processes incoming DM and sends reply."""
+    _track_campaign_ref(sender_id, ref, ad_id)
     history = _conversations.get(sender_id, [])
 
     # First message — send welcome only, skip AI reply
