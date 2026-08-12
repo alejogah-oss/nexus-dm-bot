@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify
 import scanner_api
 from scanner_api import require_key
+from vin_utils import decode_vin
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -48,6 +49,16 @@ def _lock_file() -> Path:
 
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
+        return False
+    # El subproceso de publicación es hijo directo de este proceso Flask.
+    # Si ya terminó pero nadie hizo wait(), queda <defunct> (zombie): kill(pid, 0)
+    # sigue viendo el PID como "vivo" para siempre. waitpid con WNOHANG lo reapea
+    # si ya terminó, sin bloquear si sigue corriendo.
+    try:
+        reaped_pid, _status = os.waitpid(pid, os.WNOHANG)
+        if reaped_pid == pid:
+            return False
+    except ChildProcessError:
         return False
     try:
         os.kill(pid, 0)
@@ -119,6 +130,41 @@ def admin_publish(slug):
         _lock_file().write_text(json.dumps({"slug": slug, "pid": pid}))
         set_status(folder, last_error=None)
     return jsonify({"ok": True, "slug": slug})
+
+@admin_bp.route("/api/admin/regenerate/<slug>", methods=["POST"])
+@require_key
+def admin_regenerate(slug):
+    folder = scanner_api._folder_for(slug)
+    if not folder:
+        return jsonify({"error": "no existe"}), 404
+    if read_status(folder)["published"]:
+        return jsonify({"error": "ya está publicado — no se puede regenerar el copy"}), 409
+    data = json.loads((folder / "listing.json").read_text())
+    try:
+        decoded = decode_vin(data["vin"])
+    except Exception:
+        decoded = {}
+    notes = (data.get("notes") or "").strip()
+    if data.get("color"):
+        notes = (notes + f" | Color: {data['color']}").strip(" |")
+    car = {
+        "yr": data.get("yr") or decoded.get("yr", ""),
+        "make": decoded.get("make", ""),
+        "model": data.get("model") or decoded.get("model", ""),
+        "trim": data.get("trim") or decoded.get("trim", ""),
+        "engine": decoded.get("engine", ""),
+        "fuel": decoded.get("fuel", ""),
+        "body": decoded.get("body", ""),
+        "drive": decoded.get("drive", ""),
+        "mileage": data.get("mileage", 0),
+        "price": data.get("price", 0),
+        "notes": notes,
+    }
+    try:
+        out = scanner_api.generate_copy(car)
+    except Exception:
+        return jsonify({"error": "no se pudo generar el copy — reintenta"}), 502
+    return jsonify(out)
 
 @admin_bp.route("/api/admin/mark/<slug>", methods=["POST"])
 @require_key

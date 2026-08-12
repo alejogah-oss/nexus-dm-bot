@@ -217,6 +217,23 @@ function closeEdit() {
 
 $("eCancelBtn").addEventListener("click", closeEdit);
 
+$("eRegenBtn").addEventListener("click", async () => {
+  if (!editSlug) return;
+  const btn = $("eRegenBtn");
+  btn.disabled = true;
+  btn.textContent = "Generando…";
+  try {
+    const out = await api("/api/admin/regenerate/" + editSlug, { method: "POST" });
+    $("eTitle").value = out.title || "";
+    $("eDesc").value = out.description || "";
+  } catch (err) {
+    alert("No se pudo regenerar el copy: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "✨ Regenerar copy";
+  }
+});
+
 $("eSaveBtn").addEventListener("click", async () => {
   if (!editSlug) return;
   const btn = $("eSaveBtn");

@@ -1,10 +1,16 @@
 """Endpoints del VIN Scanner PWA. Auth: X-Scanner-Key == env SCANNER_KEY."""
-import base64, functools, json, os, re, traceback
+import base64, functools, json, os, re, threading, traceback
 from pathlib import Path
 from flask import Blueprint, jsonify, request, send_file
 from vin_utils import validate_vin, decode_vin, clean_vin, repair_vin
 from listing_voice import LISTING_SYSTEM, build_listing_prompt
+from site_publisher import push_scanner_car_to_site
 import anthropic
+
+def _sync_to_site_bg(folder: Path):
+    """Sincroniza en un hilo aparte para no frenar la respuesta al scanner
+    (el POST a tucarroconalejo.com puede tardar unos segundos por las fotos)."""
+    threading.Thread(target=push_scanner_car_to_site, args=(folder,), daemon=True).start()
 
 bp = Blueprint("scanner", __name__)
 INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
@@ -106,6 +112,14 @@ def scan_odometer():
     digits = re.sub(r"[^0-9]", "", raw)
     return jsonify({"mileage": int(digits) if digits else 0})
 
+def generate_copy(car: dict) -> dict:
+    """Genera {"title", "description"} para un carro. Puede lanzar excepción."""
+    text = _copy_call(build_listing_prompt(car))
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    out = json.loads(m.group()) if m else {"title": "", "description": text}
+    out["title"] = out.get("title", "")[:100]
+    return out
+
 @bp.route("/api/scanner/listing", methods=["POST"])
 @require_key
 def gen_listing():
@@ -116,14 +130,11 @@ def gen_listing():
     if missing:
         return _bad("faltan campos: " + ", ".join(missing))
     try:
-        text = _copy_call(build_listing_prompt(car))
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        out = json.loads(m.group()) if m else {"title": "", "description": text}
+        out = generate_copy(car)
     except Exception:
         print("[SCANNER] /listing falló:", flush=True)
         traceback.print_exc()
         return _bad("no se pudo generar el copy — reintenta", 502)
-    out["title"] = out.get("title", "")[:100]
     return jsonify(out)
 
 @bp.route("/api/scanner/inventory", methods=["POST"])
@@ -149,6 +160,7 @@ def save_inventory():
         request.files["video"].save(folder / "video.mp4")
     (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
     (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
+    _sync_to_site_bg(folder)  # sube como pendiente a tucarroconalejo.com/admin.html
     return jsonify({"folder": str(folder)})
 
 # ── Pendientes por subir: listar, ver, editar ───────────────────────
@@ -215,6 +227,7 @@ def update_inventory_item(slug):
     data["title"] = str(data.get("title", ""))[:100]
     (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
     (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
+    _sync_to_site_bg(folder)  # re-sincroniza cambios (no toca 'active' si ya fue aprobado)
     return jsonify({"ok": True, "data": data})
 
 @bp.route("/api/scanner/inventory/<slug>/photo/<int:n>", methods=["GET"])
