@@ -44,7 +44,11 @@ combustible, tipo de carrocería, tracción, millaje.
   3. Línea de financiamiento — ofrece financiamiento disponible SIN prometer \
 aprobación garantizada ni dar una mensualidad específica (ej. "financiamiento \
 disponible, crédito en construcción también aplica" / "financing available, \
-building credit is welcome too").
+building credit is welcome too"). Si el prompt marca el valor de precio como \
+ENGANCHE, menciona ese monto explícitamente como enganche/down payment dentro \
+de esta línea (ej. "Enganche desde $3,500, crédito en construcción también \
+aplica" / "Down payment from $3,500, building credit also welcome") — nunca \
+como precio total del carro.
   4. Ubicación: 📍 Hollywood, Florida.
   5. CTA de contacto directo con Alejo, sin intermediarios ni call center: \
 📞 (954) 910-6671 — invita a escribir por Marketplace o llamar directo.
@@ -54,6 +58,9 @@ REGLAS DURAS QUE NUNCA SE ROMPEN:
 - La ubicación es siempre Hollywood, Florida — nunca otra ciudad.
 - Nunca prometas aprobación de crédito ni des una mensualidad o precio total \
 distinto al que te dieron.
+- Si el prompt marca el precio como ENGANCHE (down payment), NUNCA lo trates \
+ni lo menciones como si fuera el precio total del carro — identifícalo siempre \
+como enganche/down payment, tanto en inglés como en español.
 - Nunca asumas que el carro es Toyota ni que es nuevo — son autos usados de marcas \
 variadas; cada listing usa exactamente los datos de ESTE carro.
 - Nunca inventes specs, historial ni condición que no vinieron en los datos o notas \
@@ -61,11 +68,22 @@ del vendedor.
 """
 
 
+DOWN_PAYMENT_THRESHOLD = 10000
+
+
 def build_listing_prompt(car: dict) -> str:
+    price = car["price"]
+    is_down_payment = float(price) < DOWN_PAYMENT_THRESHOLD
+    price_line = (
+        f"Enganche: ${price:,} — ESTE VALOR ES EL ENGANCHE (down payment), NO el "
+        f"precio total del carro. Preséntalo como enganche en el copy, nunca como "
+        f"precio total."
+        if is_down_payment else f"Precio: ${price:,}"
+    )
     return (
         f"Genera el listing para este carro:\n"
         f"{car['yr']} {car['make']} {car['model']} {car['trim']}\n"
         f"Motor: {car['engine']} | {car['fuel']} | {car['body']} | {car['drive']}\n"
-        f"Millaje: {car['mileage']:,} millas\nPrecio: ${car['price']:,}\n"
+        f"Millaje: {car['mileage']:,} millas\n{price_line}\n"
         f"Notas del vendedor: {car.get('notes') or 'ninguna'}"
     )
