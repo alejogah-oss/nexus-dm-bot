@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS BRAIN — Claude Code Neural Visualization</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg:       #0a0a0f;
+  --bg2:      #0d0d1a;
+  --bg3:      #111128;
+  --cyan:     #00d4ff;
+  --blue:     #0080ff;
+  --purple:   #7c3aed;
+  --indigo:   #4f46e5;
+  --red:      #EB0A1E;
+  --amber:    #f59e0b;
+  --green:    #10b981;
+  --text:     #e2e8f0;
+  --dim:      #475569;
+  --border:   rgba(0,212,255,0.12);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Courier New', monospace;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── TOP BAR ── */
+#topbar {
+  height: 50px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  flex-shrink: 0;
+}
+
+.logo-dot {
+  width: 8px; height: 8px;
+  background: var(--red);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--red);
+  animation: pulse-red 2s ease-in-out infinite;
+}
+
+.divider { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
+
+#status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.status-dot.idle     { background: #334155; }
+.status-dot.thinking { background: var(--cyan);   box-shadow: 0 0 8px var(--cyan);   animation: blink 0.9s infinite; }
+.status-dot.tool     { background: var(--amber);  box-shadow: 0 0 8px var(--amber);  animation: blink 0.5s infinite; }
+.status-dot.writing  { background: var(--green);  box-shadow: 0 0 8px var(--green);  animation: blink 0.7s infinite; }
+.status-dot.complete { background: var(--purple); box-shadow: 0 0 8px var(--purple); }
+
+#status-label {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  transition: color 0.3s;
+}
+
+.model-tag {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 1px;
+  border: 1px solid var(--border);
+  padding: 3px 9px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* ── MAIN AREA ── */
+#main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ── LEFT SIDEBAR ── */
+#log-panel {
+  width: 238px;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.panel-title {
+  padding: 9px 12px;
+  font-size: 8.5px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.panel-title::before { content: '//'; color: var(--cyan); }
+
+#log-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+#log-list::-webkit-scrollbar { width: 2px; }
+#log-list::-webkit-scrollbar-thumb { background: var(--border); }
+
+.log-entry {
+  padding: 5px 8px;
+  border-radius: 3px;
+  border-left: 2px solid transparent;
+  font-size: 10px;
+  animation: slide-in 0.25s ease;
+  background: rgba(255,255,255,0.02);
+}
+.log-entry .ts  { color: var(--dim); font-size: 8.5px; display: block; }
+.log-entry .msg { line-height: 1.4; }
+
+.log-entry.thinking { border-left-color: var(--cyan);   background: rgba(0,212,255,0.04); }
+.log-entry.tool     { border-left-color: var(--amber);  background: rgba(245,158,11,0.04); }
+.log-entry.writing  { border-left-color: var(--green);  background: rgba(16,185,129,0.04); }
+.log-entry.complete { border-left-color: var(--purple); background: rgba(124,58,237,0.05); }
+.log-entry.nexus    { border-left-color: var(--red);    background: rgba(235,10,30,0.06); }
+
+/* ── CANVAS AREA ── */
+#canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-width: 0;
+}
+canvas { display: block; width: 100%; height: 100%; }
+
+#tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(10,10,20,0.96);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 7px 11px;
+  font-size: 10px;
+  display: none;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+}
+#tooltip strong { color: var(--cyan); display: block; font-size: 11px; margin-bottom: 2px; }
+#tooltip small  { color: var(--dim); font-size: 8.5px; }
+
+/* Stats overlay */
+#stats {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+.stat {
+  background: rgba(10,10,20,0.88);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 12px;
+  text-align: center;
+  backdrop-filter: blur(6px);
+}
+.stat-n { font-size: 17px; font-weight: 700; color: var(--cyan); line-height: 1; }
+.stat-l { font-size: 7.5px; color: var(--dim); letter-spacing: 1px; margin-top: 2px; }
+
+/* Network info */
+#netinfo {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+.ni {
+  background: rgba(10,10,20,0.85);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 10px;
+  font-size: 9px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+.ni span { color: var(--cyan); }
+
+/* ── RIGHT SIDEBAR ── */
+#tools-panel {
+  width: 175px;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+#tools-list {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tool-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  transition: all 0.25s ease;
+  background: rgba(255,255,255,0.015);
+}
+.tool-row.lit {
+  border-color: var(--cyan);
+  background: rgba(0,212,255,0.07);
+  box-shadow: 0 0 10px rgba(0,212,255,0.12);
+}
+.tool-pip {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition: all 0.25s;
+  flex-shrink: 0;
+}
+.tool-row.lit .tool-pip { background: var(--cyan); box-shadow: 0 0 5px var(--cyan); }
+.tool-row .tn { color: var(--dim); transition: color 0.25s; }
+.tool-row.lit .tn { color: var(--cyan); }
+
+/* ── BOTTOM BAR ── */
+#bottombar {
+  height: 50px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.presets { display: flex; gap: 4px; flex-shrink: 0; }
+.pr {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 5px 9px;
+  color: var(--dim);
+  font-size: 8.5px;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.pr:hover { border-color: var(--cyan); color: var(--cyan); }
+
+#task-in {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 7px 11px;
+  color: var(--text);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#task-in:focus { border-color: var(--cyan); }
+#task-in::placeholder { color: var(--dim); }
+
+#run-btn {
+  background: linear-gradient(135deg, #EB0A1E, #ff2d3d);
+  border: none;
+  border-radius: 3px;
+  padding: 8px 18px;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.2s;
+  box-shadow: 0 0 12px rgba(235,10,30,0.35);
+  flex-shrink: 0;
+}
+#run-btn:hover:not(:disabled) { box-shadow: 0 0 20px rgba(235,10,30,0.55); transform: translateY(-1px); }
+#run-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+/* ── LIVE BADGE ── */
+#live-badge {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  padding: 3px 9px;
+  border-radius: 3px;
+  border: 1px solid var(--dim);
+  color: var(--dim);
+  transition: all 0.4s ease;
+  flex-shrink: 0;
+}
+#live-badge.live {
+  color: var(--green);
+  border-color: var(--green);
+  box-shadow: 0 0 8px rgba(16,185,129,0.4);
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
+#live-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 8px 16px;
+  color: var(--dim);
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.25s;
+  flex-shrink: 0;
+}
+#live-btn.connected {
+  background: linear-gradient(135deg, #064e3b, #065f46);
+  border-color: var(--green);
+  color: var(--green);
+  box-shadow: 0 0 12px rgba(16,185,129,0.25);
+}
+#live-btn.connected:hover:not(:disabled) {
+  box-shadow: 0 0 20px rgba(16,185,129,0.45);
+  transform: translateY(-1px);
+}
+#live-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+/* ── KEYFRAMES ── */
+@keyframes pulse-red {
+  0%,100% { box-shadow: 0 0 8px var(--red); }
+  50%      { box-shadow: 0 0 18px var(--red); opacity: 0.6; }
+}
+@keyframes pulse-green {
+  0%,100% { box-shadow: 0 0 8px rgba(16,185,129,0.4); }
+  50%      { box-shadow: 0 0 16px rgba(16,185,129,0.7); }
+}
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo">
+    <div class="logo-dot"></div>
+    <span style="color:var(--red)">NEXUS</span>
+    <span style="color:var(--dim)">|</span>
+    <span style="color:var(--cyan)">BRAIN</span>
+  </div>
+  <div class="divider"></div>
+  <div id="status-bar">
+    <div class="status-dot idle" id="sdot"></div>
+    <span id="status-label" style="color:var(--dim)">IDLE — WAITING FOR TASK</span>
+  </div>
+  <div class="model-tag">claude-sonnet-4-6 &nbsp;◆&nbsp; 200K ctx</div>
+  <div id="live-badge">○ SIM</div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+
+  <!-- LEFT: Log -->
+  <div id="log-panel">
+    <div class="panel-title">Activity Log</div>
+    <div id="log-list"></div>
+  </div>
+
+  <!-- CENTER: Canvas -->
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+
+    <!-- Stats top -->
+    <div id="stats">
+      <div class="stat"><div class="stat-n" id="s-tok">0</div><div class="stat-l">TOKENS</div></div>
+      <div class="stat"><div class="stat-n" id="s-tool">0</div><div class="stat-l">TOOL CALLS</div></div>
+      <div class="stat"><div class="stat-n" id="s-task">0</div><div class="stat-l">TASKS RUN</div></div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip"></div>
+
+    <!-- Net info bottom -->
+    <div id="netinfo">
+      <div class="ni">NODES <span id="n-active">0/7</span></div>
+      <div class="ni">PARTICLES <span id="n-part">0</span></div>
+      <div class="ni">FPS <span id="n-fps">60</span></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Tools -->
+  <div id="tools-panel">
+    <div class="panel-title">Active Tools</div>
+    <div id="tools-list">
+      <div class="tool-row" data-t="Read">    <div class="tool-pip"></div><span class="tn">Read</span></div>
+      <div class="tool-row" data-t="Write">   <div class="tool-pip"></div><span class="tn">Write</span></div>
+      <div class="tool-row" data-t="Bash">    <div class="tool-pip"></div><span class="tn">Bash</span></div>
+      <div class="tool-row" data-t="Search">  <div class="tool-pip"></div><span class="tn">WebSearch</span></div>
+      <div class="tool-row" data-t="Agent">   <div class="tool-pip"></div><span class="tn">Agent</span></div>
+      <div class="tool-row" data-t="Meta API"><div class="tool-pip"></div><span class="tn">Meta API</span></div>
+      <div class="tool-row" data-t="CRM">     <div class="tool-pip"></div><span class="tn">CRM Hook</span></div>
+      <div class="tool-row" data-t="DM Bot">  <div class="tool-pip"></div><span class="tn">DM Bot</span></div>
+      <div class="tool-row" data-t="Market">  <div class="tool-pip"></div><span class="tn">Marketplace</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- BOTTOM BAR -->
+<div id="bottombar">
+  <div class="presets">
+    <button class="pr" onclick="preset('dm')">DM Lead</button>
+    <button class="pr" onclick="preset('inv')">Post Inv.</button>
+    <button class="pr" onclick="preset('mp')">Marketplace</button>
+    <button class="pr" onclick="preset('crm')">CRM Sync</button>
+    <button class="pr" onclick="preset('deep')">Deep Think</button>
+  </div>
+  <input id="task-in" type="text" placeholder="Sim: escribe una tarea  |  Live: conecta el servidor primero" />
+  <button id="run-btn" onclick="runTask()">▶ SIM</button>
+  <button id="live-btn" onclick="liveRun()">⚡ CONNECT</button>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  NEXUS BRAIN — Neural Visualization Engine v1.0
+// ════════════════════════════════════════════════════════════
+
+const CV = document.getElementById('c');
+const cx = CV.getContext('2d');
+let W = 0, H = 0;
+
+// Global counters
+let totTok = 0, totTool = 0, totTask = 0;
+let running = false;
+let frameN = 0, lastFpsT = 0, fps = 60;
+
+// ── NODE DEFINITIONS ──
+const ND = [
+  { id:'input',     lbl:'INPUT',     sub:'Prompt',        rx:.10, ry:.50, col:'#00d4ff', r:30 },
+  { id:'tokenizer', lbl:'TOKENIZER', sub:'BPE Encoder',   rx:.28, ry:.27, col:'#7c3aed', r:24 },
+  { id:'context',   lbl:'CONTEXT',   sub:'200K Window',   rx:.28, ry:.73, col:'#4f46e5', r:24 },
+  { id:'reasoning', lbl:'REASONING', sub:'Chain-of-Thought',rx:.52,ry:.50, col:'#0ea5e9', r:36 },
+  { id:'memory',    lbl:'MEMORY',    sub:'Conversation',  rx:.52, ry:.84, col:'#8b5cf6', r:22 },
+  { id:'tools',     lbl:'TOOL USE',  sub:'Read/Write/Bash',rx:.74,ry:.27, col:'#06b6d4', r:28 },
+  { id:'output',    lbl:'OUTPUT',    sub:'Response Gen.', rx:.90, ry:.54, col:'#22d3ee', r:28 },
+];
+
+// ── CONNECTIONS ──
+const CD = [
+  ['input','tokenizer'],['input','context'],
+  ['tokenizer','reasoning'],['context','reasoning'],
+  ['reasoning','memory'],['memory','reasoning'],
+  ['reasoning','tools'],['tools','reasoning'],
+  ['reasoning','output'],
+];
+
+// ── SEQUENCES ──
+const SEQ = {
+  default: [
+    {n:'input',     d:0,    l:'▸ Receiving prompt...',                t:null,       s:'thinking'},
+    {n:'tokenizer', d:550,  l:'▸ Tokenizing input (BPE)...',         t:null,       s:'thinking'},
+    {n:'context',   d:750,  l:'▸ Loading context window (200K)...',  t:null,       s:'thinking'},
+    {n:'reasoning', d:1300, l:'▸ Analyzing task structure...',        t:null,       s:'thinking'},
+    {n:'tools',     d:2100, l:'▸ Selecting tools: Read',              t:'Read',     s:'tool'},
+    {n:'memory',    d:2500, l:'▸ Checking memory system...',          t:null,       s:'thinking'},
+    {n:'reasoning', d:2900, l:'▸ Chain-of-thought active...',         t:null,       s:'thinking'},
+    {n:'tools',     d:3700, l:'▸ Tool call: Read file',               t:'Read',     s:'tool'},
+    {n:'tools',     d:4300, l:'▸ Tool call: Bash command',            t:'Bash',     s:'tool'},
+    {n:'reasoning', d:4900, l:'▸ Synthesizing results...',            t:null,       s:'thinking'},
+    {n:'output',    d:5700, l:'▸ Generating response...',             t:null,       s:'writing'},
+    {n:null,        d:6500, l:'✓ Task complete',                       t:null,       s:'complete'},
+  ],
+  dm: [
+    {n:'input',     d:0,    l:'▸ DM recibido: "¿Tienen RAV4 2024?"', t:null,       s:'thinking'},
+    {n:'tokenizer', d:480,  l:'▸ Procesando mensaje en español...',   t:null,       s:'thinking'},
+    {n:'context',   d:700,  l:'▸ Cargando perfil del lead...',        t:null,       s:'thinking'},
+    {n:'reasoning', d:1200, l:'▸ Analizando intención de compra...',  t:null,       s:'thinking'},
+    {n:'tools',     d:1900, l:'▸ Consultando inventario Toyota',      t:'Read',     s:'tool'},
+    {n:'tools',     d:2500, l:'▸ Buscando RAV4 disponibles...',       t:'Meta API', s:'tool'},
+    {n:'memory',    d:2900, l:'▸ Revisando historial del lead...',    t:null,       s:'thinking'},
+    {n:'tools',     d:3300, l:'▸ Registrando lead en CRM...',         t:'CRM',      s:'tool'},
+    {n:'reasoning', d:3900, l:'▸ Redactando respuesta personalizada...',t:null,     s:'thinking'},
+    {n:'tools',     d:4500, l:'▸ Enviando DM via DM Bot...',          t:'DM Bot',   s:'tool'},
+    {n:'output',    d:5100, l:'▸ "¡Hola! Sí, tenemos RAV4 2024 XLE..."',t:null,   s:'writing'},
+    {n:null,        d:5900, l:'✓ DM enviado — Lead calificado en CRM', t:null,      s:'complete'},
+  ],
+  inv: [
+    {n:'input',     d:0,    l:'▸ Scheduled: Post inventario 6:00 PM',t:null,       s:'thinking'},
+    {n:'tools',     d:400,  l:'▸ GET: tucarroconalejo.com/api.php',   t:'Bash',     s:'tool'},
+    {n:'context',   d:800,  l:'▸ Cargando 430 vehículos...',          t:null,       s:'thinking'},
+    {n:'reasoning', d:1300, l:'▸ Seleccionando vehículo del día...',  t:null,       s:'thinking'},
+    {n:'tools',     d:1900, l:'▸ Generando imagen AI (nexus-shot)...',t:'Agent',    s:'tool'},
+    {n:'tools',     d:2700, l:'▸ Creando copy ES/EN bilingüe...',     t:'Write',    s:'tool'},
+    {n:'reasoning', d:3200, l:'▸ Optimizando hashtags...',            t:null,       s:'thinking'},
+    {n:'tools',     d:3800, l:'▸ POST Instagram @tucarroconalejo',    t:'Meta API', s:'tool'},
+    {n:'tools',     d:4400, l:'▸ POST Facebook Page...',              t:'Meta API', s:'tool'},
+    {n:'output',    d:5000, l:'▸ Post publicado — 137 catálogo activo',t:null,      s:'writing'},
+    {n:null,        d:5800, l:'✓ Inventario posteado exitosamente',    t:null,       s:'complete'},
+  ],
+  mp: [
+    {n:'input',     d:0,    l:'▸ marketplace_poster.py iniciado',     t:null,       s:'thinking'},
+    {n:'tools',     d:400,  l:'▸ Leyendo marketplace_posted.json',    t:'Read',     s:'tool'},
+    {n:'context',   d:800,  l:'▸ Deduplicando: yr|model|trim...',     t:null,       s:'thinking'},
+    {n:'reasoning', d:1300, l:'▸ Calculando down payment (20%)...',   t:null,       s:'thinking'},
+    {n:'tools',     d:1900, l:'▸ Preparando 5 listings...',           t:'Write',    s:'tool'},
+    {n:'tools',     d:2500, l:'▸ Subiendo fotos a Marketplace...',    t:'Bash',     s:'tool'},
+    {n:'tools',     d:3100, l:'▸ Publicando: 2024 Camry XLE...',      t:'Market',   s:'tool'},
+    {n:'tools',     d:3700, l:'▸ Publicando: 2024 RAV4 XLE...',       t:'Market',   s:'tool'},
+    {n:'reasoning', d:4200, l:'▸ Verificando publicaciones...',       t:null,       s:'thinking'},
+    {n:'output',    d:4800, l:'▸ 5 vehículos publicados correctamente',t:null,      s:'writing'},
+    {n:null,        d:5400, l:'✓ Marketplace actualizado — 44 activos',t:null,       s:'complete'},
+  ],
+  crm: [
+    {n:'input',     d:0,    l:'▸ CRM Webhook trigger recibido',       t:null,       s:'thinking'},
+    {n:'tools',     d:400,  l:'▸ POST: crm.tucarroconalejo.com/api',  t:'Bash',     s:'tool'},
+    {n:'context',   d:800,  l:'▸ Cargando leads activos...',          t:null,       s:'thinking'},
+    {n:'reasoning', d:1300, l:'▸ Clasificando leads por prioridad...', t:null,      s:'thinking'},
+    {n:'memory',    d:1800, l:'▸ Actualizando historial contactos...',t:null,       s:'thinking'},
+    {n:'tools',     d:2300, l:'▸ Sync CRM webhook (key: crm-wh-k3y)',t:'CRM',      s:'tool'},
+    {n:'tools',     d:2900, l:'▸ Notificando a Alejo (alejo)...',     t:'DM Bot',   s:'tool'},
+    {n:'reasoning', d:3400, l:'▸ Generando reporte de seguimiento...', t:null,      s:'thinking'},
+    {n:'output',    d:4000, l:'▸ CRM actualizado — 12 leads nuevos',  t:null,       s:'writing'},
+    {n:null,        d:4600, l:'✓ Sync completo — Alejo notificado',   t:null,       s:'complete'},
+  ],
+  deep: [
+    {n:'input',     d:0,    l:'▸ Complex task received...',           t:null,       s:'thinking'},
+    {n:'tokenizer', d:400,  l:'▸ Tokenizing (8K tokens)...',          t:null,       s:'thinking'},
+    {n:'context',   d:700,  l:'▸ Loading full context window...',     t:null,       s:'thinking'},
+    {n:'memory',    d:1000, l:'▸ Retrieving long-term memory...',     t:null,       s:'thinking'},
+    {n:'reasoning', d:1500, l:'▸ Extended reasoning: pass 1...',      t:null,       s:'thinking'},
+    {n:'tools',     d:2200, l:'▸ Spawning subagent: Explore',         t:'Agent',    s:'tool'},
+    {n:'reasoning', d:2900, l:'▸ Extended reasoning: pass 2...',      t:null,       s:'thinking'},
+    {n:'tools',     d:3500, l:'▸ WebSearch: researching context',     t:'Search',   s:'tool'},
+    {n:'tools',     d:4000, l:'▸ Read: scanning codebase...',         t:'Read',     s:'tool'},
+    {n:'reasoning', d:4600, l:'▸ Extended reasoning: pass 3...',      t:null,       s:'thinking'},
+    {n:'tools',     d:5300, l:'▸ Write: generating output files...',  t:'Write',    s:'tool'},
+    {n:'memory',    d:5800, l:'▸ Saving to memory system...',         t:null,       s:'thinking'},
+    {n:'reasoning', d:6200, l:'▸ Final synthesis...',                 t:null,       s:'thinking'},
+    {n:'output',    d:7000, l:'▸ Streaming complete response...',     t:null,       s:'writing'},
+    {n:null,        d:7900, l:'✓ Deep-think task complete',           t:null,       s:'complete'},
+  ],
+};
+
+// ── RUNTIME OBJECTS ──
+let nodes = [], conns = [], particles = [], stars = [];
+
+// ── RESIZE ──
+function resize() {
+  const wrap = document.getElementById('canvas-wrap');
+  W = wrap.clientWidth;
+  H = wrap.clientHeight;
+  CV.width  = W;
+  CV.height = H;
+  buildNodes();
+  buildConns();
+  buildStars();
+}
+
+function buildNodes() {
+  nodes = ND.map(d => ({
+    ...d,
+    x: d.rx * W, y: d.ry * H,
+    phase: Math.random() * Math.PI * 2,
+    spd:   0.4 + Math.random() * 0.6,
+    bright: 0.25,
+    tBright: 0.25,
+    state: 'idle',
+  }));
+}
+
+function buildConns() {
+  conns = CD.map(([a,b]) => ({
+    from: nodes.find(n=>n.id===a),
+    to:   nodes.find(n=>n.id===b),
+    flow: false,
+  }));
+}
+
+function buildStars() {
+  stars = Array.from({length:100}, () => ({
+    x: Math.random()*W, y: Math.random()*H,
+    r: Math.random()*1.4 + 0.2,
+    a: Math.random()*0.35 + 0.05,
+    sp: 0.6 + Math.random()*1.4,
+    ph: Math.random()*Math.PI*2,
+  }));
+}
+
+// ── PARTICLE SYSTEM ──
+function spawnP(from, to, col, speed=1) {
+  const mx = (from.x+to.x)/2, my = (from.y+to.y)/2;
+  const cpx = mx + (Math.random()-.5)*90;
+  const cpy = my + (Math.random()-.5)*90;
+  particles.push({
+    fx:from.x, fy:from.y, tx:to.x, ty:to.y,
+    cpx, cpy, t:0,
+    spd: (0.007+Math.random()*0.006)*speed,
+    col: col||from.col,
+    sz: 2.2+Math.random()*2,
+    alpha:1, x:from.x, y:from.y,
+    trail:[],
+  });
+}
+
+function burst(from, to, n=4, col) {
+  for(let i=0;i<n;i++) setTimeout(()=>spawnP(from,to,col), i*75);
+}
+
+function tickParticles() {
+  for(const p of particles) {
+    p.trail.push({x:p.x, y:p.y});
+    if(p.trail.length>9) p.trail.shift();
+    p.t += p.spd;
+    if(p.t>=1){ p.alpha-=0.12; p.t=1; }
+    const m=1-p.t;
+    p.x = m*m*p.fx + 2*m*p.t*p.cpx + p.t*p.t*p.tx;
+    p.y = m*m*p.fy + 2*m*p.t*p.cpy + p.t*p.t*p.ty;
+  }
+  particles = particles.filter(p=>p.alpha>0.01);
+}
+
+// ── DRAW ──
+function rgba(hex, a) {
+  const r=parseInt(hex.slice(1,3),16);
+  const g=parseInt(hex.slice(3,5),16);
+  const b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function drawBG(ts) {
+  cx.fillStyle='#0a0a0f'; cx.fillRect(0,0,W,H);
+
+  // Subtle grid
+  cx.strokeStyle='rgba(0,212,255,0.025)'; cx.lineWidth=1;
+  for(let x=0;x<W;x+=44){ cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke(); }
+  for(let y=0;y<H;y+=44){ cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke(); }
+
+  // Stars
+  const t=ts/1000;
+  for(const s of stars){
+    const a=s.a*(0.65+0.35*Math.sin(t*s.sp+s.ph));
+    cx.fillStyle=`rgba(180,210,255,${a})`;
+    cx.beginPath(); cx.arc(s.x,s.y,s.r,0,Math.PI*2); cx.fill();
+  }
+
+  // Subtle brain outline ring
+  const bx=W*.5, by=H*.45, br=Math.min(W,H)*.33;
+  cx.strokeStyle='rgba(0,212,255,0.03)'; cx.lineWidth=1;
+  cx.beginPath(); cx.ellipse(bx,by,br*1.15,br,0,0,Math.PI*2); cx.stroke();
+  cx.beginPath(); cx.ellipse(bx,by,br*.8,br*.7,0,0,Math.PI*2); cx.stroke();
+}
+
+function drawConns(ts) {
+  for(const c of conns){
+    const {from:f, to:t} = c;
+    const mx=(f.x+t.x)/2, my=(f.y+t.y)/2;
+    const cpx=mx+(t.y-f.y)*.12, cpy=my-(t.x-f.x)*.12;
+
+    const active = c.flow || (f.state!=='idle' && t.state!=='idle');
+    cx.strokeStyle = rgba('#00d4ff', active ? 0.22 : 0.07);
+    cx.lineWidth = active ? 1.4 : 0.7;
+    cx.setLineDash([5,9]);
+    cx.lineDashOffset = -(ts/28);
+    cx.beginPath();
+    cx.moveTo(f.x,f.y);
+    cx.quadraticCurveTo(cpx,cpy,t.x,t.y);
+    cx.stroke();
+    cx.setLineDash([]);
+  }
+}
+
+function drawParticles() {
+  for(const p of particles){
+    // Trail
+    for(let i=0;i<p.trail.length;i++){
+      const tr=p.trail[i];
+      const a=(i/p.trail.length)*p.alpha*0.35;
+      const sz=p.sz*(i/p.trail.length)*0.55;
+      cx.beginPath(); cx.arc(tr.x,tr.y,sz,0,Math.PI*2);
+      cx.fillStyle=rgba(p.col,a); cx.fill();
+    }
+    // Core
+    cx.beginPath(); cx.arc(p.x,p.y,p.sz,0,Math.PI*2);
+    cx.fillStyle=rgba(p.col,p.alpha); cx.fill();
+    // Glow
+    const g=cx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.sz*3.5);
+    g.addColorStop(0,rgba(p.col,p.alpha*.45));
+    g.addColorStop(1,rgba(p.col,0));
+    cx.beginPath(); cx.arc(p.x,p.y,p.sz*3.5,0,Math.PI*2);
+    cx.fillStyle=g; cx.fill();
+  }
+}
+
+function drawNodes(ts) {
+  const t=ts/1000;
+  for(const n of nodes){
+    n.bright += (n.tBright - n.bright) * 0.06;
+    const pulse=Math.sin(t*n.spd+n.phase);
+    const br=n.bright;
+    const pr=n.state==='idle'?0.08:0.28;
+    const r=n.r+(pulse*2.5);
+
+    // Outer nebula glow
+    const og=cx.createRadialGradient(n.x,n.y,r*.4,n.x,n.y,r*3);
+    og.addColorStop(0, rgba(n.col, br*0.35+pulse*pr*0.08));
+    og.addColorStop(1, rgba(n.col, 0));
+    cx.beginPath(); cx.arc(n.x,n.y,r*3,0,Math.PI*2);
+    cx.fillStyle=og; cx.fill();
+
+    // Body gradient
+    const bg=cx.createRadialGradient(n.x-r*.28,n.y-r*.28,0,n.x,n.y,r);
+    bg.addColorStop(0, rgba(n.col,0.92));
+    bg.addColorStop(0.45, rgba(n.col,0.35));
+    bg.addColorStop(1, rgba(n.col,0.08));
+    cx.beginPath(); cx.arc(n.x,n.y,r,0,Math.PI*2);
+    cx.fillStyle=bg; cx.fill();
+
+    // Rim
+    cx.beginPath(); cx.arc(n.x,n.y,r,0,Math.PI*2);
+    cx.strokeStyle=rgba(n.col, 0.45+br*0.55);
+    cx.lineWidth=1.5; cx.stroke();
+
+    // Second ring when active/complete
+    if(n.state!=='idle'){
+      cx.beginPath(); cx.arc(n.x,n.y,r+7+pulse*3,0,Math.PI*2);
+      cx.strokeStyle=rgba(n.col,0.25*br);
+      cx.lineWidth=1; cx.stroke();
+    }
+
+    // Labels
+    cx.textAlign='center';
+    cx.font=`bold 9px 'Courier New',monospace`;
+    cx.fillStyle=rgba(n.col,0.9+br*.1);
+    cx.fillText(n.lbl,n.x,n.y-2);
+    cx.font=`7px 'Courier New',monospace`;
+    cx.fillStyle=rgba(n.col,0.45+br*.25);
+    cx.fillText(n.sub,n.x,n.y+9);
+  }
+}
+
+// ── IDLE HEARTBEAT ──
+let idleTimer=null;
+function scheduleIdle(){
+  clearTimeout(idleTimer);
+  if(running) return;
+  idleTimer=setTimeout(()=>{
+    if(!running) idlePulse();
+    scheduleIdle();
+  }, 1200+Math.random()*2200);
+}
+function idlePulse(){
+  const n=nodes[Math.floor(Math.random()*nodes.length)];
+  n.tBright=0.8; setTimeout(()=>{if(n.state==='idle')n.tBright=0.25;},500);
+  const oc=conns.filter(c=>c.from===n);
+  if(oc.length){ const c=oc[Math.floor(Math.random()*oc.length)]; spawnP(c.from,c.to,c.from.col,0.45); }
+}
+
+// ── ANIMATION LOOP ──
+function loop(ts) {
+  requestAnimationFrame(loop);
+  frameN++;
+  if(ts-lastFpsT>500){
+    fps=Math.round(frameN*1000/(ts-lastFpsT));
+    document.getElementById('n-fps').textContent=fps;
+    frameN=0; lastFpsT=ts;
+  }
+  tickParticles();
+  drawBG(ts); drawConns(ts); drawParticles(); drawNodes(ts);
+
+  const an=nodes.filter(n=>n.state!=='idle').length;
+  document.getElementById('n-active').textContent=`${an}/7`;
+  document.getElementById('n-part').textContent=particles.length;
+}
+
+// ── TASK RUNNER ──
+function preset(key){
+  const map={
+    dm:'Responder DM: lead pregunta por RAV4 2024',
+    inv:'Publicar inventario Toyota del día',
+    mp:'Actualizar listings en Facebook Marketplace',
+    crm:'Sincronizar leads en CRM tucarroconalejo',
+    deep:'Analizar sistema completo y generar reporte',
+  };
+  document.getElementById('task-in').value=map[key]||'';
+  runTask(key);
+}
+
+function runTask(key) {
+  if(running) return;
+  running=true;
+  const seq=SEQ[key]||SEQ.default;
+
+  // Reset
+  nodes.forEach(n=>{ n.state='idle'; n.tBright=0.25; });
+  conns.forEach(c=>c.flow=false);
+  document.getElementById('run-btn').disabled=true;
+  totTask++;
+  document.getElementById('s-task').textContent=totTask;
+
+  seq.forEach((step,i)=>{
+    setTimeout(()=>{
+      if(step.n){
+        const nd=nodes.find(n=>n.id===step.n);
+        if(nd){
+          nd.state='active';
+          nd.tBright=1.0;
+          // Particle flows from active predecessors
+          const inc=conns.filter(c=>c.to===nd && c.from.state!=='idle');
+          inc.forEach(c=>{ burst(c.from,nd,3,nd.col); c.flow=true; });
+          // First node: send forward
+          if(nd.id==='input'){
+            const tok=nodes.find(n=>n.id==='tokenizer');
+            const ctx=nodes.find(n=>n.id==='context');
+            if(tok) burst(nd,tok,2,nd.col);
+            if(ctx) burst(nd,ctx,2,nd.col);
+          }
+          setTimeout(()=>{ if(nd.state==='active') nd.tBright=0.62; },500);
+        }
+      }
+      if(step.s) setStatus(step.s);
+      if(step.t){ litTool(step.t); totTool++; document.getElementById('s-tool').textContent=totTool; totTok+=Math.floor(Math.random()*220+60); document.getElementById('s-tok').textContent=totTok; }
+      if(step.l) addLog(step.l, step.s||'thinking');
+      if(i===seq.length-1){
+        setTimeout(()=>{
+          nodes.forEach(n=>{ n.state='complete'; n.tBright=0.48; });
+          setTimeout(()=>{
+            nodes.forEach(n=>{ n.state='idle'; n.tBright=0.25; });
+            conns.forEach(c=>c.flow=false);
+            setStatus('idle');
+            document.getElementById('run-btn').disabled=false;
+            running=false;
+            scheduleIdle();
+          },1600);
+        },700);
+      }
+    }, step.d);
+  });
+}
+
+// ── UI HELPERS ──
+function setStatus(s){
+  const dot=document.getElementById('sdot');
+  const lbl=document.getElementById('status-label');
+  const map={
+    idle:    {c:'idle',     t:'IDLE — WAITING FOR TASK',              col:'#475569'},
+    thinking:{c:'thinking', t:'THINKING — CHAIN-OF-THOUGHT ACTIVE',   col:'#e2e8f0'},
+    tool:    {c:'tool',     t:'USING TOOL — INTERACTING WITH SYSTEM', col:'#e2e8f0'},
+    writing: {c:'writing',  t:'WRITING OUTPUT — GENERATING RESPONSE', col:'#e2e8f0'},
+    complete:{c:'complete', t:'COMPLETE — TASK FINISHED',             col:'#e2e8f0'},
+  };
+  const m=map[s]||map.idle;
+  dot.className=`status-dot ${m.c}`;
+  lbl.textContent=m.t;
+  lbl.style.color=m.col;
+}
+
+function litTool(name){
+  document.querySelectorAll('.tool-row').forEach(el=>{
+    if(el.dataset.t===name){ el.classList.add('lit'); setTimeout(()=>el.classList.remove('lit'),1600); }
+  });
+}
+
+function addLog(msg,type){
+  const list=document.getElementById('log-list');
+  const now=new Date();
+  const ts=`${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+  const el=document.createElement('div');
+  el.className=`log-entry ${type}`;
+  el.innerHTML=`<span class="ts">${ts}</span><span class="msg">${msg}</span>`;
+  list.insertBefore(el,list.firstChild);
+  while(list.children.length>35) list.removeChild(list.lastChild);
+}
+
+// ── TOOLTIP ──
+CV.addEventListener('mousemove',e=>{
+  const rect=CV.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const tip=document.getElementById('tooltip');
+  let hit=null;
+  for(const n of nodes){ const dx=mx-n.x,dy=my-n.y; if(Math.sqrt(dx*dx+dy*dy)<n.r+12){hit=n;break;} }
+  if(hit){
+    tip.style.display='block';
+    tip.style.left=(mx+16)+'px'; tip.style.top=(my-12)+'px';
+    tip.innerHTML=`<strong>${hit.lbl}</strong>${hit.sub}<br><small>State: ${hit.state}</small>`;
+    CV.style.cursor='crosshair';
+  } else { tip.style.display='none'; CV.style.cursor='default'; }
+});
+CV.addEventListener('mouseleave',()=>document.getElementById('tooltip').style.display='none');
+
+// Click a node to spark it
+CV.addEventListener('click',e=>{
+  if(running) return;
+  const rect=CV.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  for(const n of nodes){
+    const dx=mx-n.x,dy=my-n.y;
+    if(Math.sqrt(dx*dx+dy*dy)<n.r+12){
+      n.tBright=1.0; setTimeout(()=>{n.tBright=0.25;},700);
+      conns.filter(c=>c.from===n).forEach(c=>burst(n,c.to,5,n.col));
+      break;
+    }
+  }
+});
+
+// Enter key
+document.getElementById('task-in').addEventListener('keydown',e=>{ if(e.key==='Enter'&&!running) runTask(); });
+
+// ════════════════════════════════════════════════════════════
+//  WEBSOCKET LIVE BRIDGE — brain_server.py
+// ════════════════════════════════════════════════════════════
+let ws = null;
+let liveMode = false;
+
+function setLiveMode(active) {
+  liveMode = active;
+  const badge  = document.getElementById('live-badge');
+  const liveBtn = document.getElementById('live-btn');
+  if (active) {
+    badge.textContent = '● LIVE';
+    badge.classList.add('live');
+    liveBtn.textContent = '⚡ RUN REAL';
+    liveBtn.classList.add('connected');
+  } else {
+    badge.textContent = '○ SIM';
+    badge.classList.remove('live');
+    liveBtn.textContent = '⚡ CONNECT';
+    liveBtn.classList.remove('connected');
+  }
+}
+
+function activateNode(nodeId) {
+  const nd = nodes.find(n => n.id === nodeId);
+  if (!nd) return;
+  nd.state   = 'active';
+  nd.tBright = 1.0;
+  // Particles from already-active predecessors
+  conns.filter(c => c.to === nd && c.from.state !== 'idle')
+       .forEach(c => { burst(c.from, nd, 3, nd.col); c.flow = true; });
+  // Input node always sprays forward
+  if (nd.id === 'input') {
+    const tok = nodes.find(n => n.id === 'tokenizer');
+    const ctx = nodes.find(n => n.id === 'context');
+    if (tok) burst(nd, tok, 2, nd.col);
+    if (ctx) burst(nd, ctx, 2, nd.col);
+  }
+  setTimeout(() => { if (nd.state === 'active') nd.tBright = 0.62; }, 500);
+}
+
+function handleWSEvent(ev) {
+  const { type, node: nid, tool, status, msg, log_type } = ev;
+
+  // Connected handshake
+  if (type === 'connected') {
+    addLog(msg || 'NEXUS Brain Server — online', 'nexus');
+    return;
+  }
+
+  // All systems starting
+  if (type === 'start_all') {
+    nodes.forEach(n => { n.state = 'idle'; n.tBright = 0.25; });
+    conns.forEach(c => c.flow = false);
+    running = true;
+    totTask++;
+    document.getElementById('s-task').textContent = totTask;
+    document.getElementById('live-btn').disabled = true;
+    document.getElementById('run-btn').disabled  = true;
+    if (msg) addLog(msg, 'nexus');
+    setStatus('thinking');
+    return;
+  }
+
+  // All systems done
+  if (type === 'all_done') {
+    if (msg) addLog(msg, 'complete');
+    setTimeout(() => {
+      nodes.forEach(n => { n.state = 'complete'; n.tBright = 0.48; });
+      setTimeout(() => {
+        nodes.forEach(n => { n.state = 'idle'; n.tBright = 0.25; });
+        conns.forEach(c => c.flow = false);
+        setStatus('idle');
+        running = false;
+        document.getElementById('live-btn').disabled = false;
+        document.getElementById('run-btn').disabled  = false;
+        scheduleIdle();
+      }, 1800);
+    }, 400);
+    return;
+  }
+
+  // Module done
+  if (type === 'done') {
+    if (msg) addLog(msg, log_type || 'complete');
+    return;
+  }
+
+  // Generic event / log line
+  if (msg) addLog(msg, log_type || 'thinking');
+  if (status) setStatus(status);
+
+  if (tool) {
+    litTool(tool);
+    totTool++;
+    document.getElementById('s-tool').textContent = totTool;
+    totTok += Math.floor(Math.random() * 180 + 40);
+    document.getElementById('s-tok').textContent = totTok;
+  }
+
+  if (nid) activateNode(nid);
+}
+
+function connectWS(thenRun) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    if (thenRun) ws.send(JSON.stringify({ cmd: 'run_all' }));
+    return;
+  }
+  addLog('▸ Conectando a brain_server.py (ws://localhost:8765)...', 'thinking');
+  ws = new WebSocket('ws://localhost:8765');
+
+  ws.onopen = () => {
+    setLiveMode(true);
+    addLog('🔌 Conectado — modo LIVE activo', 'nexus');
+    if (thenRun) setTimeout(() => ws.send(JSON.stringify({ cmd: 'run_all' })), 200);
+  };
+
+  ws.onmessage = e => {
+    try { handleWSEvent(JSON.parse(e.data)); } catch {}
+  };
+
+  ws.onclose = () => {
+    setLiveMode(false);
+    ws = null;
+    if (running) {
+      running = false;
+      document.getElementById('live-btn').disabled = false;
+      document.getElementById('run-btn').disabled  = false;
+    }
+    addLog('⚡ Servidor desconectado — vuelve a modo SIM', 'error');
+  };
+
+  ws.onerror = () => {
+    addLog('⚠️ No se pudo conectar — corre: venv/bin/python3 brain_server.py', 'error');
+  };
+}
+
+function liveRun() {
+  if (running) return;
+  if (liveMode && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ cmd: 'run_all' }));
+  } else {
+    connectWS(true);
+  }
+}
+
+// Auto-try connection on load (silent fail)
+setTimeout(() => {
+  const probe = new WebSocket('ws://localhost:8765');
+  probe.onopen  = () => { probe.close(); connectWS(false); };
+  probe.onerror = () => {};
+}, 800);
+
+// ── INIT ──
+window.addEventListener('resize', resize);
+resize();
+scheduleIdle();
+
+// Boot log
+addLog('// NEXUS Brain v1.0 — Claude Code neural monitor online','nexus');
+addLog('// Hollywood Toyota | @tucarroconalejo | FL 33021','nexus');
+addLog('▸ Modo SIM activo — botón ⚡ CONNECT para modo LIVE','thinking');
+addLog('▸ DM Bot activo en Render.com','thinking');
+addLog('▸ 430 vehículos en catálogo | Scheduler corriendo','thinking');
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

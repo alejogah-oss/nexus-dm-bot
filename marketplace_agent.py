@@ -41,7 +41,7 @@ ESTRUCTURA:
 1. Gancho emocional (1 oración) — qué hace sentir este carro
 2. 2-3 puntos clave (emoción/utilidad, no specs aburridos)
 3. Nota de precio: "El precio indicado es el down payment estimado, no el precio total del vehículo."
-4. CTA: "¿Tienes preguntas? Escríbeme aquí o llama al (954) 310-6671 — soy Alejo y te atiendo personalmente."
+4. CTA: "¿Tienes preguntas? Escríbeme aquí o llama al (954) 910-6671 — soy Alejo y te atiendo personalmente."
 
 REGLAS: NUNCA menciones precio total ni mensualidades. Sin Markdown de ningún tipo — sin #, *, **, guiones al inicio, ni listas. Solo texto limpio en párrafos. Empieza directamente con el gancho, sin título ni encabezado."""
 

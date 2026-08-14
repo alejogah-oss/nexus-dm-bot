@@ -20,6 +20,18 @@ def test_scanner_car_fields_make_fallback():
                                                "mileage": 10, "price": 20000, "color": "White"})
     assert f["make"] == "Toyota" and f["exterior_color"] == "White"
 
+def test_scanner_car_fields_mileage_cero_cae_a_500():
+    # Carro nuevo escaneado con 0 millas — Marketplace no acepta 0, mínimo aceptado es 500
+    car = {"model": "Camry", "yr": "2026", "mileage": 0, "price": 5000, "color": "White"}
+    f = marketplace_poster.scanner_car_fields(car)
+    assert f["mileage"] == "500"
+
+def test_scanner_car_fields_mileage_ausente_cae_a_500():
+    # Si no viene el campo mileage en absoluto, tampoco debe mandarse vacío/"" a Marketplace
+    car = {"model": "Camry", "yr": "2026", "price": 5000, "color": "White"}
+    f = marketplace_poster.scanner_car_fields(car)
+    assert f["mileage"] == "500"
+
 # ── FIX 2 (review final): badge 🔴 "Falló" nunca se dispara ──────────
 
 def test_record_publish_error_escribe_last_error(tmp_path, monkeypatch):

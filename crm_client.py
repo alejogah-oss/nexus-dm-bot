@@ -117,7 +117,7 @@ def send_to_crm(lead_data: dict, conversation_summary: str = "") -> dict:
         **lead_data,
     }
     if conversation_summary:
-        payload["notes"] = conversation_summary[:500]
+        payload["notes"] = conversation_summary[:2000]
 
     try:
         resp = requests.post(
@@ -155,7 +155,8 @@ def _build_crm_note(conversation_history: list, platform: str, name: str,
     prompt = (
         "Eres asistente de Alejo Garcia, asesor Toyota. "
         "Resume esta conversación en 3-4 oraciones cortas para que Alejo sepa exactamente con quién va a hablar. "
-        "Incluye: nombre del cliente si lo mencionó, qué modelo le interesa, su situación (primera vez, trade-in, crédito, familia), "
+        "Incluye: nombre del cliente si lo mencionó, qué modelo le interesa, el valor o rango de precio del carro que busca "
+        "(el que se le dio en el chat, o el presupuesto que mencionó si no se le dio ninguno), su situación (primera vez, trade-in, crédito, familia), "
         "señales de urgencia o intención, y cualquier detalle útil para el primer contacto. "
         "Escribe en español, tono directo, sin introducciones.\n\n"
         f"CLIENTE IDENTIFICADO: {name}\n"

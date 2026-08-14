@@ -1,9 +1,9 @@
 """
 NEXUS Pulse — Alertas en tiempo real a Alejo.
-Envía SMS via Twilio cuando hay HOT LEAD, SHOWROOM_DECLINED u otros eventos críticos.
-Fallback a email si Twilio no está configurado.
+Envía WhatsApp via Green API cuando hay HOT LEAD, SHOWROOM_DECLINED u otros eventos críticos.
+Fallback a Twilio Sandbox, y de ahí a email, si Green API no está configurado o falla.
 """
-import os, smtplib
+import os, smtplib, requests
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
@@ -41,9 +41,37 @@ def pulse_notify(event: str, detail: str):
     template = _MESSAGES.get(event, "NEXUS: {event}\n{detail}")
     body = template.format(detail=detail, event=event)
 
-    sent = _try_sms(body)
+    sent = _try_greenapi(body) or _try_sms(body)
     if not sent:
         _try_email(event, body)
+
+
+def _try_greenapi(body: str) -> bool:
+    url_base   = os.getenv("GREEN_API_URL")
+    id_inst    = os.getenv("GREEN_API_ID_INSTANCE")
+    token_inst = os.getenv("GREEN_API_TOKEN")
+
+    if not all([url_base, id_inst, token_inst]):
+        print("[PULSE] Green API no configurado — probando siguiente canal")
+        return False
+
+    phone = "".join(c for c in ALEJO_PHONE if c.isdigit())
+    url = f"{url_base.rstrip('/')}/waInstance{id_inst}/sendMessage/{token_inst}"
+
+    try:
+        r = requests.post(
+            url,
+            json={"chatId": f"{phone}@c.us", "message": body},
+            timeout=10,
+        )
+        if r.status_code == 200 and r.json().get("idMessage"):
+            print(f"[PULSE] ✅ WhatsApp (Green API) enviado a {ALEJO_PHONE}")
+            return True
+        print(f"[PULSE] ❌ Green API falló: HTTP {r.status_code} — {r.text}")
+        return False
+    except Exception as e:
+        print(f"[PULSE] ❌ Green API falló: {e}")
+        return False
 
 
 def _try_sms(body: str) -> bool:

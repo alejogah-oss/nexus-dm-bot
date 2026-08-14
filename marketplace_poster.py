@@ -229,11 +229,18 @@ def scanner_car_fields(car: dict) -> dict:
     fb_color = next((fb for name, fb in COLOR_MAP.items() if name in vc), "Black")
     ml = model.lower()
     fuel = next((f for k, f in FUEL_MAP.items() if k in ml), "Gasoline")
+    try:
+        mileage = int(car.get("mileage") or 0)
+    except (TypeError, ValueError):
+        mileage = 0
+    # Marketplace no acepta 0 millas — un carro nuevo se publica igual con 500 (mínimo aceptado).
+    if mileage <= 0:
+        mileage = 500
     return {
         "make": str(car.get("make") or "Toyota"),
         "model": model,
         "year": str(car.get("yr", "")),
-        "mileage": str(car.get("mileage", "")),
+        "mileage": str(mileage),
         "price": str(car.get("price", "")),
         "body_style": body_style,
         "exterior_color": fb_color,
@@ -343,7 +350,8 @@ async def post_vehicle(page, v: dict, posted: dict) -> bool:
 
     # --- Next ---
     try:
-        next_btn = page.get_by_role("button", name="Next")
+        # exact=True: evita chocar con "View next image" del carrusel de fotos
+        next_btn = page.get_by_role("button", name="Next", exact=True)
         # Force=True bypasses aria-disabled check — FB validates server-side
         await next_btn.click(force=True, timeout=5000)
         await asyncio.sleep(5)
@@ -438,9 +446,9 @@ async def main(limit: int = 5):
         await asyncio.sleep(15)
         await browser.close()
 
-async def post_scanner_car(page, fields: dict, photo_paths: list) -> bool:
-    """Llena el formulario de Marketplace con los datos reales del carro y SE DETIENE
-    antes del botón Publicar de Facebook. Alejo revisa y publica manualmente."""
+async def post_scanner_car(page, fields: dict, photo_paths: list, video_path: str | None = None) -> bool:
+    """Llena el formulario de Marketplace con los datos reales del carro,
+    selecciona todos los grupos disponibles y publica automáticamente."""
     await page.goto("https://www.facebook.com/marketplace/create/vehicle",
                     wait_until="domcontentloaded", timeout=30000)
     await asyncio.sleep(5)
@@ -456,6 +464,19 @@ async def post_scanner_car(page, fields: dict, photo_paths: list) -> bool:
             print(f"    📷 {len(photo_paths)} fotos subidas")
         except Exception as e:
             print(f"    ⚠️  Fotos: {e}")
+
+    if video_path:
+        try:
+            # Casilla aparte para video, junto a la de fotos (no es el mismo input)
+            video_input = page.locator('input[type="file"][accept*="video"]').first
+            if await video_input.count() == 0:
+                video_input = page.locator('input[type="file"]').nth(1)
+            await video_input.set_input_files(video_path)
+            # El video pesa ~150MB y tarda mucho más en subir/procesar que las fotos
+            await asyncio.sleep(75)
+            print("    🎥 Video subido")
+        except Exception as e:
+            print(f"    ⚠️  Video: {e}")
 
     await select_combobox_option(page, "Year", fields["year"]); await asyncio.sleep(2)
     await select_combobox_option(page, "Make", fields["make"]); await asyncio.sleep(2)
@@ -476,9 +497,100 @@ async def post_scanner_car(page, fields: dict, photo_paths: list) -> bool:
     await fill_label_input(page, "Description", fields["description"]); await asyncio.sleep(1)
 
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", fields.get("title", "car"))[:60]
-    await page.screenshot(path=f"/tmp/mp_scanner_{safe}.png")
-    print("    ⏸️  Formulario lleno. Revisa y dale PUBLICAR tú mismo en Facebook.")
-    return True
+    await page.screenshot(path=f"/tmp/mp_scanner_step1_{safe}.png")
+
+    # --- Next: pasa a la página 2 (donde vive "Promote listing after publish") ---
+    try:
+        # exact=True: evita chocar con "View next image" del carrusel de fotos
+        next_btn = page.get_by_role("button", name="Next", exact=True)
+        await next_btn.click(force=True, timeout=5000)
+        await asyncio.sleep(4)
+    except Exception as e:
+        print(f"    ⚠️  Next: {e}")
+        await page.screenshot(path=f"/tmp/mp_scanner_next_fail_{safe}.png")
+        return False
+
+    # Cerrar popup "Query Error" que aparece al cargar grupos
+    for _ in range(3):
+        try:
+            btn = page.get_by_role("button", name="Close").first
+            if await btn.is_visible(timeout=1500):
+                await btn.click()
+                await asyncio.sleep(1)
+                break
+        except Exception:
+            pass
+        try:
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(0.5)
+        except Exception:
+            pass
+
+    # --- Apagar "Promote listing after publish" (viene activado por defecto) ---
+    try:
+        promote = page.locator(
+            '[aria-label*="Promote listing after publish"], '
+            'input[type="checkbox"][aria-label*="Promote listing"]'
+        ).first
+        if await promote.count() > 0:
+            checked = await promote.get_attribute("aria-checked")
+            is_on = (checked == "true") if checked is not None else await promote.is_checked()
+            if is_on:
+                await promote.click()
+                await asyncio.sleep(0.5)
+                print("    🔕 Promote listing after publish: apagado")
+    except Exception as e:
+        print(f"    ⚠️  Promote toggle: {e}")
+
+    # --- Seleccionar todos los grupos disponibles (a petición de Alejo, jul 21 2026) ---
+    try:
+        checks = page.locator('div[role="checkbox"], input[type="checkbox"]')
+        count = await checks.count()
+        for i in range(count):
+            item = checks.nth(i)
+            try:
+                label = (await item.get_attribute("aria-label")) or ""
+                if "promote" in label.lower() or "clean title" in label.lower():
+                    continue
+                checked = await item.get_attribute("aria-checked")
+                is_checked = (checked == "true") if checked is not None else await item.is_checked()
+                if not is_checked:
+                    await item.click()
+                    await asyncio.sleep(0.3)
+            except Exception:
+                continue
+        print(f"    👥 Grupos revisados: {count}")
+    except Exception as e:
+        print(f"    ⚠️  Grupos: {e}")
+
+    await page.screenshot(path=f"/tmp/mp_scanner_prepublish_{safe}.png")
+
+    # --- Publicar ---
+    for pub_text in ["Publish", "Publicar", "Post", "Submit"]:
+        try:
+            btn = page.get_by_role("button", name=pub_text)
+            if await btn.first.is_visible(timeout=3000):
+                await btn.first.click()
+                # Verificar que FB realmente salió del flujo de creación antes de
+                # asumir éxito — un click que no navega (validación silenciosa,
+                # error, rate limit) no significa que el listing quedó publicado.
+                try:
+                    await page.wait_for_url(lambda u: "/marketplace/create/" not in u, timeout=15000)
+                except Exception:
+                    pass
+                await asyncio.sleep(2)
+                await page.screenshot(path=f"/tmp/mp_scanner_postpublish_{safe}.png")
+                if "/marketplace/create/" in page.url:
+                    print(f"    ⚠️  Click en \"{pub_text}\" pero la URL sigue en create/ — no se publicó de verdad")
+                    return False
+                print("    ✅ ¡Publicado!")
+                return True
+        except Exception:
+            pass
+
+    await page.screenshot(path=f"/tmp/mp_scanner_no_publish_{safe}.png")
+    print("    ⚠️  Publish no encontrado — screenshot guardado")
+    return False
 
 
 def record_publish_error(slug: str, msg: str) -> None:
@@ -493,12 +605,27 @@ def record_publish_error(slug: str, msg: str) -> None:
     lj.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
+def record_publish_success(slug: str) -> None:
+    """Marca published=true + published_at en el listing.json (badge 🟢 del panel)."""
+    inv = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
+    lj = Path(inv) / slug / "listing.json"
+    try:
+        data = json.loads(lj.read_text())
+    except Exception:
+        return
+    data["published"] = True
+    data["published_at"] = time.strftime("%Y-%m-%d %H:%M")
+    data["last_error"] = None
+    lj.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+
+
 async def publish_scanner_car(slug: str) -> None:
     """Lee inventario/<slug>/ y abre Chrome VISIBLE con el formulario lleno.
-    Deja el navegador abierto para que Alejo revise y publique manualmente.
-    Si el llenado falla (sesión FB expirada, cambio de DOM), corre como
-    subproceso desacoplado, así que nadie más se entera — por eso escribimos
-    last_error en el listing.json para que el badge 🔴 del panel se dispare."""
+    Selecciona todos los grupos disponibles y publica automáticamente
+    (a petición de Alejo, jul 21 2026 — ya no se detiene antes de Publicar).
+    Si falla (sesión FB expirada, cambio de DOM), corre como subproceso
+    desacoplado, así que nadie más se entera — por eso escribimos last_error
+    en el listing.json para que el badge 🔴 del panel se dispare."""
     try:
         inv = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
         folder = Path(inv) / slug
@@ -506,6 +633,8 @@ async def publish_scanner_car(slug: str) -> None:
         fields = scanner_car_fields(car)
         photos_dir = folder / "photos"
         photo_paths = [str(p) for p in sorted(photos_dir.glob("*.jpg"))] if photos_dir.exists() else []
+        video_file = folder / "video.mp4"
+        video_path = str(video_file) if video_file.exists() else None
 
         with open(SESSION_FILE) as f:
             storage = json.load(f)
@@ -516,12 +645,12 @@ async def publish_scanner_car(slug: str) -> None:
             page = await ctx.new_page()
             print(f"\n  📦 {fields['year']} {fields['make']} {fields['model']} — "
                   f"{fields['mileage']} mi — ${fields['price']}")
-            ok = await post_scanner_car(page, fields, photo_paths)
-            if not ok:
-                record_publish_error(slug, "no se encontró el formulario — ¿sesión FB expirada?")
-                return
-            # NO cerramos el browser: Alejo revisa y da Publicar. Se cierra al terminar él.
-            await asyncio.sleep(3600)
+            ok = await post_scanner_car(page, fields, photo_paths, video_path)
+            if ok:
+                record_publish_success(slug)
+            else:
+                record_publish_error(slug, "no se encontró el formulario o el botón Publicar — ¿sesión FB expirada?")
+            await browser.close()
     except Exception as e:
         record_publish_error(slug, str(e))
 

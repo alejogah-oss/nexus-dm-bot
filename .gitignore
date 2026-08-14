@@ -10,6 +10,22 @@ marketplace_posted.json
 marketplace_daily_log.json
 marketplace_log.json
 posts_log.json
+marketplace_analytics.json
+metrics_cache.json
+marketplace_inbox_state.json
+marketplace_update_log.json
+leads_activity.json
+promotions.json
+skills-lock.json
+
+# Assets pesados / generados — viven en el Pro, no en git (bloatean el repo)
+car_library/
+ad_samples/
+ads_campaigns/
+fonts/
+reports/
+graphify-out/
+.agents/
 
 # Debug screenshots
 *.png
@@ -24,3 +40,5 @@ venv/
 
 # Logs
 logs/*.log
+CREDENCIALES.md
+archive/

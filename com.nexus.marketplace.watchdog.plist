@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nexus.marketplace.watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/macbookpro/nexus-automation/venv/bin/python3</string>
+        <string>/Users/macbookpro/nexus-automation/marketplace_watchdog.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/macbookpro/nexus-automation</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/macbookpro/nexus-automation/logs/marketplace_watchdog.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/macbookpro/nexus-automation/logs/marketplace_watchdog_error.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/macbookpro/nexus-automation/venv/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+</dict>
+</plist>

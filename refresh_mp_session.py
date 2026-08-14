@@ -71,6 +71,7 @@ async def main():
         # Arrancar el bot en el mismo contexto (sesión nunca expira)
         state = _load_state()
         cycle = 0
+        last_full_scan = 0.0
         while True:
             # Horario humano (8am-10pm): de madrugada Alejo duerme — el bot también.
             # Los mensajes de la noche se contestan en el catch-up de la mañana.
@@ -85,8 +86,20 @@ async def main():
             now = time.time()
             active = {tid: exp for tid, exp in _mib._active_threads.items() if exp > now}
             quick = bool(active)
-            # Jitter: nunca dos esperas iguales — activo 8-15s, idle 45-90s
-            poll = random.uniform(8, 15) if quick else random.uniform(45, 90)
+
+            # Aunque haya conversación activa, cada ~60-120s toca un scan completo
+            # del inbox — si no, un cliente nuevo esperaría toda la ventana activa.
+            if quick and (now - last_full_scan) > random.uniform(60, 120):
+                quick = False
+
+            # Poll escalonado (humano): recién respondido → pendiente del chat;
+            # conversación caliente pero el cliente se demora → chequeos más
+            # espaciados; sin conversación activa → ritmo normal.
+            if active:
+                freshest = min(now - (exp - _mib.ACTIVE_WINDOW) for exp in active.values())
+                poll = random.uniform(8, 15) if freshest < 300 else random.uniform(25, 50)
+            else:
+                poll = random.uniform(45, 90)
 
             if quick:
                 print(f"\n[MIB] === CICLO {cycle} (activo x{len(active)}) === {time.strftime('%H:%M:%S')}", flush=True)
@@ -95,6 +108,8 @@ async def main():
 
             try:
                 await check_inbox(page, state, quick=quick)
+                if not quick:
+                    last_full_scan = time.time()
                 _save_state(state)
             except Exception as e:
                 print(f"[MIB] Ciclo {cycle} error: {e}", flush=True)
