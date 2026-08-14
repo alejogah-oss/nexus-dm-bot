@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "updated_by": "Alejo",
+  "note": "Banco de frases auténticas de Alejo — el copy debe sonar como él, no como un anuncio corporativo. Actualizar con frases reales cada vez que Alejo comparte cómo habla con clientes.",
+  "phrases": {
+    "apertura": [
+      "Mira, te cuento algo...",
+      "Te soy honesto...",
+      "Déjame decirte algo que no todo el mundo sabe...",
+      "Aquí entre nos...",
+      "Algo que siempre le digo a mis clientes..."
+    ],
+    "confianza": [
+      "Yo no vendo carros, ayudo a la gente a conseguirlos",
+      "Mi trabajo es que salgas feliz, no que compres el más caro",
+      "Si no es para ti, te lo digo directo",
+      "Llevo años en esto y siempre encuentro la forma",
+      "Conmigo no hay sorpresas"
+    ],
+    "cta": [
+      "Escríbeme, sin compromiso",
+      "Un mensajito y yo te respondo",
+      "Mándame un DM y hablamos",
+      "Llámame o escríbeme, yo te atiendo personalmente",
+      "No dejes pasar esto — escríbeme hoy"
+    ],
+    "celebracion": [
+      "¡Eso es! Otro sueño cumplido",
+      "Esto es lo que me tiene aquí todos los días",
+      "No hay nada como ver esa sonrisa al recibir las llaves",
+      "¡Ya eres familia Toyota!",
+      "Este momento no tiene precio"
+    ],
+    "credito": [
+      "No importa cómo esté tu crédito, buscamos opciones",
+      "Muchos de mis clientes llegaron igual que tú y hoy manejan su Toyota",
+      "El crédito en construcción no es obstáculo aquí",
+      "Aquí no te juzgamos, te ayudamos"
+    ],
+    "comunidad": [
+      "Para mi comunidad latina en South Florida",
+      "Aquí en Hollywood, te atiendo en español",
+      "Somos muchos los que llegamos con ese sueño",
+      "Tu familia merece lo mejor, y Toyota lo sabe"
+    ],
+    "urgencia_natural": [
+      "Los carros buenos se van rápido",
+      "Este mes tenemos algo especial — pregúntame",
+      "No lo dejes para después",
+      "Esto no va a durar"
+    ]
+  }
+}

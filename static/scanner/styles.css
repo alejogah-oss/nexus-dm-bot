@@ -204,6 +204,14 @@ main {
   gap: 12px;
 }
 
+.field-note {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
 /* ── Capture (camera) buttons ──────────────────────────────────── */
 .capture-box {
   border: 2px dashed var(--border);

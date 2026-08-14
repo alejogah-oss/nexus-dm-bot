@@ -122,10 +122,12 @@
         <div class="field">
           <label for="mileageField">Millaje</label>
           <input type="number" id="mileageField" inputmode="numeric" placeholder="0">
+          <small class="field-note">Si el carro es nuevo (0 millas), Marketplace no acepta 0 — se publica automáticamente con 500 millas.</small>
         </div>
         <div class="field">
           <label for="priceField">Precio (requerido)</label>
           <input type="number" id="priceField" inputmode="numeric" placeholder="0" required>
+          <small class="field-note">Este valor es el enganche (down payment) que se muestra en Marketplace — no el precio total del carro.</small>
         </div>
         <div class="field">
           <label for="colorField">Color (requerido)</label>
@@ -178,6 +180,7 @@
       </div>
 
       <div class="folder-result hidden" id="folderResult"></div>
+      <button class="btn btn-primary hidden" id="newCarBtn" type="button">＋ Escanear otro carro</button>
     </section>
 
   </main>
@@ -203,8 +206,16 @@
       <div class="field"><label for="pTitle">Título</label><input id="pTitle" maxlength="100"></div>
       <div class="field"><label for="pDesc">Descripción</label><textarea id="pDesc" rows="10"></textarea></div>
       <div class="field-row">
-        <div class="field"><label for="pPrice">Precio</label><input id="pPrice" type="number" inputmode="numeric"></div>
-        <div class="field"><label for="pMileage">Millaje</label><input id="pMileage" type="number" inputmode="numeric"></div>
+        <div class="field">
+          <label for="pPrice">Precio</label>
+          <input id="pPrice" type="number" inputmode="numeric">
+          <small class="field-note">Es el enganche (down payment) mostrado en Marketplace, no el precio total.</small>
+        </div>
+        <div class="field">
+          <label for="pMileage">Millaje</label>
+          <input id="pMileage" type="number" inputmode="numeric">
+          <small class="field-note">Si es nuevo, deja 0 — se publica como 500 (Marketplace no acepta 0).</small>
+        </div>
       </div>
       <button class="btn btn-secondary" id="pCopyBtn" type="button">Copiar título + descripción</button>
       <button class="btn btn-primary" id="pSaveBtn" type="button">Guardar cambios</button>
