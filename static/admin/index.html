@@ -25,13 +25,22 @@
 <div id="editModal" class="overlay hidden">
   <div class="card">
     <h2>Editar carro</h2>
-    <label>Título <input id="eTitle" maxlength="100"></label>
-    <label>Descripción <textarea id="eDesc" rows="8"></textarea></label>
-    <button type="button" id="eRegenBtn" class="ghost">✨ Regenerar copy</button>
-    <label>Marca <input id="eMake"></label>
-    <label>Precio <input id="ePrice" type="number" inputmode="numeric"></label>
-    <label>Millaje <input id="eMileage" type="number" inputmode="numeric"></label>
-    <label>Color <input id="eColor"></label>
+    <p id="ePublishedNote" class="hint hidden">Ya está publicado en Marketplace — el listing público (título, descripción, precio, millaje, color) no se puede tocar desde acá. Solo el precio real privado y el rango de alternativas, que nunca se publican.</p>
+    <div id="ePublicFields">
+      <label>Título <input id="eTitle" maxlength="100"></label>
+      <label>Descripción <textarea id="eDesc" rows="8"></textarea></label>
+      <button type="button" id="eRegenBtn" class="ghost">✨ Regenerar copy</button>
+      <label>Marca <input id="eMake"></label>
+      <label>Precio <input id="ePrice" type="number" inputmode="numeric"></label>
+      <label>Millaje <input id="eMileage" type="number" inputmode="numeric"></label>
+      <label>Color <input id="eColor"></label>
+    </div>
+    <p class="hint">🔒 Privado — nunca se publica en Marketplace ni en el sitio, solo lo usa el bot en conversación.</p>
+    <label>Precio real <input id="eInternalPrice" type="number" inputmode="numeric" placeholder="0"></label>
+    <div class="field-row">
+      <label>Alternativas desde <input id="eAltPriceLow" type="number" inputmode="numeric" placeholder="0"></label>
+      <label>hasta <input id="eAltPriceHigh" type="number" inputmode="numeric" placeholder="0"></label>
+    </div>
     <button id="eSaveBtn" class="btn-primary">Guardar cambios</button>
     <button id="eCancelBtn" class="ghost">Cancelar</button>
   </div>

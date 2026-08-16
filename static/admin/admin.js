@@ -127,20 +127,22 @@ function buildCarCard(item, publishing) {
   const meta = document.createElement("p");
   meta.className = "car-meta";
   meta.textContent = "$" + (item.price || 0).toLocaleString() + " · " +
-    (item.mileage || 0).toLocaleString() + " mi";
+    (item.mileage || 0).toLocaleString() + " mi" +
+    (item.internal_price ? " · 🔒 $" + item.internal_price.toLocaleString() : "") +
+    (item.updated_at ? " · editado " + item.updated_at : "");
   info.appendChild(meta);
 
   const actions = document.createElement("div");
   actions.className = "car-actions";
 
-  if (!item.published) {
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "ghost";
-    editBtn.textContent = "Editar";
-    editBtn.addEventListener("click", () => openEdit(item.slug));
-    actions.appendChild(editBtn);
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "ghost";
+  editBtn.textContent = "Editar";
+  editBtn.addEventListener("click", () => openEdit(item.slug));
+  actions.appendChild(editBtn);
 
+  if (!item.published) {
     const pubBtn = document.createElement("button");
     pubBtn.type = "button";
     pubBtn.className = "btn-primary";
@@ -204,6 +206,13 @@ async function openEdit(slug) {
     $("ePrice").value = d.price || "";
     $("eMileage").value = d.mileage || "";
     $("eColor").value = d.color || "";
+    $("eInternalPrice").value = d.internal_price || "";
+    $("eAltPriceLow").value = d.alt_price_low || "";
+    $("eAltPriceHigh").value = d.alt_price_high || "";
+    // Publicado: el listing público ya salió a Marketplace y no se puede
+    // editar desde acá (no se re-sincroniza) — solo el precio real privado.
+    $("ePublicFields").classList.toggle("hidden", !!d.published);
+    $("ePublishedNote").classList.toggle("hidden", !d.published);
     $("editModal").classList.remove("hidden");
   } catch (err) {
     alert("No se pudo cargar el carro: " + err.message);
@@ -240,17 +249,28 @@ $("eSaveBtn").addEventListener("click", async () => {
   btn.disabled = true;
   btn.textContent = "Guardando…";
   try {
-    await api("/api/scanner/inventory/" + editSlug, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const publicFieldsVisible = !$("ePublicFields").classList.contains("hidden");
+    const body = {
+      internal_price: Number($("eInternalPrice").value) || 0,
+      alt_price_low: Number($("eAltPriceLow").value) || 0,
+      alt_price_high: Number($("eAltPriceHigh").value) || 0,
+    };
+    // Publicado: nunca reenviar los campos del listing público, ni sin querer
+    // (no se re-sincronizan con Marketplace de todos modos, mejor no tocarlos).
+    if (publicFieldsVisible) {
+      Object.assign(body, {
         title: $("eTitle").value.trim(),
         description: $("eDesc").value.trim(),
         make: $("eMake").value.trim(),
         price: Number($("ePrice").value) || 0,
         mileage: Number($("eMileage").value) || 0,
         color: $("eColor").value.trim(),
-      }),
+      });
+    }
+    await api("/api/scanner/inventory/" + editSlug, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     });
     closeEdit();
     load();

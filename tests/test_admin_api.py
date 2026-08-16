@@ -44,6 +44,28 @@ def test_inventory_lista_con_estado(tmp_path):
     assert it["make"] == "Honda" and it["published"] is False and it["photos"] == 1
     assert r.json["publishing"] is None
 
+def test_inventory_incluye_precio_real_rango_y_fecha_edicion(tmp_path):
+    # El panel /admin (donde Alejo edita a diario, incluso carros ya
+    # publicados) necesita estos campos para poder mostrarlos y editarlos —
+    # ver spec 2026-08-16.
+    _car(tmp_path, internal_price=15000, alt_price_low=10000, alt_price_high=18000)
+    r = cl.get("/api/admin/inventory", headers=H)
+    it = r.json["items"][0]
+    assert it["internal_price"] == 15000
+    assert it["alt_price_low"] == 10000
+    assert it["alt_price_high"] == 18000
+    assert "updated_at" in it and it["updated_at"]
+
+
+def test_inventory_precio_real_default_cero_si_no_cargado(tmp_path):
+    _car(tmp_path)
+    r = cl.get("/api/admin/inventory", headers=H)
+    it = r.json["items"][0]
+    assert it["internal_price"] == 0
+    assert it["alt_price_low"] == 0
+    assert it["alt_price_high"] == 0
+
+
 def test_inventory_auth_401(tmp_path):
     scanner_api.INVENTORY_DIR = str(tmp_path)
     assert cl.get("/api/admin/inventory").status_code == 401

@@ -110,6 +110,10 @@ def admin_inventory():
                 "make": data.get("make", ""), "model": data.get("model", ""),
                 "yr": data.get("yr", ""), "price": data.get("price"),
                 "mileage": data.get("mileage"),
+                "internal_price": data.get("internal_price") or 0,
+                "alt_price_low": data.get("alt_price_low") or 0,
+                "alt_price_high": data.get("alt_price_high") or 0,
+                "updated_at": time.strftime("%d/%m %H:%M", time.localtime(lj.stat().st_mtime)),
                 "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
                 **read_status(d),
             })

@@ -304,3 +304,9 @@ main#cars {
 .overlay .card button {
   width: 100%;
 }
+
+.overlay .card .field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
