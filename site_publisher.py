@@ -15,6 +15,7 @@ import io
 import json
 import os
 import time
+from functools import lru_cache
 from pathlib import Path
 
 import requests
@@ -30,12 +31,23 @@ MAX_DIM = 1600
 JPEG_QUALITY = 78
 
 
-def _photo_data_uri(path: Path) -> str:
-    img = Image.open(path).convert("RGB")
+@lru_cache(maxsize=256)
+def _encode_photo(path_str: str, mtime_ns: int, size: int) -> str:
+    """Decodifica + reescala + codifica a base64 JPEG. Cacheada por (ruta,
+    mtime, tamaño): si la foto no cambió en disco, evita repetir el trabajo
+    de PIL en cada re-sync (ej. cuando solo cambió el precio). maxsize=256
+    acota la memoria (~20 carros de 12 fotos) — se recicla solo el LRU, sin
+    invalidación manual."""
+    img = Image.open(path_str).convert("RGB")
     img.thumbnail((MAX_DIM, MAX_DIM))
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=True)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+def _photo_data_uri(path: Path) -> str:
+    st = path.stat()
+    return _encode_photo(str(path), st.st_mtime_ns, st.st_size)
 
 
 def _photo_paths(folder: Path) -> list[Path]:

@@ -16,6 +16,8 @@ import json
 import time
 from pathlib import Path
 
+import requests
+
 print("[MIB] stdlib ok", flush=True)
 
 from playwright.async_api import async_playwright, Page
@@ -97,7 +99,6 @@ def _get_inventory() -> list:
     now = time.time()
     if now - _inventory_cache["ts"] > 600 or not _inventory_cache["vehicles"]:
         try:
-            import requests
             r = requests.get(INVENTORY_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
             _inventory_cache["vehicles"] = r.json().get("vehicles", [])
             _inventory_cache["ts"] = now

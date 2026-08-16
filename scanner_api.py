@@ -226,6 +226,12 @@ def get_inventory_item(slug):
                     "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
                     "video": (folder / "video.mp4").exists()})
 
+# De las claves editables por PUT, estas son las únicas que site_publisher.
+# build_payload() realmente envía al sitio (title/description/notes no
+# viajan; internal_price/alt_price_low/alt_price_high son privadas y nunca
+# salen de este archivo). Editar solo esas otras no amerita un re-sync.
+SITE_SYNC_KEYS = ("price", "mileage", "color", "make")
+
 @bp.route("/api/scanner/inventory/<slug>", methods=["PUT"])
 @require_key
 def update_inventory_item(slug):
@@ -236,6 +242,15 @@ def update_inventory_item(slug):
     if not isinstance(body, dict):
         return _bad("body JSON inválido")
     data = json.loads((folder / "listing.json").read_text())
+    # Si el último intento de sync falló (o nunca se hizo), cualquier edición
+    # reintenta — igual que antes. Si ya está sincronizado, solo reintenta
+    # cuando cambia un campo que realmente afecta el payload del sitio (evita
+    # re-codificar hasta 12 fotos a base64 cada vez que se edita el precio
+    # real privado desde /admin, que ahora se hace a diario).
+    prev_synced_ok = bool(data.get("site_synced")) and not data.get("site_error")
+    needs_site_sync = (not prev_synced_ok) or any(
+        k in body and body[k] != data.get(k) for k in SITE_SYNC_KEYS
+    )
     for k in ("title", "description", "price", "mileage", "color", "make", "notes",
               "internal_price", "alt_price_low", "alt_price_high"):
         if k in body:
@@ -243,7 +258,8 @@ def update_inventory_item(slug):
     data["title"] = str(data.get("title", ""))[:100]
     (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
     (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
-    _sync_to_site_bg(folder)  # re-sincroniza cambios (no toca 'active' si ya fue aprobado)
+    if needs_site_sync:
+        _sync_to_site_bg(folder)  # re-sincroniza cambios (no toca 'active' si ya fue aprobado)
     return jsonify({"ok": True, "data": data})
 
 @bp.route("/api/scanner/inventory/<slug>/photo/<int:n>", methods=["GET"])
