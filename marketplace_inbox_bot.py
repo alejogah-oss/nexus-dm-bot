@@ -230,19 +230,36 @@ def _apply_scanner_pricing(car: dict) -> dict:
     vin = car.get("vin")
     if not vin:
         return car
-    scanner_car = _get_scanner_inventory().get(vin)
+    scanner_by_vin = _get_scanner_inventory()
+    scanner_car = scanner_by_vin.get(vin)
     if not scanner_car:
         return car
 
+    # Guard de ambigüedad: el VIN resuelto viene de un match aproximado por
+    # año+modelo+trim contra el inventario público (Marketplace nunca muestra
+    # VIN) — si hay MÁS de un carro del scanner con la misma especificación en
+    # vivo, no hay forma de saber cuál es la unidad real de la que habla el
+    # cliente. Más seguro no dar ningún número que arriesgarse a dar el precio
+    # real de otra unidad.
+    yr = scanner_car.get("yr")
+    model_n = _norm_model(scanner_car.get("model", ""))
+    trim_n = _norm_model(scanner_car.get("trim", ""))
+    same_spec = [v for v in scanner_by_vin.values()
+                 if v.get("yr") == yr and _norm_model(v.get("model", "")) == model_n
+                 and _norm_model(v.get("trim", "")) == trim_n]
+    ambiguous = len(same_spec) > 1
+
     internal_price = _to_number(scanner_car.get("internal_price"))
-    if internal_price > 0:
+    if internal_price > 0 and not ambiguous:
         # Único trim conocido con precio real — misma rama que un carro nuevo
         # del que solo hay una versión en stock.
         car["price"] = internal_price
         car["price_hi"] = 0
     else:
-        # Fix de seguridad: sin internal_price cargado, nunca mostrar el
-        # enganche (price del scanner, <$10k) como si fuera el precio total.
+        # Fix de seguridad: sin internal_price cargado (o match ambiguo entre
+        # varias unidades del scanner con la misma especificación), nunca
+        # mostrar el enganche (price del scanner, <$10k) como si fuera el
+        # precio total.
         car["price"] = 0
         car["price_hi"] = 0
 

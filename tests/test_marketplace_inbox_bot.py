@@ -102,6 +102,30 @@ def test_apply_scanner_pricing_sin_internal_price_fuerza_precio_cero(tmp_path, m
     assert out["price_hi"] == 0
 
 
+def test_apply_scanner_pricing_ambiguo_entre_dos_unidades_no_da_precio(tmp_path, monkeypatch):
+    # Dos Corolla LE 2023 distintos escaneados -> el VIN resuelto por año+modelo+trim
+    # (Marketplace no muestra VIN) podría ser el equivocado. Más seguro no dar
+    # ningún número que arriesgarse a dar el precio real de la otra unidad.
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "VIN_A", yr=2023, model="Corolla", trim="LE", internal_price=15000)
+    _write_scanner_car(tmp_path, "VIN_B", yr=2023, model="Corolla", trim="LE", internal_price=17000)
+    car = {"yr": 2023, "model": "Corolla", "vin": "VIN_A", "price": 3000, "price_hi": 5000}
+    out = mib._apply_scanner_pricing(car)
+    assert out["price"] == 0
+    assert out["price_hi"] == 0
+
+
+def test_apply_scanner_pricing_sin_ambiguedad_una_sola_unidad_da_precio(tmp_path, monkeypatch):
+    # Control: con una sola unidad de esa especificación, sigue funcionando normal.
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "VIN_A", yr=2023, model="Corolla", trim="LE", internal_price=15000)
+    _write_scanner_car(tmp_path, "VIN_C", yr=2022, model="Camry", trim="SE", internal_price=20000)
+    car = {"yr": 2023, "model": "Corolla", "vin": "VIN_A", "price": 3000, "price_hi": 5000}
+    out = mib._apply_scanner_pricing(car)
+    assert out["price"] == 15000
+    assert out["price_hi"] == 0
+
+
 def test_apply_scanner_pricing_sin_match_no_toca_el_car(tmp_path, monkeypatch):
     # VIN no matchea ningún carro del scanner (inventario normal) -> sin cambios.
     _reset_scanner_cache(monkeypatch, tmp_path)
