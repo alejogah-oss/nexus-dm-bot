@@ -50,7 +50,12 @@ ACTIVE_WINDOW  = 1800  # segundos en modo activo tras responder (30 min — conv
 
 _active_until: float = 0.0              # timestamp hasta cuando está en modo activo
 _active_threads: dict[str, float] = {}  # {thread_id: expires_at}
-MAX_THREADS  = 3         # solo los 3 más recientes por ciclo (más humano, menos detección)
+MAX_THREADS  = 3         # solo se ABREN/responden 3 por ciclo (más humano, menos detección) — sin cambios
+SCAN_WINDOW  = 12        # pero se LEE el preview de más filas del sidebar (sin abrir nada, cero
+                         # riesgo de detección) para poder priorizar threads viejos sin responder
+                         # que ya no están entre los 3 más recientes — bug real ago 2026: un cliente
+                         # preguntando por un Nissan Altima quedó mudo porque su thread nunca volvió
+                         # a estar en el top-3 tras el mensaje de otros clientes más nuevos.
 
 ACTIVE_HOURS = (8, 22)   # horario humano: responder solo 8am-10pm
 _last_full_load: float = 0.0  # último goto/reload real del inbox (el sidebar vive por WebSocket)
@@ -459,31 +464,38 @@ async def _open_thread(page: Page, thread_id: str) -> bool:
         return False
 
 
-async def process_thread(page: Page, state: dict, thread_url: str, sender_name: str):
-    """Abre un thread, lee mensajes y responde si hay uno nuevo sin responder."""
+async def process_thread(page: Page, state: dict, thread_url: str, sender_name: str) -> bool:
+    """Abre un thread, lee mensajes y responde si hay uno nuevo sin responder.
+    Retorna True si quedó resuelto (respondido, o genuinamente no había nada
+    que hacer) y False si falló/se saltó y debe reintentarse en el próximo
+    ciclo — el caller usa esto para decidir si puede marcar el preview como
+    visto (bug real: antes se marcaba SIEMPRE, así que un thread que fallaba
+    en identificar el carro (ver SEGURIDAD abajo) quedaba mudo para siempre
+    salvo que el cliente volviera a escribir — así se perdió a un cliente
+    real preguntando por un Nissan Altima, ago 2026)."""
 
     thread_id = thread_url.split("/t/")[-1].split("/")[0].split("?")[0]
 
     print(f"  [BOT] Revisando: {sender_name} ({thread_id})")
 
     if not await _open_thread(page, thread_id):
-        return
+        return False
 
     messages = await _extract_messages(page)
 
     if not messages:
         print(f"  [BOT] Sin mensajes legibles en {thread_id}")
-        return
+        return False
 
     # Solo responde si el último mensaje es del cliente
     if messages[-1]["role"] != "user":
-        return
+        return True
 
     last_msg = messages[-1]["content"]
     msg_hash = hashlib.md5(last_msg.strip().encode()).hexdigest()
 
     if state.get(thread_id) == msg_hash:
-        return  # Ya respondimos a este mensaje
+        return True  # Ya respondimos a este mensaje
 
     print(f"  [BOT] Nuevo mensaje de {sender_name}: \"{last_msg[:70]}\"")
 
@@ -528,7 +540,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         # (sin esto el thread queda mudo hasta la recarga horaria)
         global _last_full_load
         _last_full_load = 0.0
-        return
+        return False
     _car_resolution_failures.pop(f"{thread_id}:{msg_hash}", None)
 
     # Completar precio/trim/vin desde el inventario real — el header solo da año+modelo
@@ -562,7 +574,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         )
     except Exception as e:
         print(f"  [BOT] Error generando respuesta: {e}")
-        return
+        return False
 
     is_hot      = "[HOT LEAD]" in raw_reply
     is_declined = "[SHOWROOM_DECLINED]" in raw_reply
@@ -579,7 +591,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         _active_threads[thread_id] = time.time() + ACTIVE_WINDOW
     except Exception as e:
         print(f"  [BOT] Error enviando respuesta: {e}")
-        return
+        return False
 
     # Actualizar historial (16 mensajes = 8 exchanges, igual que dm_bot)
     _conversations[thread_id] = (history + [
@@ -626,6 +638,8 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     if car:
         track_message(car)
+
+    return True
 
 
 # ── Loop principal ────────────────────────────────────────────────────────────
@@ -954,6 +968,18 @@ async def _ensure_messenger_logged_in(page: Page) -> bool:
     return True
 
 
+def _prioritize_threads(to_process: list, state: dict, max_threads: int) -> list:
+    """Prioriza threads que NUNCA recibieron respuesta (state.get(thread_id)
+    is None) sobre los que ya se respondieron antes y ahora tienen un mensaje
+    nuevo — dentro de SCAN_WINDOW puede haber más "con cambios" que el cupo
+    real de max_threads, y un cliente que sigue sin ninguna respuesta importa
+    más que un follow-up de alguien ya atendido. Trunca acá, no antes, para no
+    abrir más de max_threads threads por ciclo (el límite de detección no
+    cambia). `to_process` es una lista de tuplas (href, name, thread_id, ...)."""
+    ordered = sorted(to_process, key=lambda t: state.get(t[2]) is not None)
+    return ordered[:max_threads]
+
+
 async def check_inbox(page: Page, state: dict, quick: bool = False):
     """Escanea el inbox de Marketplace. quick=True solo revisa threads activos."""
     now = time.time()
@@ -1065,8 +1091,10 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
 
     seen_ids  = set()
     threads   = []
-    # Recolectar threads con preview de último mensaje para saltar los sin cambios
-    for link in links[:MAX_THREADS]:
+    # Recolectar threads con preview de último mensaje para saltar los sin cambios.
+    # SCAN_WINDOW (lectura, no abre nada) es más ancho que MAX_THREADS (lo que
+    # realmente se abre/responde) — ver comentario de las constantes.
+    for link in links[:SCAN_WINDOW]:
         try:
             href = await link.get_attribute("href")
             if not href or "/t/" not in href:
@@ -1109,6 +1137,8 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
         if not preview or preview_hash != state.get(f"preview_{thread_id}"):
             to_process.append((href, name, thread_id, preview_hash))
 
+    to_process = _prioritize_threads(to_process, state, MAX_THREADS)
+
     skipped = len(threads) - len(to_process)
     print(f"[BOT] {len(threads)} threads — {len(to_process)} con cambios, {skipped} sin cambios")
 
@@ -1120,9 +1150,13 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
         print(f"  [BOT] Esperando {delay:.0f}s antes de abrir {name[:30]} (humano)...", flush=True)
         await asyncio.sleep(delay)
 
-        await process_thread(page, state, href, name)
-        # Guardar preview hash para evitar recargar en próximo ciclo
-        if preview_hash:
+        resolved = await process_thread(page, state, href, name)
+        # Guardar preview hash SOLO si quedó resuelto — si falló (ej. no se
+        # pudo identificar el carro), NO lo marques como visto: el preview no
+        # cambia sin un mensaje nuevo del cliente, así que marcarlo aquí lo
+        # dejaba mudo para siempre. Bug real, ago 2026: así se perdió a un
+        # cliente preguntando por un Nissan Altima.
+        if preview_hash and resolved:
             state[f"preview_{thread_id}"] = preview_hash
         # En LOCAL el sidebar sigue vivo — no hace falta navegar entre threads
         if not LOCAL_MODE and idx < len(to_process) - 1:

@@ -239,3 +239,47 @@ def test_alt_options_text_limita_a_4_resultados(tmp_path, monkeypatch):
     car = {"yr": 2019, "model": "Civic", "vin": "VINALT4"}
     out = mib._apply_scanner_pricing(car)
     assert len(out["alt_options_text"].split("\n")) == 4
+
+
+# ── _prioritize_threads: clientes sin respuesta nunca quedan mudos ─────────
+# Bug real (16 ago 2026): un cliente preguntando por un Nissan Altima nunca
+# recibió respuesta porque su thread dejó de estar entre los MAX_THREADS más
+# recientes del sidebar y el bot solo procesaba esa ventana. Confirmado con
+# Alejo en producción — "falta que atienda el bot a Jorge, pregunta por el
+# altima".
+
+def _t(thread_id, name="X"):
+    return (f"/marketplace/t/{thread_id}", name, thread_id, 123)
+
+
+def test_prioritize_threads_nunca_respondido_gana_el_cupo():
+    # 4 threads "con cambios", cupo de 2 — el que nunca fue respondido
+    # (thread_id no está en state) debe entrar aunque sea el más viejo.
+    to_process = [_t("nuevo1"), _t("nuevo2"), _t("viejo_sin_respuesta"), _t("nuevo3")]
+    state = {"nuevo1": "hash1", "nuevo2": "hash2", "nuevo3": "hash3"}  # ya se les respondió antes
+    out = mib._prioritize_threads(to_process, state, max_threads=2)
+    ids = [t[2] for t in out]
+    assert "viejo_sin_respuesta" in ids
+    assert len(out) == 2
+
+
+def test_prioritize_threads_no_excede_max_threads():
+    to_process = [_t(f"t{i}") for i in range(10)]
+    out = mib._prioritize_threads(to_process, {}, max_threads=3)
+    assert len(out) == 3
+
+
+def test_prioritize_threads_dentro_del_cupo_no_trunca():
+    to_process = [_t("a"), _t("b")]
+    out = mib._prioritize_threads(to_process, {}, max_threads=5)
+    assert len(out) == 2
+
+
+def test_prioritize_threads_preserva_orden_relativo_dentro_de_cada_grupo():
+    # Entre los nunca-respondidos, mantiene el orden original (más reciente primero).
+    to_process = [_t("resp1"), _t("nunca1"), _t("nunca2"), _t("resp2")]
+    state = {"resp1": "h", "resp2": "h"}
+    out = mib._prioritize_threads(to_process, state, max_threads=4)
+    ids = [t[2] for t in out]
+    assert ids.index("nunca1") < ids.index("resp1")
+    assert ids.index("nunca2") < ids.index("resp2")
