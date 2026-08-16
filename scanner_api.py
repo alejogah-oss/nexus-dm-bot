@@ -1,5 +1,5 @@
 """Endpoints del VIN Scanner PWA. Auth: X-Scanner-Key == env SCANNER_KEY."""
-import base64, functools, json, os, re, threading, traceback
+import base64, functools, json, os, re, threading, time, traceback
 from pathlib import Path
 from flask import Blueprint, jsonify, request, send_file
 from vin_utils import validate_vin, decode_vin, clean_vin, repair_vin
@@ -200,6 +200,7 @@ def list_inventory():
                 "mileage": data.get("mileage"),
                 "published": bool(data.get("published", False)),
                 "internal_price": data.get("internal_price") or 0,
+                "updated_at": time.strftime("%d/%m %H:%M", time.localtime(lj.stat().st_mtime)),
                 "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
                 "video": (d / "video.mp4").exists(),
             })

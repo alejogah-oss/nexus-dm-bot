@@ -463,7 +463,7 @@ function showPendList() {
   pendSlug = null;
   $("pendDetail").classList.add("hidden");
   $("pendList").classList.remove("hidden");
-  $("pendTitle").textContent = "Pendientes por subir";
+  $("pendTitle").textContent = "Mis carros";
 }
 
 $("pendBtn").addEventListener("click", async () => {
@@ -496,7 +496,8 @@ $("pendBtn").addEventListener("click", async () => {
         (it.mileage || 0).toLocaleString() + " mi · " + it.photos + " fotos" +
         (it.video ? " · 🎥" : "") +
         (it.published ? " · 🟢 Publicado" : "") +
-        (it.internal_price ? " · 🔒 $" + it.internal_price.toLocaleString() : "");
+        (it.internal_price ? " · 🔒 $" + it.internal_price.toLocaleString() : "") +
+        (it.updated_at ? " · editado " + it.updated_at : "");
       info.appendChild(name);
       info.appendChild(meta);
       btn.appendChild(img);
