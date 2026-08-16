@@ -494,7 +494,9 @@ $("pendBtn").addEventListener("click", async () => {
       meta.className = "pend-meta";
       meta.textContent = "$" + (it.price || 0).toLocaleString() + " · " +
         (it.mileage || 0).toLocaleString() + " mi · " + it.photos + " fotos" +
-        (it.video ? " · 🎥" : "");
+        (it.video ? " · 🎥" : "") +
+        (it.published ? " · 🟢 Publicado" : "") +
+        (it.internal_price ? " · 🔒 $" + it.internal_price.toLocaleString() : "");
       info.appendChild(name);
       info.appendChild(meta);
       btn.appendChild(img);

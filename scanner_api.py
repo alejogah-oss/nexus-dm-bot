@@ -194,6 +194,8 @@ def list_inventory():
                 "yr": data.get("yr", ""), "model": data.get("model", ""),
                 "trim": data.get("trim", ""), "price": data.get("price"),
                 "mileage": data.get("mileage"),
+                "published": bool(data.get("published", False)),
+                "internal_price": data.get("internal_price") or 0,
                 "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
                 "video": (d / "video.mp4").exists(),
             })
