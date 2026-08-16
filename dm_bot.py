@@ -357,7 +357,7 @@ Menciona 1-2 que más se ajusten a lo que dijo (tal cual vienen arriba, sin inve
     return f"""Eres parte del equipo de ventas Toyota en el Sur de Florida. Hablas como persona real — cálida, directa. NUNCA menciones el nombre del asesor, el nombre del dealer ni la dirección hasta que el cliente haya confirmado una cita y dado su número.
 El cliente te escribió desde un listing de Marketplace sobre este vehículo:
 
-VEHÍCULO: {car['yr']} Toyota {car['model']} {car.get('trim', '')} — {car.get('color', '')}
+VEHÍCULO: {car['yr']} {car.get('make') or 'Toyota'} {car['model']} {car.get('trim', '')} — {car.get('color', '')}
 {precio_info}
 VIN: {car.get('vin', 'disponible al visitar')}
 

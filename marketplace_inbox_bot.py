@@ -6,7 +6,7 @@ y responde con la misma IA de dm_bot. Corre en loop localmente.
 Uso:
     venv/bin/python3 marketplace_inbox_bot.py
 """
-import sys, os, random
+import sys, os, random, re
 print(f"[MIB] STARTED pid={os.getpid()} python={sys.executable}", flush=True)
 
 import asyncio
@@ -396,6 +396,28 @@ async def _extract_messages(page: Page) -> list[dict]:
     return messages
 
 
+def _parse_car_from_text(text: str) -> dict | None:
+    """Extrae {yr, make, model} de un texto tipo '2022 Lexus RX350' o
+    'Benito · 2026 Toyota rav4 plug-in hybrid' — CUALQUIER marca, no solo
+    Toyota (Alejo también scanea/publica trade-ins de otras marcas). Antes
+    este patrón exigía la palabra "Toyota" literal y esas conversaciones
+    quedaban sin respuesta — ver spec del fix de precio real (ago 2026)."""
+    # El separador de cola exige espacios alrededor del guion (" - ") para no
+    # confundirlo con un guion interno del modelo (GLE-Class, plug-in, etc.)
+    m = re.search(r"(\d{4})\s+([\w\-]+)\s+([\w\s\-]+?)(?:\s+-\s|\s*[·|]|$)", text)
+    if not m:
+        return None
+    return {
+        "yr": int(m.group(1)),
+        "make": m.group(2).strip(),
+        "model": m.group(3).strip(),
+        "trim": "",
+        "color": "",
+        "down_payment": 0,
+        "vin": "",
+    }
+
+
 async def _get_car_context(page: Page) -> dict | None:
     """
     Intenta extraer el contexto del vehículo desde el header del thread de Marketplace.
@@ -404,18 +426,7 @@ async def _get_car_context(page: Page) -> dict | None:
     try:
         header = await page.locator('[data-testid="messenger-header"] span').all_inner_texts()
         header_text = " ".join(header)
-        # Busca patrón "2026 Toyota RAV4" en el header
-        import re
-        m = re.search(r"(\d{4})\s+Toyota\s+([\w\s]+?)(?:\s*[-·|]|$)", header_text)
-        if m:
-            return {
-                "yr": int(m.group(1)),
-                "model": m.group(2).strip(),
-                "trim": "",
-                "color": "",
-                "down_payment": 0,
-                "vin": "",
-            }
+        return _parse_car_from_text(header_text)
     except Exception:
         pass
     return None
@@ -487,13 +498,9 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     # Obtener contexto del carro desde el nombre del thread (ej: "Benito · 2026 Toyota rav4 plug-in hybrid")
     car = await _get_car_context(page)
-    # Fallback: parsear desde sender_name si header falla
+    # Fallback: parsear desde sender_name si header falla — cualquier marca.
     if not car:
-        import re
-        m = re.search(r"(\d{4})\s+Toyota\s+([\w\s\-]+)", sender_name)
-        if m:
-            car = {"yr": int(m.group(1)), "model": m.group(2).strip(),
-                   "trim": "", "color": "", "down_payment": 0, "vin": ""}
+        car = _parse_car_from_text(sender_name)
 
     # Fallback 2: caché persistente — el thread ya fue identificado como listing
     # en un ciclo anterior (el modo activo pasa sender_name vacío y el header
@@ -529,7 +536,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     # el precio real (internal_price) reemplaza al enganche público como ancla.
     car = _apply_scanner_pricing(car)
     state[f"car_{thread_id}"] = {
-        "yr": car["yr"], "model": car["model"], "trim": car.get("trim", ""),
+        "yr": car["yr"], "make": car.get("make", ""), "model": car["model"], "trim": car.get("trim", ""),
         "color": car.get("color", ""), "down_payment": car.get("down_payment", 0),
         "vin": car.get("vin", ""),
     }

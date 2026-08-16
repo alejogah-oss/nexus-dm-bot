@@ -3,6 +3,49 @@ import time
 import marketplace_inbox_bot as mib
 
 
+# ── _parse_car_from_text: reconoce CUALQUIER marca, no solo Toyota ─────────
+# Bug real (16 ago 2026): el regex exigía la palabra "Toyota" literal en el
+# título del listing de Marketplace, así que un trade-in de otra marca (Lexus,
+# Nissan, Mercedes-Benz) nunca resolvía car context -> "Sin listing de
+# Marketplace" -> el bot se quedaba callado con clientes reales (Applez/Lexus
+# RX350, Jorge y Kimonia/Nissan Altima, confirmados en el log de producción).
+
+def test_parse_car_from_text_toyota_sigue_funcionando():
+    car = mib._parse_car_from_text("2026 Toyota RAV4")
+    assert car == {"yr": 2026, "make": "Toyota", "model": "RAV4", "trim": "",
+                    "color": "", "down_payment": 0, "vin": ""}
+
+
+def test_parse_car_from_text_marca_no_toyota():
+    car = mib._parse_car_from_text("2022 Lexus RX350")
+    assert car["make"] == "Lexus" and car["model"] == "RX350" and car["yr"] == 2022
+
+
+def test_parse_car_from_text_nissan():
+    car = mib._parse_car_from_text("2025 Nissan Altima")
+    assert car["make"] == "Nissan" and car["model"] == "Altima"
+
+
+def test_parse_car_from_text_marca_con_guion():
+    car = mib._parse_car_from_text("2020 Mercedes-Benz GLE-Class - White")
+    assert car["make"] == "Mercedes-Benz" and car["model"] == "GLE-Class"
+
+
+def test_parse_car_from_text_con_prefijo_nombre_cliente():
+    # Formato real de sender_name: "Nombre · AÑO MARCA MODELO"
+    car = mib._parse_car_from_text("Kimonia · 2025 Nissan Altima")
+    assert car["make"] == "Nissan" and car["model"] == "Altima" and car["yr"] == 2025
+
+
+def test_parse_car_from_text_modelo_multi_palabra():
+    car = mib._parse_car_from_text("Benito · 2026 Toyota rav4 plug-in hybrid")
+    assert car["make"] == "Toyota" and car["model"] == "rav4 plug-in hybrid"
+
+
+def test_parse_car_from_text_sin_match_devuelve_none():
+    assert mib._parse_car_from_text("hola, ¿cómo estás?") is None
+
+
 def test_track_car_resolution_failure_incrementa_contador():
     failures = {}
     for expected_count in range(1, 5):
