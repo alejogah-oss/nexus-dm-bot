@@ -17,8 +17,12 @@ INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inv
 OCR_MODEL, COPY_MODEL = "claude-haiku-4-5-20251001", "claude-sonnet-5"
 _client = anthropic.Anthropic()
 
-# Claves que marketplace_poster necesita en listing.json (notes es opcional)
-REQUIRED_LISTING_KEYS = ("vin", "yr", "model", "trim", "color", "price", "mileage", "title", "description")
+# Claves que marketplace_poster necesita en listing.json (notes es opcional).
+# trim NO es obligatorio: NHTSA vPIC suele devolver "Trim" vacío en modelos
+# nuevos/raros (ej. GR Corolla) y todo el resto del código ya lo trata como
+# opcional (v.get("trim", "")) — exigirlo aquí solo bloqueaba el guardado
+# sin avisar por qué.
+REQUIRED_LISTING_KEYS = ("vin", "yr", "model", "color", "price", "mileage", "title", "description")
 
 def _bad(msg: str, code: int = 400):
     return jsonify({"error": msg}), code
