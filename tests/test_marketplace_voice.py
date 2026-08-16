@@ -6,6 +6,27 @@ CAR_UN_SOLO_TRIM = {"yr": 2026, "model": "GR Supra", "trim": "3.0", "color": "Re
                      "price": 58000, "price_hi": 0, "vin": "2FAKE"}
 
 
+def test_nunca_da_direccion_indica_contacto_por_whatsapp():
+    # Fix ago 2026 (pedido de Alejo): nunca dar la dirección en el chat, ni al
+    # cerrar la cita — el siguiente paso es contacto por WhatsApp.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    assert "2200 n state rd" not in p.lower()
+    idx = p.find("Con día + número")
+    assert idx != -1
+    cierre = p[idx:idx + 300]
+    assert "whatsapp" in cierre.lower()
+    assert "nunca des la dirección" in cierre.lower()
+
+
+def test_credito_bajo_pregunta_por_down_payment():
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("CRÉDITO BAJO")
+    assert idx != -1
+    seccion = p[idx:idx + 500].lower()
+    assert "mal crédito" in seccion
+    assert "enganche" in seccion or "down payment" in seccion
+
+
 def test_ofrece_dos_horarios_concretos_no_pregunta_abierta():
     p = _marketplace_voice(CAR_CON_RANGO)
     assert "Tengo espacio hoy en la tarde o mañana en la mañana" in p

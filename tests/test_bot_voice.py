@@ -1,6 +1,26 @@
 from dm_bot import BOT_VOICE
 
 
+def test_idioma_regla_absoluta_no_cambiar_a_mitad_de_conversacion():
+    # Fix ago 2026 (pedido de Alejo): el idioma se fija con el primer mensaje
+    # y nunca cambia a mitad de la conversación.
+    idx = BOT_VOICE.find("IDIOMA — REGLA ABSOLUTA")
+    assert idx != -1
+    seccion = BOT_VOICE[idx:idx + 400].lower()
+    assert "primer mensaje" in seccion
+    assert "nunca cambies de idioma a mitad" in seccion
+
+
+def test_credito_bajo_pregunta_por_down_payment():
+    # Pedido de Alejo (ago 2026): con mal crédito, preguntar el enganche
+    # disponible — ayuda a la aprobación con los bancos.
+    idx = BOT_VOICE.find("CRÉDITO BAJO")
+    assert idx != -1
+    seccion = BOT_VOICE[idx:idx + 500].lower()
+    assert "mal crédito" in seccion
+    assert "enganche" in seccion or "down payment" in seccion
+
+
 def test_numero_se_pide_despues_de_horario_no_antes():
     # El pivot a horarios concretos (paso 2 de FLUJO GENERAL) debe venir
     # ANTES de pedir el número (paso 3) — nunca al revés.
@@ -110,8 +130,16 @@ def test_rechazo_2_no_pide_numero_como_disfraz_de_insistencia():
     assert "CIERRE DE CONVERSACIÓN" in seccion
 
 
-def test_direccion_solo_tras_horario_y_numero_confirmados():
+def test_nunca_da_direccion_redirige_a_whatsapp():
+    # Fix ago 2026 (pedido de Alejo): la dirección del dealer NUNCA sale en el
+    # chat, ni con horario y número confirmados — el siguiente paso es que el
+    # equipo contacta por WhatsApp para coordinar los detalles.
     idx = BOT_VOICE.find("DEALER Y DIRECCIÓN")
     assert idx != -1
     seccion = BOT_VOICE[idx:idx + 400]
-    assert "confirmado un horario y dado su número" in seccion
+    assert "nunca des la dirección" in seccion.lower()
+    assert "2200 n state rd" not in seccion.lower()
+
+    idx_cierre = BOT_VOICE.find("Con horario + número")
+    assert idx_cierre != -1
+    assert "whatsapp" in BOT_VOICE[idx_cierre:idx_cierre + 200].lower()
