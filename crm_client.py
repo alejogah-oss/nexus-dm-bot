@@ -214,7 +214,14 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
                   sender_name: str = "") -> dict:
     """
     Full flow: extract data from conversation → send to CRM.
-    First HOT_LEAD: creates CRM entry. Subsequent: sends WhatsApp update only.
+    First HOT_LEAD: crea la entrada en el CRM y avisa por WhatsApp UNA vez.
+    Siguientes veces: no vuelve a avisar por WhatsApp (pedido explícito de
+    Alejo, ago 2026 — el criterio de [HOT LEAD] en el prompt es amplio
+    (teléfono, financiamiento, "quiere venir") y sin este guard cada mensaje
+    de una conversación normal disparaba un WhatsApp nuevo, aunque no hubiera
+    pasado nada realmente nuevo). Una cita CONFIRMADA sigue avisando aparte,
+    vía appointments.create_appointment() — ese es el evento que sí importa
+    después del primer contacto.
     """
     import json as _json, os as _os
     _activity_file = _os.path.join(_os.path.dirname(__file__), "leads_activity.json")
@@ -227,19 +234,7 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     already_sent = _activity.get(sender_id, {}).get("crm_sent", False)
 
     if already_sent:
-        # Lead ya está en CRM — solo notifica con info actualizada
-        conv_url = conversation_url(sender_id, platform)
-        from pulse import pulse_notify
-        pulse_notify(
-            event="HOT_LEAD",
-            detail=(
-                f"🔄 ACTUALIZACIÓN DE LEAD\n"
-                f"Canal: {platform.upper()}\n"
-                f"Nueva actividad del cliente ya registrado.\n"
-                f"Chat: {conv_url}"
-            )
-        )
-        print(f"  📋 CRM — Lead ya existe, solo notificación enviada.")
+        print(f"  📋 CRM — Lead ya existe, sin notificación nueva (ya avisado una vez).")
         return {"ok": True, "skipped": True}
 
     print(f"\n  📋 NEXUS → CRM: extrayendo datos del lead...")
