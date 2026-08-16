@@ -152,6 +152,109 @@ def _enrich_car(car: dict) -> dict:
         car["vin"] = best.get("vin", "")
     return car
 
+
+# ── Inventario local del scanner (precio real privado + alternativas) ──────────
+# Mismo directorio que scanner_api.py y marketplace_poster.py, acceso directo por
+# filesystem (sin API nueva). internal_price/alt_price_low/alt_price_high nunca
+# salen de este archivo — solo se usan para armar el prompt del bot.
+
+INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
+_scanner_inv_cache: dict = {"ts": 0.0, "by_vin": {}}
+
+
+def _get_scanner_inventory() -> dict:
+    """{vin: listing.json dict} del inventario local del scanner. Caché 10 min."""
+    now = time.time()
+    if now - _scanner_inv_cache["ts"] > 600 or not _scanner_inv_cache["by_vin"]:
+        by_vin = {}
+        try:
+            root = Path(INVENTORY_DIR)
+            if root.exists():
+                for d in root.iterdir():
+                    lj = d / "listing.json"
+                    if not lj.is_file():
+                        continue
+                    try:
+                        data = json.loads(lj.read_text())
+                    except (ValueError, OSError):
+                        continue
+                    vin = data.get("vin")
+                    if vin:
+                        by_vin[vin] = data
+        except Exception as e:
+            print(f"  [BOT] Error leyendo inventario scanner: {e}", flush=True)
+        _scanner_inv_cache["by_vin"] = by_vin
+        _scanner_inv_cache["ts"] = now
+    return _scanner_inv_cache["by_vin"]
+
+
+def _to_number(v) -> float:
+    try:
+        return float(v) if v not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _alt_options_text(low: float, high: float, exclude_vin: str = "", limit: int = 4) -> str:
+    """Texto corto (estilo _price_table de dm_bot) con hasta `limit` opciones reales
+    del inventario público dentro de [low, high], sin el VIN actual, dedupe por
+    (yr, modelo, trim). Nunca inventa nada fuera de esta lista."""
+    if low <= 0 or high <= 0:
+        return ""
+    vehicles = sorted(_get_inventory(), key=lambda v: v.get("price") or 0)
+    seen = set()
+    lines = []
+    for v in vehicles:
+        price = v.get("price") or 0
+        if not (low <= price <= high):
+            continue
+        if exclude_vin and v.get("vin") == exclude_vin:
+            continue
+        key = (v.get("yr"), _norm_model(v.get("model", "")), _norm_model(v.get("trim", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        trim = v.get("trim", "")
+        label = f"{v.get('yr')} {v.get('model')} {trim}".replace("  ", " ").strip()
+        lines.append(f"- {label}: ${price:,.0f}")
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
+def _apply_scanner_pricing(car: dict) -> dict:
+    """Si el VIN resuelto matchea un carro del inventario local del scanner, usa su
+    internal_price (precio real) como ancla en vez del enganche que trae el
+    inventario público — y arma alt_options_text si hay rango de alternativas
+    cargado. Sin match, el car dict no se toca (carro normal, no scanner)."""
+    vin = car.get("vin")
+    if not vin:
+        return car
+    scanner_car = _get_scanner_inventory().get(vin)
+    if not scanner_car:
+        return car
+
+    internal_price = _to_number(scanner_car.get("internal_price"))
+    if internal_price > 0:
+        # Único trim conocido con precio real — misma rama que un carro nuevo
+        # del que solo hay una versión en stock.
+        car["price"] = internal_price
+        car["price_hi"] = 0
+    else:
+        # Fix de seguridad: sin internal_price cargado, nunca mostrar el
+        # enganche (price del scanner, <$10k) como si fuera el precio total.
+        car["price"] = 0
+        car["price_hi"] = 0
+
+    low = _to_number(scanner_car.get("alt_price_low"))
+    high = _to_number(scanner_car.get("alt_price_high"))
+    if low > 0 and high > 0:
+        text = _alt_options_text(low, high, exclude_vin=vin)
+        if text:
+            car["alt_options_text"] = text
+    return car
+
+
 # Historial de conversaciones en memoria {thread_id: [messages]}
 _conversations: dict[str, list] = {}
 
@@ -405,6 +508,9 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     # Completar precio/trim/vin desde el inventario real — el header solo da año+modelo
     car = _enrich_car(car)
+    # Cruzar el VIN resuelto contra el inventario local del scanner: si matchea,
+    # el precio real (internal_price) reemplaza al enganche público como ancla.
+    car = _apply_scanner_pricing(car)
     state[f"car_{thread_id}"] = {
         "yr": car["yr"], "model": car["model"], "trim": car.get("trim", ""),
         "color": car.get("color", ""), "down_payment": car.get("down_payment", 0),

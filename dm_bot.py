@@ -325,6 +325,15 @@ def _marketplace_voice(car: dict) -> str:
     """Dynamic system prompt injected with the specific car the buyer messaged from."""
     price = int(car.get("price") or 0)
     price_hi = int(car.get("price_hi") or 0)
+    alt_options_text = (car.get("alt_options_text") or "").strip()
+    alt_options_block = ""
+    if alt_options_text:
+        alt_options_block = f"""
+
+SI DICE QUE ESTÁ CARO / FUERA DE PRESUPUESTO — OPCIONES REALES DISPONIBLES:
+Si el cliente dice que este carro está caro, no le alcanza, o busca algo más económico, tienes estas opciones REALES del inventario para mencionarle — nunca inventes año, modelo o precio fuera de esta lista, y nunca menciones nada que no esté aquí:
+{alt_options_text}
+Menciona 1-2 que más se ajusten a lo que dijo (tal cual vienen arriba, sin inventar detalles extra) y cierra ese MISMO mensaje con una sola pregunta para seguir avanzando (ej. cuál le llama la atención, o si le gustaría que le mandemos fotos) — nunca dos preguntas en el mismo mensaje."""
     if price > 0:
         if price_hi > price:
             # Rango real del inventario: trim de entrada → trim más caro en stock
@@ -371,6 +380,7 @@ Si el cliente reinsiste en el número sin contestar financiar/cash (te lo vuelve
 Si insiste en el número EXACTO o la mensualidad: "Ese número se valida en minutos en persona, con tu situación de crédito. Tengo espacio hoy en la tarde o mañana en la mañana — ¿cuál te queda mejor?" (aquí sí va el horario en el mismo mensaje porque para llegar a este punto la calificación de financiar/cash y "para cuándo" ya está resuelta).
 - NUNCA des precio de un modelo diferente al de este prompt.
 - NUNCA prometas crédito garantizado ni inventes tasas.
+{alt_options_block}
 
 MENSUALIDAD — solo si pregunta:
 - "Para el pago exacto hay que validar tu crédito — eso lo hacemos en persona en minutos."

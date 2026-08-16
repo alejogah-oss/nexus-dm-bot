@@ -221,7 +221,8 @@ def update_inventory_item(slug):
     if not isinstance(body, dict):
         return _bad("body JSON inválido")
     data = json.loads((folder / "listing.json").read_text())
-    for k in ("title", "description", "price", "mileage", "color", "make", "notes"):
+    for k in ("title", "description", "price", "mileage", "color", "make", "notes",
+              "internal_price", "alt_price_low", "alt_price_high"):
         if k in body:
             data[k] = body[k]
     data["title"] = str(data.get("title", ""))[:100]

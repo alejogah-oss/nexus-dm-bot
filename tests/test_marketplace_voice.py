@@ -235,6 +235,27 @@ def test_carros_usados_sigue_siendo_el_unico_camino_para_disponibilidad():
     assert "Tengo espacio hoy en la tarde o mañana en la mañana" not in seccion_usados
 
 
+def test_alt_options_bloque_ausente_por_defecto():
+    # Sin alt_options_text en el car dict (caso normal, sin match del scanner),
+    # el bloque de opciones alternativas no debe aparecer en el prompt.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    assert "OPCIONES REALES DISPONIBLES" not in p
+
+
+def test_alt_options_bloque_presente_con_alt_options_text():
+    car = dict(CAR_CON_RANGO)
+    car["alt_options_text"] = "- 2018 Corolla LE: $12,000\n- 2019 Camry LE: $15,500"
+    p = _marketplace_voice(car)
+    idx = p.find("OPCIONES REALES DISPONIBLES")
+    assert idx != -1
+    seccion = p[idx:idx + 700]
+    assert "2018 Corolla LE: $12,000" in seccion
+    assert "2019 Camry LE: $15,500" in seccion
+    assert "nunca inventes año, modelo o precio fuera de esta lista" in seccion.lower()
+    assert "una sola pregunta" in seccion.lower()
+    assert "nunca dos preguntas en el mismo mensaje" in seccion.lower()
+
+
 def test_direccion_solo_tras_horario_y_numero_confirmados():
     # Alineado con BOT_VOICE: el gate de nombre/dirección del dealer requiere
     # AMBOS (horario confirmado Y número dado) — no basta con uno de los dos.

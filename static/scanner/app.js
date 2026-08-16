@@ -7,6 +7,7 @@ const $ = (id) => document.getElementById(id);
 const session = {
   vin: "", car: {},
   mileage: null, price: null, color: "", notes: "",
+  internalPrice: null, altPriceLow: null, altPriceHigh: null,
   photos: [],        // [{file, url}]
   video: null,       // File
   title: "", description: "",
@@ -106,6 +107,9 @@ $("nextBtn").addEventListener("click", () => {
     session.price = price;
     session.color = color;
     session.notes = $("notesField").value.trim();
+    session.internalPrice = parseInt($("internalPriceField").value, 10) || 0;
+    session.altPriceLow = parseInt($("altPriceLowField").value, 10) || 0;
+    session.altPriceHigh = parseInt($("altPriceHighField").value, 10) || 0;
     goTo(3);
   } else if (step === 3) {
     if (session.photos.length === 0) { showError("Agrega al menos una foto del carro.", null); return; }
@@ -417,6 +421,9 @@ async function saveInventory() {
       trim: session.car.trim, color: session.color, price: session.price,
       mileage: session.mileage, title: session.title,
       description: session.description, notes: session.notes,
+      internal_price: session.internalPrice || 0,
+      alt_price_low: session.altPriceLow || 0,
+      alt_price_high: session.altPriceHigh || 0,
     };
     const fd = new FormData();
     fd.append("data", JSON.stringify(data));
@@ -510,6 +517,9 @@ async function openPendiente(slug) {
     $("pDesc").value = d.description || "";
     $("pPrice").value = d.price || "";
     $("pMileage").value = d.mileage || "";
+    $("pInternalPrice").value = d.internal_price || "";
+    $("pAltPriceLow").value = d.alt_price_low || "";
+    $("pAltPriceHigh").value = d.alt_price_high || "";
     const grid = $("pendPhotos");
     grid.innerHTML = "";
     for (let i = 1; i <= res.photos; i++) {
@@ -538,6 +548,9 @@ $("pSaveBtn").addEventListener("click", async () => {
         description: $("pDesc").value.trim(),
         price: parseInt($("pPrice").value, 10) || 0,
         mileage: parseInt($("pMileage").value, 10) || 0,
+        internal_price: parseInt($("pInternalPrice").value, 10) || 0,
+        alt_price_low: parseInt($("pAltPriceLow").value, 10) || 0,
+        alt_price_high: parseInt($("pAltPriceHigh").value, 10) || 0,
       }),
     });
     btn.textContent = "✓ Guardado";
@@ -569,12 +582,14 @@ $("newCarBtn").addEventListener("click", () => {
   session.photos.forEach((p) => URL.revokeObjectURL(p.url));
   session.vin = ""; session.car = {};
   session.mileage = null; session.price = null; session.color = ""; session.notes = "";
+  session.internalPrice = null; session.altPriceLow = null; session.altPriceHigh = null;
   session.photos = []; session.video = null;
   session.title = ""; session.description = ""; session.saved = false;
 
   // Limpiar campos y previews
   ["vinField", "carYr", "carMake", "carModel", "carTrim", "carEngine", "carFuel",
    "carBody", "carDrive", "mileageField", "priceField", "colorField", "notesField",
+   "internalPriceField", "altPriceLowField", "altPriceHighField",
    "copyTitle", "copyDescription", "f-title", "f-desc"].forEach((id) => {
     const el = $(id);
     if (el) { if ("value" in el) el.value = ""; else el.textContent = ""; }

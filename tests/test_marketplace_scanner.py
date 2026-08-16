@@ -55,3 +55,19 @@ def test_record_publish_error_slug_inexistente_no_lanza(tmp_path, monkeypatch):
     monkeypatch.setenv("INVENTORY_DIR", str(tmp_path))
     # no debe lanzar excepción aunque el slug/listing.json no exista
     marketplace_poster.record_publish_error("no-existe-este-slug", "boom")
+
+# ── Precio real privado + rango de alternativas (spec 2026-08-16) ──────────
+
+def test_scanner_car_fields_nunca_incluye_precio_interno_ni_alternativas():
+    # scanner_car_fields() arma su propio dict campo por campo — internal_price/
+    # alt_price_low/alt_price_high nunca deben llegar a Marketplace, aunque el
+    # carro los traiga cargados.
+    car = {"make": "Honda", "model": "Civic", "yr": "2019",
+           "mileage": 45000, "price": 16500, "color": "Blue",
+           "title": "2019 Honda Civic EX", "description": "buen carro",
+           "internal_price": 19500, "alt_price_low": 12000, "alt_price_high": 15000}
+    f = marketplace_poster.scanner_car_fields(car)
+    assert "internal_price" not in f
+    assert "alt_price_low" not in f
+    assert "alt_price_high" not in f
+    assert f["price"] == "16500"  # el campo price público sigue siendo el enganche

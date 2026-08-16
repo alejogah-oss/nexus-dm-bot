@@ -138,6 +138,26 @@
           <textarea id="notesField" placeholder="Detalles adicionales, condición, extras..."></textarea>
         </div>
       </div>
+
+      <div class="card">
+        <p class="hint">🔒 Privado — nunca se publica en Marketplace ni en el sitio. Solo lo usa el bot en conversación.</p>
+        <div class="field">
+          <label for="internalPriceField">Precio real (opcional, privado)</label>
+          <input type="number" id="internalPriceField" inputmode="numeric" placeholder="0">
+          <small class="field-note">Precio total real del carro — nunca se publica, solo lo usa el bot internamente.</small>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="altPriceLowField">Alternativas desde (opcional)</label>
+            <input type="number" id="altPriceLowField" inputmode="numeric" placeholder="0">
+          </div>
+          <div class="field">
+            <label for="altPriceHighField">Alternativas hasta (opcional)</label>
+            <input type="number" id="altPriceHighField" inputmode="numeric" placeholder="0">
+          </div>
+        </div>
+        <small class="field-note">Rango de precio para que el bot ofrezca otras opciones del inventario si el cliente dice que este carro está caro. También privado — nunca se publica.</small>
+      </div>
     </section>
 
     <!-- ── PASO 3: Fotos / Video ─────────────────────────────────── -->
@@ -217,6 +237,23 @@
           <small class="field-note">Si es nuevo, deja 0 — se publica como 500 (Marketplace no acepta 0).</small>
         </div>
       </div>
+      <p class="hint">🔒 Privado — nunca se publica en Marketplace ni en el sitio. Solo lo usa el bot en conversación.</p>
+      <div class="field">
+        <label for="pInternalPrice">Precio real (opcional, privado)</label>
+        <input id="pInternalPrice" type="number" inputmode="numeric" placeholder="0">
+        <small class="field-note">Precio total real del carro — nunca se publica, solo lo usa el bot internamente.</small>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="pAltPriceLow">Alternativas desde (opcional)</label>
+          <input id="pAltPriceLow" type="number" inputmode="numeric" placeholder="0">
+        </div>
+        <div class="field">
+          <label for="pAltPriceHigh">Alternativas hasta (opcional)</label>
+          <input id="pAltPriceHigh" type="number" inputmode="numeric" placeholder="0">
+        </div>
+      </div>
+      <small class="field-note">Rango de precio para que el bot ofrezca otras opciones del inventario si el cliente dice que este carro está caro. También privado.</small>
       <button class="btn btn-secondary" id="pCopyBtn" type="button">Copiar título + descripción</button>
       <button class="btn btn-primary" id="pSaveBtn" type="button">Guardar cambios</button>
       <button class="btn btn-ghost" id="pBackBtn" type="button">&#8592; Volver a la lista</button>
