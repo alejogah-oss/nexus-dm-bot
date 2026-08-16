@@ -14,11 +14,18 @@ def test_scanner_car_fields_usa_datos_reales():
     assert f["condition"] == "Excellent"
     assert f["title"] == "2019 Honda Civic EX"
 
-def test_scanner_car_fields_make_fallback():
-    # Si el scanner no trae marca, cae a Toyota (dealer Toyota) sin romper
+def test_scanner_car_fields_make_ausente_y_sin_vin_queda_vacia():
+    # Fix ago 2026: NUNCA asumir Toyota — Alejo también scanea trade-ins de
+    # otras marcas. Sin marca y sin VIN para averiguarla, queda vacía en vez
+    # de mentir con una marca incorrecta.
     f = marketplace_poster.scanner_car_fields({"model": "Corolla", "yr": "2020",
                                                "mileage": 10, "price": 20000, "color": "White"})
-    assert f["make"] == "Toyota" and f["exterior_color"] == "White"
+    assert f["make"] == "" and f["exterior_color"] == "White"
+
+def test_scanner_car_fields_usa_marca_real_si_viene():
+    f = marketplace_poster.scanner_car_fields({"model": "RX350", "yr": "2022", "make": "Lexus",
+                                               "mileage": 10, "price": 20000, "color": "White"})
+    assert f["make"] == "Lexus"
 
 def test_scanner_car_fields_mileage_cero_cae_a_500():
     # Carro nuevo escaneado con 0 millas — Marketplace no acepta 0, mínimo aceptado es 500

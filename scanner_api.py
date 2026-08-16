@@ -150,6 +150,14 @@ def save_inventory():
         return _bad("campo 'data' ausente o JSON inválido")
     if not isinstance(data, dict):
         return _bad("campo 'data' debe ser un objeto JSON")
+    if not data.get("make") and data.get("vin"):
+        # Sin marca (OCR del VIN falló o Alejo no la llenó a mano): la
+        # averiguamos del VIN en vez de asumir Toyota — Alejo también
+        # escanea trade-ins de otras marcas (fix ago 2026).
+        try:
+            data["make"] = decode_vin(str(data["vin"])).get("make", "")
+        except Exception:
+            pass
     missing = [k for k in REQUIRED_LISTING_KEYS if data.get(k) in ("", None)]
     if missing:
         return _bad("faltan campos: " + ", ".join(missing))

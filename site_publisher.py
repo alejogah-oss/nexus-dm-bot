@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 
 import requests
+
+from vin_utils import resolve_make
 from PIL import Image
 
 SITE_API_URL = os.environ.get("SITE_API_URL", "https://tucarroconalejo.com/api.php")
@@ -56,7 +58,7 @@ def build_payload(data: dict, folder: Path) -> dict:
     mileage = data.get("mileage", "")
     payload = {
         "yr": int(data.get("yr") or 2020),
-        "make": data.get("make") or "Toyota",
+        "make": resolve_make(data, vin),
         "model": data.get("model", ""),
         "trim": data.get("trim", ""),
         "color": data.get("color", ""),

@@ -1,5 +1,5 @@
 from unittest.mock import patch, Mock
-from vin_utils import validate_vin, decode_vin, clean_vin, repair_vin
+from vin_utils import validate_vin, decode_vin, clean_vin, repair_vin, resolve_make
 
 def test_validate_vin_ok():
     assert validate_vin("1HGCM82633A004352") is True   # check digit válido conocido
@@ -33,3 +33,20 @@ def test_decode_vin_parses_nhtsa():
         d = decode_vin("1HGCM82633A004352")
     assert d["yr"] == "2021" and d["model"] == "Corolla" and d["trim"] == "SE"
     assert d["engine"] == "2.0L 4cyl"
+
+# ── resolve_make: NUNCA default a Toyota (fix ago 2026) ─────────────────────
+
+def test_resolve_make_usa_la_que_ya_viene():
+    assert resolve_make({"make": "Lexus", "vin": "1HGCM82633A004352"}) == "Lexus"
+
+def test_resolve_make_decodifica_del_vin_si_falta():
+    fake = {"Results": [{"Make": "NISSAN"}]}
+    with patch("vin_utils.requests.get", return_value=Mock(json=lambda: fake, status_code=200)):
+        assert resolve_make({"vin": "1HGCM82633A004352"}) == "Nissan"
+
+def test_resolve_make_sin_vin_queda_vacia():
+    assert resolve_make({}) == ""
+
+def test_resolve_make_error_de_red_queda_vacia_no_truena():
+    with patch("vin_utils.requests.get", side_effect=Exception("timeout")):
+        assert resolve_make({"vin": "1HGCM82633A004352"}) == ""

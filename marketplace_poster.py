@@ -7,6 +7,7 @@ import asyncio, json, os, re, requests, tempfile, time
 from pathlib import Path
 from playwright.async_api import async_playwright
 from dotenv import load_dotenv
+from vin_utils import resolve_make
 
 load_dotenv()
 
@@ -237,7 +238,7 @@ def scanner_car_fields(car: dict) -> dict:
     if mileage <= 0:
         mileage = 500
     return {
-        "make": str(car.get("make") or "Toyota"),
+        "make": str(resolve_make(car)),
         "model": model,
         "year": str(car.get("yr", "")),
         "mileage": str(mileage),

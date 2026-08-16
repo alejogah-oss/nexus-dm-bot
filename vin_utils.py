@@ -58,3 +58,19 @@ def decode_vin(vin: str) -> dict:
             "model": res.get("Model", ""), "trim": res.get("Trim", ""),
             "engine": engine, "fuel": res.get("FuelTypePrimary", ""),
             "body": res.get("BodyClass", ""), "drive": res.get("DriveType", "")}
+
+def resolve_make(data: dict, vin: str = "") -> str:
+    """La marca real de un carro del scanner — NUNCA un default a Toyota,
+    Alejo también scanea/publica trade-ins de otras marcas (fix ago 2026).
+    Si el scanner no la guardó, se intenta decodificar del VIN antes de
+    dejarla vacía."""
+    make = data.get("make")
+    if make:
+        return make
+    vin = vin or str(data.get("vin", ""))
+    if not vin:
+        return ""
+    try:
+        return decode_vin(vin).get("make", "")
+    except Exception:
+        return ""
