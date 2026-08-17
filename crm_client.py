@@ -176,8 +176,20 @@ def _build_crm_note(conversation_history: list, platform: str, name: str,
     return f"{note}\n\nCanal: {platform.upper()} | Chat: {conv_url}"
 
 
+def _clean_sender_name(sender_name: str) -> str:
+    """El nombre real de Marketplace viene como 'Kimonia · 2025 Nissan Altima'
+    (nombre + separador + año/marca/modelo del listing) — nos quedamos solo
+    con el nombre. Si el sidebar dio un ID numérico en vez del nombre (pasa
+    a veces, ver _get_car_context), lo descartamos en vez de guardar basura."""
+    if not sender_name:
+        return ""
+    name = sender_name.split("·")[0].strip()
+    return "" if not name or name.isdigit() else name
+
+
 def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
-                  car: dict | None = None, ref: str | None = None) -> dict:
+                  car: dict | None = None, ref: str | None = None,
+                  sender_name: str = "") -> dict:
     """
     Full flow: extract data from conversation → send to CRM.
     First HOT_LEAD: creates CRM entry. Subsequent: sends WhatsApp update only.
@@ -226,6 +238,11 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
         lead_data["down_payment"]  = car.get("down_payment", "")
 
     name  = " ".join(filter(None, [lead_data.get("first_name"), lead_data.get("last_name")])).strip()
+    # Respaldo confiable cuando el perfil de Meta no aplica (Marketplace,
+    # platform="marketplace_personal") y la IA no encontró nombre en el
+    # texto: el nombre real de Facebook que el bot ya leyó del sidebar.
+    if not name:
+        name = _clean_sender_name(sender_name)
     phone = (lead_data.get("phone") or "").strip()
     model = lead_data.get("vehicle_model", "no especificado")
     trim  = lead_data.get("vehicle_trim", "")
@@ -240,6 +257,14 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     # vacío y Alejo lo completa desde la conversación.
     if not name:
         missing = ["nombre"]
+        # Sin nombre el lead NUNCA llega a crearse en CRM, así que crm_sent
+        # nunca queda True — sin este segundo guard, cada [HOT LEAD] repetido
+        # en la misma conversación (mismo bug que ayer, distinta rama) volvía
+        # a mandar WhatsApp para siempre. Se avisa una sola vez por sender_id
+        # igual que un lead completo, con su propio flag.
+        if _activity.get(sender_id, {}).get("incomplete_alert_sent", False):
+            print(f"  📋 CRM — Lead incomplete (falta nombre), ya avisado antes, sin notificación nueva.")
+            return {"ok": True, "skipped": True, "reason": "incomplete_data", "missing": missing}
         print(f"  ⚠️  CRM — Lead incompleto (falta {', '.join(missing)}) — NO se crea en CRM aún")
         from pulse import pulse_notify
         pulse_notify(
@@ -251,6 +276,12 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
                 f"Chat: {conv_url}"
             )
         )
+        try:
+            _activity[sender_id] = {**_activity.get(sender_id, {}), "incomplete_alert_sent": True}
+            with open(_activity_file, "w", encoding="utf-8") as f:
+                _json.dump(_activity, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"  ⚠️  CRM — No se pudo marcar incomplete_alert_sent: {e}")
         return {"ok": True, "skipped": True, "reason": "incomplete_data", "missing": missing}
 
     print(f"  Nombre: {name} | Tel: {phone} | Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}")
