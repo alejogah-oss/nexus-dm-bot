@@ -607,7 +607,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     if is_hot:
         print(f"  [BOT] 🔥 HOT LEAD — {sender_name}")
         try:
-            push_hot_lead(thread_id, "marketplace_personal", full_history, car=car)
+            push_hot_lead(thread_id, "marketplace_personal", full_history, car=car, sender_name=sender_name)
         except Exception as e:
             print(f"  [BOT] Error CRM HOT LEAD: {e}")
         log_event("HOT_LEAD", f"Marketplace personal | {sender_name} | {last_msg[:80]}", "marketplace")
@@ -625,7 +625,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     if is_declined:
         print(f"  [BOT] ❌ DECLINED — {sender_name}")
         try:
-            push_hot_lead(thread_id, "marketplace_personal", full_history, car=car)
+            push_hot_lead(thread_id, "marketplace_personal", full_history, car=car, sender_name=sender_name)
         except Exception as e:
             print(f"  [BOT] Error CRM DECLINED: {e}")
         pulse_notify(
