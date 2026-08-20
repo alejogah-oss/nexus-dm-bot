@@ -148,9 +148,28 @@ main#cars {
   font-weight: 700;
   font-size: 16px;
   margin: 0 0 4px;
-  padding-right: 90px;
   overflow-wrap: break-word;
 }
+
+.car-card .car-vin {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 0 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  overflow-wrap: break-word;
+  transition: border-color .15s, color .15s;
+}
+
+.car-card .car-vin:hover { border-color: var(--red); }
+.car-card .car-vin.copied { border-color: var(--green); color: var(--green); }
 
 .car-card .car-meta {
   color: var(--text-dim);
@@ -167,21 +186,21 @@ main#cars {
 @media (max-width: 480px) {
   .car-card { flex-direction: column; }
   .car-card .car-photo { width: 100%; height: 160px; }
-  .car-card .car-title { padding-right: 90px; }
 }
 
 /* ── Badge de estado ────────────────────────────────────────────── */
 .badge {
-  position: absolute;
-  top: 14px;
-  right: 14px;
+  display: inline-block;
+  align-self: flex-start;
+  max-width: 100%;
+  margin: 0 0 6px;
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   padding: 4px 9px;
   border-radius: 20px;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 .badge.pending { background: rgba(255, 176, 32, 0.15); color: var(--amber); }

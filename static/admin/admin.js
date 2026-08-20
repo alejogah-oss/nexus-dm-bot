@@ -7,6 +7,30 @@
 
 const $ = (id) => document.getElementById(id);
 
+// ── Copiar VIN al portapapeles ───────────────────────────────────────
+async function copyVin(btn, vin) {
+  const original = btn.textContent;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(vin);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = vin;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    btn.textContent = "✓ VIN copiado";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = original; btn.classList.remove("copied"); }, 1400);
+  } catch (_) {
+    btn.textContent = vin;
+  }
+}
+
 // ── Clave de acceso ─────────────────────────────────────────────────
 function getKey() { return localStorage.getItem("nexus_scanner_key") || ""; }
 
@@ -106,7 +130,6 @@ function buildCarCard(item, publishing) {
   const badgeEl = document.createElement("span");
   badgeEl.className = "badge " + badge.cls;
   badgeEl.textContent = badge.label;
-  card.appendChild(badgeEl);
 
   const photo = document.createElement("div");
   photo.className = "car-photo";
@@ -118,11 +141,22 @@ function buildCarCard(item, publishing) {
 
   const info = document.createElement("div");
   info.className = "car-info";
+  info.appendChild(badgeEl);
 
   const title = document.createElement("p");
   title.className = "car-title";
   title.textContent = [item.yr, item.make, item.model].filter(Boolean).join(" ") || item.title || item.slug;
   info.appendChild(title);
+
+  if (item.vin) {
+    const vin = document.createElement("button");
+    vin.type = "button";
+    vin.className = "car-vin";
+    vin.title = "Toca para copiar el VIN";
+    vin.textContent = "VIN " + item.vin;
+    vin.addEventListener("click", () => copyVin(vin, item.vin));
+    info.appendChild(vin);
+  }
 
   const meta = document.createElement("p");
   meta.className = "car-meta";
@@ -200,6 +234,14 @@ async function openEdit(slug) {
     const res = await api("/api/scanner/inventory/" + slug, { method: "GET" });
     const d = res.data || {};
     editSlug = slug;
+    const vinBtn = $("eVin");
+    if (d.vin) {
+      vinBtn.textContent = "VIN " + d.vin;
+      vinBtn.onclick = () => copyVin(vinBtn, d.vin);
+      vinBtn.classList.remove("hidden");
+    } else {
+      vinBtn.classList.add("hidden");
+    }
     $("eTitle").value = d.title || "";
     $("eDesc").value = d.description || "";
     $("eMake").value = d.make || "";

@@ -107,6 +107,7 @@ def admin_inventory():
             photos_dir = d / "photos"
             items.append({
                 "slug": d.name, "title": data.get("title", ""),
+                "vin": data.get("vin", ""),
                 "make": data.get("make", ""), "model": data.get("model", ""),
                 "yr": data.get("yr", ""), "price": data.get("price"),
                 "mileage": data.get("mileage"),
