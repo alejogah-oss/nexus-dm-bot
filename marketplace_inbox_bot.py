@@ -228,16 +228,64 @@ def _alt_options_text(low: float, high: float, exclude_vin: str = "", limit: int
     return "\n".join(lines)
 
 
+def _model_key(model: str) -> str:
+    """Raíz del modelo: primer token normalizado sin los dígitos finales. Une
+    nombres que comparten raíz pero difieren de forma ('GLS-Class' vs 'GLS450',
+    'RX' vs 'RX350'). Vacío si no hay token."""
+    tokens = _norm_model(model).split()
+    if not tokens:
+        return ""
+    return re.sub(r"\d+$", "", tokens[0])
+
+
+def _resolve_scanner_by_spec(car: dict, scanner_by_vin: dict) -> dict | None:
+    """Resuelve el carro del thread (año+modelo del header de Marketplace, SIN
+    VIN) contra el inventario local del scanner. Necesario para usados: no están
+    en el API público, así que _enrich_car no les resuelve el VIN y Marketplace
+    tampoco lo muestra. Devuelve la unidad si hay UNA sola que matchea año+modelo;
+    None si no hay ninguna o si hay varias (ambiguo — no arriesgar el precio
+    equivocado). El año del header viene int y el del scanner string: se
+    normalizan a texto para comparar."""
+    yr = str(car.get("yr") or "").strip()
+    model_l = _norm_model(car.get("model", ""))
+    key = _model_key(car.get("model", ""))
+    if not yr or not model_l:
+        return None
+    # Match por contención en ambos sentidos (el modelo del scanner "RX" suele
+    # estar contenido en el del header "RX 350 F Sport"), o por raíz del modelo
+    # cuando el nombre difiere de forma ("GLS-Class" del scanner vs "GLS450" del
+    # header). El año siempre debe coincidir.
+    cands = [v for v in scanner_by_vin.values()
+             if str(v.get("yr") or "").strip() == yr
+             and (_norm_model(v.get("model", "")) in model_l
+                  or model_l in _norm_model(v.get("model", ""))
+                  or (key and _model_key(v.get("model", "")) == key))]
+    if len(cands) != 1:
+        return None
+    return cands[0]
+
+
 def _apply_scanner_pricing(car: dict) -> dict:
-    """Si el VIN resuelto matchea un carro del inventario local del scanner, usa su
+    """Si el carro matchea una unidad del inventario local del scanner, usa su
     internal_price (precio real) como ancla en vez del enganche que trae el
     inventario público — y arma alt_options_text si hay rango de alternativas
-    cargado. Sin match, el car dict no se toca (carro normal, no scanner)."""
-    vin = car.get("vin")
-    if not vin:
-        return car
+    cargado. Resuelve por VIN (nuevos) o por año+modelo (usados sin VIN). Sin
+    match, el car dict no se toca (carro normal, no scanner)."""
     scanner_by_vin = _get_scanner_inventory()
-    scanner_car = scanner_by_vin.get(vin)
+    if not scanner_by_vin:
+        return car
+    vin = car.get("vin")
+    scanner_car = scanner_by_vin.get(vin) if vin else None
+    if not scanner_car and not vin:
+        # Sin VIN del inventario público (típico de usados: no están en el API
+        # del sitio) — resolver la unidad por año+modelo contra el scanner local.
+        # Si es única, adoptar su VIN. Solo cuando NO hay VIN: un carro nuevo ya
+        # trae VIN + precio del público y no debe resolverse por spec (evita
+        # pisarle el precio con una unidad homónima del scanner).
+        scanner_car = _resolve_scanner_by_spec(car, scanner_by_vin)
+        if scanner_car:
+            vin = scanner_car.get("vin", "")
+            car["vin"] = vin
     if not scanner_car:
         return car
 

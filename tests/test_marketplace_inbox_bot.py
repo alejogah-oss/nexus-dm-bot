@@ -183,6 +183,106 @@ def test_apply_scanner_pricing_sin_vin_no_toca_el_car():
     assert out == car
 
 
+def test_apply_scanner_pricing_resuelve_por_spec_cuando_no_hay_vin_del_publico(tmp_path, monkeypatch):
+    # Usados: no están en el API público, así que _enrich_car no resuelve el VIN
+    # (Marketplace tampoco lo muestra — el header solo trae año+modelo). El bot
+    # debe resolver el VIN contra el inventario local del scanner por año+modelo
+    # y aplicar el internal_price igual. yr del scanner es STRING, del header INT.
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "2T2YZMDA9NC331574", yr="2022", model="RX",
+                       trim="350 F Sport High", internal_price=45280,
+                       alt_price_low=42000, alt_price_high=48000)
+    _set_public_inventory(monkeypatch, [
+        {"yr": 2026, "model": "Camry", "trim": "XSE", "price": 34000, "vin": "NEW1"}])
+    car = {"yr": 2022, "make": "Lexus", "model": "RX 350 F Sport", "trim": "", "vin": ""}
+    out = mib._apply_scanner_pricing(car)
+    assert out["vin"] == "2T2YZMDA9NC331574"
+    assert out["price"] == 45280
+    assert out["price_hi"] == 0
+
+
+def test_apply_scanner_pricing_por_spec_ambiguo_no_da_precio(tmp_path, monkeypatch):
+    # Dos usados con el mismo año+modelo en el scanner -> sin VIN no hay forma de
+    # saber cuál es. Más seguro no dar ningún número que arriesgar el equivocado.
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "VINX1", yr="2022", model="RX", trim="350", internal_price=45000)
+    _write_scanner_car(tmp_path, "VINX2", yr="2022", model="RX", trim="450", internal_price=52000)
+    car = {"yr": 2022, "model": "RX 350 F Sport", "trim": "", "vin": ""}
+    out = mib._apply_scanner_pricing(car)
+    assert out.get("price", 0) == 0
+    assert not out.get("vin")
+
+
+def test_apply_scanner_pricing_por_spec_resuelve_modelo_con_nombre_distinto(tmp_path, monkeypatch):
+    # Caso real Mercedes: el scanner guarda model="GLS-Class" pero el título del
+    # anuncio (y el header de Marketplace) trae "GLS450 4MATIC AWD" — la
+    # contención sobre el modelo corto no matchea. Se resuelve parseando el
+    # título del propio listing del scanner (que es lo que generó el anuncio).
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "GLSVIN123", yr="2024", model="GLS-Class",
+                       trim="GLS450 4MATIC", internal_price=72900,
+                       title="2024 Mercedes-Benz GLS450 4MATIC AWD - Black")
+    car = {"yr": 2024, "make": "Mercedes-Benz", "model": "GLS450 4MATIC AWD", "trim": "", "vin": ""}
+    out = mib._apply_scanner_pricing(car)
+    assert out["vin"] == "GLSVIN123"
+    assert out["price"] == 72900
+
+
+def test_apply_scanner_pricing_por_spec_raiz_distinta_no_matchea(tmp_path, monkeypatch):
+    # La raíz del modelo debe distinguir: un GLS no debe resolverse contra un GLE
+    # aunque compartan marca y año.
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "GLEVIN", yr="2024", model="GLE-Class", trim="GLE350",
+                       internal_price=60000, title="2024 Mercedes-Benz GLE350 4MATIC - Gray")
+    car = {"yr": 2024, "make": "Mercedes-Benz", "model": "GLS450 4MATIC AWD", "trim": "", "vin": ""}
+    out = mib._apply_scanner_pricing(dict(car))
+    assert out == car
+
+
+def test_apply_scanner_pricing_por_spec_no_colisiona_subfamilia_gr(tmp_path, monkeypatch):
+    # BUG que cazó Sentry: un GR86 y un GR Corolla son autos DISTINTOS que
+    # comparten el prefijo "GR". Reducir a la raíz "gr" les daba el mismo precio.
+    # El bot NUNCA debe dar el precio de una unidad por otra.
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "GRCOROLLA", yr="2024", model="GR Corolla", trim="Core",
+                       internal_price=42000, title="2024 Toyota GR Corolla Core - Blue")
+    car = {"yr": 2024, "make": "Toyota", "model": "GR86", "trim": "", "vin": ""}
+    out = mib._apply_scanner_pricing(dict(car))
+    assert out == car  # sin precio, sin VIN adoptado
+
+
+def test_apply_scanner_pricing_por_spec_no_colisiona_prefijo_letra(tmp_path, monkeypatch):
+    # Otra colisión que cazó Sentry: "C-HR" (Toyota) y "C 300" (Mercedes) NO deben
+    # unirse por la letra "c".
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "CHRVIN", yr="2024", model="C-HR", trim="XLE",
+                       internal_price=28000, title="2024 Toyota C-HR XLE - White")
+    car = {"yr": 2024, "make": "Mercedes-Benz", "model": "C 300 4MATIC", "trim": "", "vin": ""}
+    out = mib._apply_scanner_pricing(dict(car))
+    assert out == car
+
+
+def test_apply_scanner_pricing_por_spec_sin_match_no_toca_el_car(tmp_path, monkeypatch):
+    # Carro normal (nuevo) sin VIN y sin unidad en el scanner -> sin cambios.
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "VINY", yr="2022", model="RX", trim="350", internal_price=45000)
+    car = {"yr": 2026, "model": "Corolla", "trim": "", "vin": ""}
+    out = mib._apply_scanner_pricing(dict(car))
+    assert out == car
+
+
+def test_apply_scanner_pricing_nuevo_con_vin_publico_no_se_resuelve_por_spec(tmp_path, monkeypatch):
+    # Regresión: un carro NUEVO ya trae VIN + precio del API público. Aunque el
+    # scanner tenga una unidad del mismo año+modelo (ej. un 2026 Sienna escaneado
+    # sin precio), NO debe pisar el precio público del nuevo. La resolución por
+    # spec es solo para carros SIN VIN (usados que no están en el público).
+    _reset_scanner_cache(monkeypatch, tmp_path)
+    _write_scanner_car(tmp_path, "SCANVIN", yr="2026", model="Sienna", trim="Limited")  # sin internal_price
+    car = {"yr": 2026, "model": "Sienna", "vin": "PUBLICVIN", "price": 48000, "price_hi": 52000}
+    out = mib._apply_scanner_pricing(dict(car))
+    assert out == car
+
+
 # ── alt_options_text: rango de alternativas nunca inventa carros ───────────
 
 def test_alt_options_text_con_resultados_excluye_vin_actual_y_dedupe(tmp_path, monkeypatch):
