@@ -3,6 +3,7 @@ CRM Client — NEXUS → crm.tucarroconalejo.com
 Envía leads al CRM cuando el bot detecta HOT LEAD o captura datos de contacto.
 """
 import os
+import re
 import json
 import requests
 import anthropic
@@ -21,6 +22,27 @@ def conversation_url(sender_id: str, platform: str) -> str:
     """Returns direct link to the conversation in Meta Business Suite."""
     asset_id = IG_USER_ID if platform == "instagram" else PAGE_ID
     return f"https://business.facebook.com/latest/inbox/all?asset_id={asset_id}&selected_item_id={sender_id}"
+
+
+# Teléfono = disparador determinista del lead (decisión de Alejo, ago 2026). El
+# patrón exige 10 dígitos agrupados 3-3-4 (US), así que horarios ("8:00 to 8:30")
+# y fechas ("02 and September 4th" / "2026-08-24") NO se leen como teléfono.
+_PHONE_RE = re.compile(r"(?<!\d)(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}(?!\d)")
+
+
+def _detect_phone(text: str) -> str | None:
+    """Devuelve el teléfono US normalizado (10 dígitos) si el texto contiene uno,
+    o None. No depende de la IA — se usa como disparador y como respaldo cuando
+    la extracción con Haiku no capturó el número que el cliente sí escribió."""
+    if not text:
+        return None
+    m = _PHONE_RE.search(text)
+    if not m:
+        return None
+    digits = re.sub(r"\D", "", m.group())
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    return digits if len(digits) == 10 else None
 
 _claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -225,6 +247,10 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
 
     # If we know the exact car (Marketplace), override AI-extracted vehicle fields
     if car:
+        # Marca real del listing (Alejo también atiende trade-ins usados de otras
+        # marcas: Lexus, Mercedes, Nissan). Sin esto el lead decía "Toyota" siempre.
+        if car.get("make"):
+            lead_data["vehicle_make"] = car["make"]
         lead_data["vehicle_model"] = car.get("model", lead_data.get("vehicle_model"))
         lead_data["vehicle_year"]  = str(car.get("yr", lead_data.get("vehicle_year", "")))
         lead_data["vehicle_trim"]  = car.get("trim", "")
@@ -239,26 +265,57 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     if not name:
         name = _clean_sender_name(sender_name)
     phone = (lead_data.get("phone") or "").strip()
+    # Respaldo determinista: si Haiku no extrajo el teléfono pero el cliente sí
+    # lo escribió en algún mensaje, recuperarlo con regex. El teléfono es el
+    # mínimo que habilita crear el lead (ver guard abajo), así que no puede
+    # depender solo de la IA (bug: cliente da su número y el lead nunca se crea).
+    if not phone:
+        for _m in conversation_history:
+            if _m.get("role") == "user":
+                _p = _detect_phone(_m.get("content", ""))
+                if _p:
+                    phone = _p
+                    break
+    # `name` y `phone` se calcularon arriba combinando perfil de Meta, extracción
+    # con IA, el nombre del sidebar de Facebook y el regex de teléfono. Hasta aquí
+    # solo alimentaban el guard de datos mínimos, el WhatsApp de Pulse y la nota —
+    # nunca volvían al payload, así que el CRM recibía el lead sin first_name (y
+    # sin phone cuando lo había recuperado el regex) y el Kanban mostraba
+    # "Sin nombre" aunque el bot lo tuviera. Se sincronizan antes de enviar.
+    if name and not lead_data.get("first_name"):
+        _first, _, _last = name.partition(" ")
+        lead_data["first_name"] = _first
+        if _last.strip():
+            lead_data["last_name"] = _last.strip()
+    if phone:
+        lead_data["phone"] = phone
+
+    make  = lead_data.get("vehicle_make") or "Toyota"
     model = lead_data.get("vehicle_model", "no especificado")
     trim  = lead_data.get("vehicle_trim", "")
     conv_url = conversation_url(sender_id, platform)
 
-    # Mínimo para CRM: nombre. El bot marca [HOT LEAD] con solo una de varias
-    # señales (confirma visita, pregunta financiamiento, etc.) que no siempre
-    # incluyen el teléfono — exigir también el teléfono aquí dejaba la mayoría
-    # de leads nuevos sin registrar en el CRM (solo llegaba el WhatsApp).
-    # El nombre casi siempre está disponible vía perfil de Meta; el teléfono,
-    # cuando lo tengamos, va en el payload igual — si no, el CRM lo recibe
-    # vacío y Alejo lo completa desde la conversación.
+    # Mínimo para CRM: TELÉFONO real (decisión de Alejo, ago 2026). El bot marca
+    # [HOT LEAD] con señales amplias (confirma visita, pregunta financiamiento,
+    # emoji, etc.) y el nombre casi siempre está disponible vía perfil de Meta o
+    # el nombre de Facebook del sidebar — así que exigir solo nombre creaba un
+    # lead por casi cualquier conversación, sin dato accionable de contacto
+    # (bug real: "monta leads sin los mínimos"). Un lead sin teléfono no es
+    # accionable; se avisa a Alejo una vez por WhatsApp y se espera al teléfono.
+    # (Las citas confirmadas — el otro camino válido — ahora también exigen
+    # teléfono, así que ese flujo entra por aquí con teléfono presente.)
+    missing = []
     if not name:
-        missing = ["nombre"]
-        # Sin nombre el lead NUNCA llega a crearse en CRM, así que crm_sent
-        # nunca queda True — sin este segundo guard, cada [HOT LEAD] repetido
-        # en la misma conversación (mismo bug que ayer, distinta rama) volvía
-        # a mandar WhatsApp para siempre. Se avisa una sola vez por sender_id
-        # igual que un lead completo, con su propio flag.
+        missing.append("nombre")
+    if not phone:
+        missing.append("teléfono")
+    if missing:
+        # Sin teléfono/nombre el lead NUNCA llega a crearse en CRM, así que
+        # crm_sent nunca queda True — sin este guard, cada [HOT LEAD] repetido
+        # en la misma conversación volvía a mandar WhatsApp para siempre. Se
+        # avisa una sola vez por sender_id, con su propio flag.
         if _activity.get(sender_id, {}).get("incomplete_alert_sent", False):
-            print(f"  📋 CRM — Lead incomplete (falta nombre), ya avisado antes, sin notificación nueva.")
+            print(f"  📋 CRM — Lead incompleto (falta {', '.join(missing)}), ya avisado antes, sin notificación nueva.")
             return {"ok": True, "skipped": True, "reason": "incomplete_data", "missing": missing}
         print(f"  ⚠️  CRM — Lead incompleto (falta {', '.join(missing)}) — NO se crea en CRM aún")
         from pulse import pulse_notify
@@ -279,7 +336,7 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
             print(f"  ⚠️  CRM — No se pudo marcar incomplete_alert_sent: {e}")
         return {"ok": True, "skipped": True, "reason": "incomplete_data", "missing": missing}
 
-    print(f"  Nombre: {name} | Tel: {phone} | Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}")
+    print(f"  Nombre: {name} | Tel: {phone} | Carro: {lead_data.get('vehicle_year','')} {make} {model} {trim}")
     print(f"  Conversación: {conv_url}")
 
     # WhatsApp notification includes direct link
@@ -289,7 +346,7 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
         detail=(
             f"Cliente: {name}\n"
             f"Tel: {phone}\n"
-            f"Carro: {lead_data.get('vehicle_year','')} Toyota {model} {trim}\n"
+            f"Carro: {lead_data.get('vehicle_year','')} {make} {model} {trim}\n"
             f"Canal: {platform.upper()}\n"
             f"Chat: {conv_url}"
         )
