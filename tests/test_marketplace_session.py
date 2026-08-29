@@ -119,6 +119,7 @@ def test_perfil_de_sesion_es_estable_no_el_mas_reciente(tmp_path, monkeypatch):
     a = tmp_path / "poster"; a.mkdir()
     b = tmp_path / "otro";   b.mkdir()
     os.utime(b, (time.time() + 500, time.time() + 500))   # b es más reciente
+    monkeypatch.setattr(marketplace_poster, "SESSION_CHANNEL", "")
     monkeypatch.setattr(marketplace_poster, "SESSION_PROFILES", [a, b])
     assert marketplace_poster.session_profile() == a
     assert marketplace_poster.session_profile() == a
@@ -126,6 +127,7 @@ def test_perfil_de_sesion_es_estable_no_el_mas_reciente(tmp_path, monkeypatch):
 
 def test_sin_ningun_perfil_devuelve_el_del_poster_para_crearlo(tmp_path, monkeypatch):
     a = tmp_path / "poster"
+    monkeypatch.setattr(marketplace_poster, "SESSION_CHANNEL", "")
     monkeypatch.setattr(marketplace_poster, "SESSION_PROFILES", [a, tmp_path / "otro"])
     assert marketplace_poster.session_profile() == a
 
@@ -136,6 +138,7 @@ def test_usa_el_perfil_del_login_por_terminal_si_existe(tmp_path, monkeypatch):
     import asyncio
     perfil = tmp_path / ".fb_playwright_profile_poster"
     perfil.mkdir()
+    monkeypatch.setattr(marketplace_poster, "SESSION_CHANNEL", "")
     monkeypatch.setattr(marketplace_poster, "SESSION_PROFILES", [perfil])
     monkeypatch.setattr(marketplace_poster, "load_session_cookies", lambda *a, **k: [])
     llamadas = {}
@@ -190,3 +193,20 @@ def test_con_chrome_real_no_pisamos_el_user_agent(monkeypatch, tmp_path):
     assert visto["channel"] == "chrome"
     assert "user_agent" not in visto            # el UA real de Chrome, sin tocar
     assert visto["dir"].endswith(".fb_playwright_profile_chrome")   # perfil aparte
+
+
+def test_chrome_real_es_el_default_si_esta_instalado(monkeypatch, tmp_path):
+    """El panel lanza el poster como subproceso: nadie va a acordarse de
+    exportar FB_BROWSER_CHANNEL. Si Chrome está, se usa Chrome."""
+    monkeypatch.delenv("FB_BROWSER_CHANNEL", raising=False)
+    monkeypatch.setattr(marketplace_poster, "CHROME_APP", tmp_path / "hay")
+    (tmp_path / "hay").mkdir()
+    assert marketplace_poster._canal_por_defecto() == "chrome"
+
+    monkeypatch.setattr(marketplace_poster, "CHROME_APP", tmp_path / "no_hay")
+    assert marketplace_poster._canal_por_defecto() == ""
+
+
+def test_se_puede_forzar_el_chromium_de_playwright(monkeypatch):
+    monkeypatch.setenv("FB_BROWSER_CHANNEL", "")
+    assert marketplace_poster._canal_por_defecto() == ""

@@ -3,7 +3,7 @@ NEXUS — Marketplace Poster
 Publica listings de vehículos en Facebook Marketplace vía browser automation.
 Usa sesión guardada de tucarroconalejo@gmail.com.
 """
-import asyncio, json, os, re, requests, tempfile, time
+import asyncio, contextlib, json, os, re, requests, sys, tempfile, time
 from pathlib import Path
 from playwright.async_api import async_playwright, Error as PlaywrightError
 from dotenv import load_dotenv
@@ -72,7 +72,23 @@ def session_profile() -> Path:
 # Con FB_BROWSER_CHANNEL=chrome usamos el Google Chrome de verdad instalado en
 # la máquina y NO pisamos el UA: todo coherente, que es lo que menos fricción
 # le da a Facebook cuando Alejo entra a mano.
-SESSION_CHANNEL = os.environ.get("FB_BROWSER_CHANNEL", "").strip()
+CHROME_APP = Path("/Applications/Google Chrome.app")
+
+
+def _canal_por_defecto() -> str:
+    """Chrome de verdad si está instalado; si no, el Chromium de Playwright.
+
+    No se deja como variable de entorno opcional a propósito: el botón
+    Publicar del panel lanza el poster como subproceso, y ahí nadie se acuerda
+    de exportar nada. Si hace falta forzar el Chromium: FB_BROWSER_CHANNEL=''
+    """
+    forzado = os.environ.get("FB_BROWSER_CHANNEL")
+    if forzado is not None:
+        return forzado.strip()
+    return "chrome" if CHROME_APP.exists() else ""
+
+
+SESSION_CHANNEL = _canal_por_defecto()
 SESSION_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
               "AppleWebKit/537.36 (KHTML, like Gecko) "
               "Chrome/120.0.0.0 Safari/537.36")
@@ -774,40 +790,69 @@ def record_publish_success(slug: str) -> None:
     lj.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
-async def publish_scanner_car(slug: str) -> None:
-    """Lee inventario/<slug>/ y abre Chrome VISIBLE con el formulario lleno.
-    Selecciona todos los grupos disponibles y publica automáticamente
-    (a petición de Alejo, jul 21 2026 — ya no se detiene antes de Publicar).
-    Si falla (sesión FB expirada, cambio de DOM), corre como subproceso
-    desacoplado, así que nadie más se entera — por eso escribimos last_error
-    en el listing.json para que el badge 🔴 del panel se dispare."""
-    try:
-        inv = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
-        folder = Path(inv) / slug
-        car = json.loads((folder / "listing.json").read_text())
-        fields = scanner_car_fields(car)
-        photos_dir = folder / "photos"
-        photo_paths = [str(p) for p in sorted(photos_dir.glob("*.jpg"))] if photos_dir.exists() else []
-        video_file = folder / "video.mp4"
-        video_path = str(video_file) if video_file.exists() else None
+class _Tee:
+    """Escribe en la consola y en el log a la vez."""
+    def __init__(self, *destinos): self.destinos = destinos
+    def write(self, texto):
+        for d in self.destinos:
+            try:
+                d.write(texto); d.flush()
+            except Exception:
+                pass
+    def flush(self):
+        for d in self.destinos:
+            try:
+                d.flush()
+            except Exception:
+                pass
 
-        async with async_playwright() as p:
-            ctx, cerrar = await open_session_context(p)
-            page = await session_page(ctx)
-            print(f"\n  📦 {fields['year']} {fields['make']} {fields['model']} — "
-                  f"{fields['mileage']} mi — ${fields['price']}")
-            ok = await post_scanner_car(page, fields, photo_paths, video_path)
-            if ok:
-                record_publish_success(slug)
-            else:
-                record_publish_error(slug, "no se encontró el formulario o el botón Publicar")
-            await cerrar()
-    except Exception as e:
-        record_publish_error(slug, str(e))
+
+PUBLISH_LOG = Path(__file__).parent / "logs/publicar.log"
+
+
+async def publish_scanner_car(slug: str) -> None:
+    """Publica un carro del scanner, dejando rastro en logs/publicar.log.
+
+    El panel lanza esto como subproceso desacoplado: si algo falla no hay
+    terminal a la vista donde mirarlo. Por eso todo lo que se imprime va
+    también al log, y el error queda en el listing.json para el badge 🔴.
+    """
+    PUBLISH_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(PUBLISH_LOG, "a", encoding="utf-8") as log:
+        log.write(f"\n{'=' * 60}\n"
+                  f"{time.strftime('%Y-%m-%d %H:%M:%S')}  publicar {slug}\n")
+        with contextlib.redirect_stdout(_Tee(sys.stdout, log)):
+            try:
+                await _publicar(slug)
+            except Exception as e:
+                record_publish_error(slug, str(e))
+                print(f"  ❌ {e}")
+
+
+async def _publicar(slug: str) -> None:
+    inv = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
+    folder = Path(inv) / slug
+    car = json.loads((folder / "listing.json").read_text())
+    fields = scanner_car_fields(car)
+    photos_dir = folder / "photos"
+    photo_paths = [str(p) for p in sorted(photos_dir.glob("*.jpg"))] if photos_dir.exists() else []
+    video_file = folder / "video.mp4"
+    video_path = str(video_file) if video_file.exists() else None
+
+    async with async_playwright() as p:
+        ctx, cerrar = await open_session_context(p)
+        page = await session_page(ctx)
+        print(f"\n  📦 {fields['year']} {fields['make']} {fields['model']} — "
+              f"{fields['mileage']} mi — ${fields['price']}")
+        ok = await post_scanner_car(page, fields, photo_paths, video_path)
+        if ok:
+            record_publish_success(slug)
+        else:
+            record_publish_error(slug, "no se encontró el formulario o el botón Publicar")
+        await cerrar()
 
 
 if __name__ == "__main__":
-    import sys
     if len(sys.argv) > 2 and sys.argv[1] == "--scanner":
         asyncio.run(publish_scanner_car(sys.argv[2]))
     else:
