@@ -48,12 +48,18 @@ SESSION_PROFILES = [Path.home() / ".fb_playwright_profile_poster",
                     Path.home() / ".fb_playwright_profile"]
 
 
-def session_profile() -> Path | None:
-    """El perfil con sesión de FB usado más recientemente, o None si no hay."""
-    existentes = [d for d in SESSION_PROFILES if d.is_dir()]
-    if not existentes:
-        return None
-    return max(existentes, key=lambda d: d.stat().st_mtime)
+def session_profile() -> Path:
+    """Perfil de Chrome donde vive (o va a vivir) la sesión de Facebook.
+
+    Siempre el mismo, en orden fijo — no el más reciente: si cambiara de perfil
+    entre corridas, el login se guardaría en uno y la siguiente publicada
+    abriría el otro, y FB pediría login otra vez. Si no existe ninguno se
+    devuelve el del poster igual: Playwright lo crea y ahí queda guardado el
+    login que haga Alejo a mano."""
+    for d in SESSION_PROFILES:
+        if d.is_dir():
+            return d
+    return SESSION_PROFILES[0]
 SESSION_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
               "AppleWebKit/537.36 (KHTML, like Gecko) "
               "Chrome/120.0.0.0 Safari/537.36")
@@ -72,44 +78,66 @@ async def open_session_context(p):
     no es el mismo que inició sesión.
     """
     perfil = session_profile()
-    if perfil:
-        print(f"  🔑 Usando la sesión de {perfil.name}")
-        ctx = await p.chromium.launch_persistent_context(
-            str(perfil), headless=False, slow_mo=300,
-            user_agent=SESSION_UA, viewport=VIEWPORT,
-            args=SESSION_ARGS, ignore_default_args=SESSION_IGNORE_ARGS,
-        )
-        return ctx, ctx.close
-
-    browser = await p.chromium.launch(headless=False, slow_mo=300,
-                                      args=SESSION_ARGS,
-                                      ignore_default_args=SESSION_IGNORE_ARGS)
-    ctx = await browser.new_context(user_agent=SESSION_UA, viewport=VIEWPORT)
+    perfil.mkdir(parents=True, exist_ok=True)
+    print(f"  🔑 Perfil de sesión: {perfil.name}")
+    ctx = await p.chromium.launch_persistent_context(
+        str(perfil), headless=False, slow_mo=300,
+        user_agent=SESSION_UA, viewport=VIEWPORT,
+        args=SESSION_ARGS, ignore_default_args=SESSION_IGNORE_ARGS,
+    )
+    # Semilla: si el perfil es nuevo, arrancamos con las cookies guardadas.
+    # De ahí en adelante manda el perfil, que Facebook refresca solo.
     cookies = load_session_cookies()
     if cookies:
-        await ctx.add_cookies(cookies)
-    return ctx, browser.close
+        try:
+            await ctx.add_cookies(cookies)
+        except PlaywrightError:
+            pass
+    return ctx, ctx.close
 
 
 async def session_page(ctx):
     return ctx.pages[0] if ctx.pages else await ctx.new_page()
 
 
-async def assert_logged_in(page) -> None:
-    """Facebook manda al login en vez de al formulario cuando la sesión murió.
-    Sin esto el bot sigue de largo y reporta 'no se encontró el formulario',
-    que manda a buscar el problema en el lado equivocado."""
+async def hay_muro_de_login(page) -> bool:
+    """¿Facebook mandó al login en vez de al formulario?"""
     if "/login" in page.url or "/checkpoint" in page.url:
-        raise RuntimeError(
-            "Facebook pidió login — la sesión se cayó. En el Mac Pro corré: "
-            "venv/bin/python3 refresh_fb_session.py")
+        return True
     try:
-        if await page.locator('input[name="pass"]').first.is_visible(timeout=2000):
-            raise RuntimeError(
-                "Facebook mostró la pantalla de login — la sesión se cayó. "
-                "En el Mac Pro corré: venv/bin/python3 refresh_fb_session.py")
+        return await page.locator('input[name="pass"]').first.is_visible(timeout=2000)
     except PlaywrightError:
-        pass
+        return False
+
+
+async def ensure_logged_in(page, segundos: int = 240) -> None:
+    """Si Facebook pide login, esperar a que Alejo entre a mano en esa misma
+    ventana — UNA vez.
+
+    Como el navegador corre sobre un perfil persistente, ese login queda
+    guardado en disco y las publicadas siguientes ya no lo piden. Antes se
+    abría un Chromium limpio: Alejo entraba, se publicaba, se cerraba la
+    ventana y el login se perdía — por eso lo pedía en cada publicada.
+    """
+    if not await hay_muro_de_login(page):
+        return
+
+    print("\n  🔐 Facebook pidió login. Entrá en la ventana que se abrió.")
+    print("     Es la última vez: queda guardado en el perfil.\n", flush=True)
+
+    for i in range(segundos):
+        await asyncio.sleep(1)
+        names = {c["name"] for c in await page.context.cookies()}
+        if "c_user" in names and "xs" in names:
+            print("  ✅ Login detectado — sigo publicando", flush=True)
+            await asyncio.sleep(2)
+            return
+        if i and i % 30 == 0:
+            print(f"     ... esperando ({i}s)", flush=True)
+
+    raise RuntimeError(
+        f"no se completó el login en {segundos}s — publicación cancelada. "
+        "La ventana de Chrome quedó esperando; volvé a darle Publicar.")
 
 def load_posted() -> dict:
     try:
@@ -541,7 +569,13 @@ async def post_scanner_car(page, fields: dict, photo_paths: list, video_path: st
     await page.goto("https://www.facebook.com/marketplace/create/vehicle",
                     wait_until="domcontentloaded", timeout=30000)
     await asyncio.sleep(5)
-    await assert_logged_in(page)
+
+    await ensure_logged_in(page)
+    if "marketplace/create/vehicle" not in page.url:
+        # Después del login FB manda al inicio: hay que volver al formulario.
+        await page.goto("https://www.facebook.com/marketplace/create/vehicle",
+                        wait_until="domcontentloaded", timeout=30000)
+        await asyncio.sleep(5)
 
     await select_combobox_option(page, "Vehicle type", "Car/Truck")
     await asyncio.sleep(2)
@@ -726,9 +760,6 @@ async def publish_scanner_car(slug: str) -> None:
         video_file = folder / "video.mp4"
         video_path = str(video_file) if video_file.exists() else None
 
-        if not session_profile() and not load_session_cookies():
-            record_publish_error(slug, "no hay sesión de Facebook — corré refresh_fb_session.py")
-            return
         async with async_playwright() as p:
             ctx, cerrar = await open_session_context(p)
             page = await session_page(ctx)
