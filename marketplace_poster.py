@@ -5,7 +5,7 @@ Usa sesión guardada de tucarroconalejo@gmail.com.
 """
 import asyncio, json, os, re, requests, tempfile, time
 from pathlib import Path
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Error as PlaywrightError
 from dotenv import load_dotenv
 from vin_utils import resolve_make
 
@@ -15,6 +15,101 @@ SESSION_FILE = Path(__file__).parent / "browser_session/fb_session.json"
 LOG_FILE     = Path(__file__).parent / "marketplace_posted.json"
 INVENTORY_URL = "https://tucarroconalejo.com/api.php?action=list"
 IMAGE_BASE    = "https://bot.tucarroconalejo.com/feed/image"
+
+def load_session_cookies(path=SESSION_FILE) -> list:
+    """Devuelve SOLO las cookies de la sesión de Facebook.
+
+    Acepta los dos formatos que hay en browser_session/:
+      - storage_state de Playwright  {"cookies": [...], "origins": [...]}
+        (lo que escribe refresh_fb_session.py cada vez que Alejo vuelve a entrar)
+      - lista pelada de cookies      [...]  (fb_session.py / refresh_mp_session.py)
+
+    Nunca se devuelven los 'origins'. Si se le pasan a
+    new_context(storage_state=...), Playwright abre una página y navega a
+    https://www.facebook.com para reinyectar el localStorage; Facebook redirige
+    sola y el contexto muere con:
+        "Error setting storage state: Execution context was destroyed"
+    La sesión de FB vive en las cookies (c_user, xs, datr...), no en el
+    localStorage — el inbox bot lleva meses corriendo así en Render.
+    """
+    try:
+        data = json.loads(Path(path).read_text())
+    except Exception:
+        return []
+    return data if isinstance(data, list) else data.get("cookies", [])
+
+# Misma identidad de navegador con la que refresh_fb_session.py inicia sesión.
+# Facebook ata la sesión al fingerprint: si el UA o el flag de automatización no
+# coinciden con los del login, invalida las cookies y muestra la pantalla de login.
+# Los dos perfiles que puede dejar un login por terminal:
+#   refresh_fb_session.py  -> ~/.fb_playwright_profile_poster
+#   refresh_mp_session.py / marketplace_updater.py -> ~/.fb_playwright_profile
+SESSION_PROFILES = [Path.home() / ".fb_playwright_profile_poster",
+                    Path.home() / ".fb_playwright_profile"]
+
+
+def session_profile() -> Path | None:
+    """El perfil con sesión de FB usado más recientemente, o None si no hay."""
+    existentes = [d for d in SESSION_PROFILES if d.is_dir()]
+    if not existentes:
+        return None
+    return max(existentes, key=lambda d: d.stat().st_mtime)
+SESSION_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+              "AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/120.0.0.0 Safari/537.36")
+SESSION_ARGS = ["--disable-blink-features=AutomationControlled"]
+SESSION_IGNORE_ARGS = ["--enable-automation"]
+VIEWPORT = {"width": 1280, "height": 900}
+
+
+async def open_session_context(p):
+    """Abre Chrome con la sesión de Facebook ya iniciada. Devuelve (ctx, cerrar).
+
+    Preferimos el perfil persistente que deja refresh_fb_session.py cuando Alejo
+    entra por el terminal: ahí vive la sesión completa y Facebook la refresca
+    sola en cada visita, así que no vuelve a pedir login. Exportar cookies a un
+    Chromium limpio es el plan B — funciona hasta que FB nota que el navegador
+    no es el mismo que inició sesión.
+    """
+    perfil = session_profile()
+    if perfil:
+        print(f"  🔑 Usando la sesión de {perfil.name}")
+        ctx = await p.chromium.launch_persistent_context(
+            str(perfil), headless=False, slow_mo=300,
+            user_agent=SESSION_UA, viewport=VIEWPORT,
+            args=SESSION_ARGS, ignore_default_args=SESSION_IGNORE_ARGS,
+        )
+        return ctx, ctx.close
+
+    browser = await p.chromium.launch(headless=False, slow_mo=300,
+                                      args=SESSION_ARGS,
+                                      ignore_default_args=SESSION_IGNORE_ARGS)
+    ctx = await browser.new_context(user_agent=SESSION_UA, viewport=VIEWPORT)
+    cookies = load_session_cookies()
+    if cookies:
+        await ctx.add_cookies(cookies)
+    return ctx, browser.close
+
+
+async def session_page(ctx):
+    return ctx.pages[0] if ctx.pages else await ctx.new_page()
+
+
+async def assert_logged_in(page) -> None:
+    """Facebook manda al login en vez de al formulario cuando la sesión murió.
+    Sin esto el bot sigue de largo y reporta 'no se encontró el formulario',
+    que manda a buscar el problema en el lado equivocado."""
+    if "/login" in page.url or "/checkpoint" in page.url:
+        raise RuntimeError(
+            "Facebook pidió login — la sesión se cayó. En el Mac Pro corré: "
+            "venv/bin/python3 refresh_fb_session.py")
+    try:
+        if await page.locator('input[name="pass"]').first.is_visible(timeout=2000):
+            raise RuntimeError(
+                "Facebook mostró la pantalla de login — la sesión se cayó. "
+                "En el Mac Pro corré: venv/bin/python3 refresh_fb_session.py")
+    except PlaywrightError:
+        pass
 
 def load_posted() -> dict:
     try:
@@ -411,9 +506,6 @@ async def main(limit: int = 5):
     limit: cuántos vehículos publicar en esta corrida.
            Usar 137 para publicar todos.
     """
-    with open(SESSION_FILE) as f:
-        storage = json.load(f)
-
     posted = load_posted()
     vehicles = fetch_unique_inventory()
     pending  = [v for v in vehicles
@@ -423,12 +515,8 @@ async def main(limit: int = 5):
     print(f"Publicando {min(limit, len(pending))} en esta corrida...\n")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, slow_mo=300)
-        ctx = await browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            storage_state=storage
-        )
-        page = await ctx.new_page()
+        ctx, cerrar = await open_session_context(p)
+        page = await session_page(ctx)
 
         count = 0
         for v in pending[:limit]:
@@ -445,7 +533,7 @@ async def main(limit: int = 5):
         print(f"\n✅ Corrida completa: {count} publicados.")
         print(f"   Total acumulado: {len(posted)} de {len(vehicles)}.")
         await asyncio.sleep(15)
-        await browser.close()
+        await cerrar()
 
 async def post_scanner_car(page, fields: dict, photo_paths: list, video_path: str | None = None) -> bool:
     """Llena el formulario de Marketplace con los datos reales del carro,
@@ -453,6 +541,7 @@ async def post_scanner_car(page, fields: dict, photo_paths: list, video_path: st
     await page.goto("https://www.facebook.com/marketplace/create/vehicle",
                     wait_until="domcontentloaded", timeout=30000)
     await asyncio.sleep(5)
+    await assert_logged_in(page)
 
     await select_combobox_option(page, "Vehicle type", "Car/Truck")
     await asyncio.sleep(2)
@@ -637,21 +726,20 @@ async def publish_scanner_car(slug: str) -> None:
         video_file = folder / "video.mp4"
         video_path = str(video_file) if video_file.exists() else None
 
-        with open(SESSION_FILE) as f:
-            storage = json.load(f)
+        if not session_profile() and not load_session_cookies():
+            record_publish_error(slug, "no hay sesión de Facebook — corré refresh_fb_session.py")
+            return
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False, slow_mo=300)
-            ctx = await browser.new_context(viewport={"width": 1280, "height": 900},
-                                            storage_state=storage)
-            page = await ctx.new_page()
+            ctx, cerrar = await open_session_context(p)
+            page = await session_page(ctx)
             print(f"\n  📦 {fields['year']} {fields['make']} {fields['model']} — "
                   f"{fields['mileage']} mi — ${fields['price']}")
             ok = await post_scanner_car(page, fields, photo_paths, video_path)
             if ok:
                 record_publish_success(slug)
             else:
-                record_publish_error(slug, "no se encontró el formulario o el botón Publicar — ¿sesión FB expirada?")
-            await browser.close()
+                record_publish_error(slug, "no se encontró el formulario o el botón Publicar")
+            await cerrar()
     except Exception as e:
         record_publish_error(slug, str(e))
 
