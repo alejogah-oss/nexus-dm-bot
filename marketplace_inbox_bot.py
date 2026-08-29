@@ -32,6 +32,10 @@ print("[MIB] marketplace_analytics imported", flush=True)
 from pulse import pulse_notify
 print("[MIB] pulse imported", flush=True)
 from appointments import extract_appointment_from_conversation
+
+import price_ranges
+import rescue_queue
+import rescue_timing
 print("[MIB] appointments imported", flush=True)
 
 load_dotenv()
@@ -655,6 +659,15 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     state[thread_id] = msg_hash
 
+    # El bot acabó de contestar: si el cliente no vuelve a escribir, en 90-120
+    # minutos le toca rescate. Si contesta, esta misma línea reinicia el reloj.
+    # El idioma sale del PRIMER mensaje del cliente, la misma regla que sigue
+    # el prompt (dm_bot.py:23): la conversación nunca cambia de idioma.
+    primer_mensaje = next((m["content"] for m in _conversations[thread_id]
+                           if m.get("role") == "user"), last_msg)
+    rescue_queue.schedule(state, thread_id, car,
+                          lang=rescue_timing.detect_language(primer_mensaje))
+
     full_history = _conversations[thread_id]
 
     # HOT LEAD — igual que dm_bot.handle_marketplace_message
@@ -1221,7 +1234,80 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
             except Exception:
                 pass
 
+    # Rescate de callados — al final del ciclo, con el browser todavía vivo
+    try:
+        await _run_rescues(page, state)
+    except Exception as e:
+        print(f"[RESCATE] Error en la pasada de rescates: {e}", flush=True)
+
     print(f"[BOT] Ciclo completo — próximo en {POLL_SEC}s")
+
+
+async def _run_rescues(page: Page, state: dict):
+    """Le escribe UNA sola vez al cliente que se quedó callado.
+
+    Apagado de fábrica: sin RESCUE_ENABLED=1 solo imprime a quién le habría
+    escrito y qué, sin tocar el chat ni el registro del CRM. Así se puede ver
+    en producción, con clientes reales, sin que salga un solo mensaje.
+    """
+    if not rescue_queue.should_check_now(state):
+        return
+    pendientes = rescue_queue.due(state)
+    if not pendientes:
+        return
+
+    enabled = rescue_queue.sending_enabled()
+    modo = "REAL" if enabled else "EN SECO"
+    print(f"[RESCATE] {len(pendientes)} lead(s) callado(s) — envío {modo}", flush=True)
+
+    for thread_id in pendientes:
+        entry = state.get(f"{rescue_queue.PREFIX}{thread_id}", {})
+        mensaje = rescue_queue.build_message(entry)
+        # Pase lo que pase de acá en adelante, este thread no se reintenta:
+        # "una sola vez" vale también para los intentos fallidos.
+        rescue_queue.mark_done(state, thread_id)
+
+        if not mensaje:
+            print(f"  [RESCATE] {thread_id[:12]} sin rango para VIN "
+                  f"{entry.get('vin', '')} — no se manda nada", flush=True)
+            pulse_notify(
+                "MARKETPLACE_ERROR",
+                f"Lead callado que NO se pudo rescatar: no hay rango de precio "
+                f"cargado para {entry.get('model', '')} (VIN {entry.get('vin', '')}). "
+                f"Cárgalo en /admin y el próximo sí sale."
+            )
+            continue
+
+        if not enabled:
+            print(f"  [RESCATE SECO] {thread_id[:12]} → {mensaje}", flush=True)
+            continue
+
+        # El candado de "una sola vez" vive en el CRM, no en este archivo: el
+        # estado local se borra en cada despliegue de Render, la tabla no.
+        if not price_ranges.claim_rescue(thread_id, entry.get("vin"),
+                                         entry.get("model"), mensaje, dry_run=False):
+            print(f"  [RESCATE] {thread_id[:12]} ya rescatado antes, o el CRM no "
+                  f"contestó — no se manda", flush=True)
+            continue
+
+        try:
+            if not await _open_thread(page, thread_id):
+                print(f"  [RESCATE] No se pudo abrir el thread {thread_id[:12]}", flush=True)
+                continue
+            await asyncio.sleep(_jitter(8, 25))  # humano: no contesta al instante
+            await _type_and_send(page, mensaje)
+            price_ranges.mark_sent(thread_id)
+            print(f"  [RESCATE] ✅ {thread_id[:12]} → {mensaje}", flush=True)
+            pulse_notify(
+                "HOT_LEAD",
+                f"♻️ RESCATE ENVIADO\n"
+                f"Carro: {entry.get('model', '')}\n"
+                f"Mensaje: {mensaje}\n"
+                f"Ver conversación:\n"
+                f"https://www.messenger.com/marketplace/t/{thread_id}"
+            )
+        except Exception as e:
+            print(f"  [RESCATE] Error enviando a {thread_id[:12]}: {e}", flush=True)
 
 
 LAUNCH_ARGS = [

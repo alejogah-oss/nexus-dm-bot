@@ -258,6 +258,12 @@ def update_inventory_item(slug):
     data["title"] = str(data.get("title", ""))[:100]
     (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
     (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
+    # El rango de alternativas también va a la tabla del CRM: listing.json vive
+    # en el disco efímero de Render y se borra en cada despliegue, la tabla no.
+    if any(k in body for k in ("alt_price_low", "alt_price_high", "internal_price")):
+        import price_ranges
+        price_ranges.save_range(data.get("vin", ""), data.get("alt_price_low"),
+                                data.get("alt_price_high"), data.get("internal_price"))
     if needs_site_sync:
         _sync_to_site_bg(folder)  # re-sincroniza cambios (no toca 'active' si ya fue aprobado)
     return jsonify({"ok": True, "data": data})
