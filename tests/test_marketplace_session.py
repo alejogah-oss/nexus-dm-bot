@@ -40,20 +40,23 @@ class _FakeLocator:
 class _FakeContext:
     def __init__(self, page): self._page = page
     async def cookies(self):
-        self._page.consultas += 1
-        if self._page._cookies_tras and self._page.consultas >= self._page._cookies_tras:
-            return [{"name": "c_user"}, {"name": "xs"}]
-        return [{"name": "datr"}]
+        return [{"name": "c_user"}, {"name": "xs"}]   # cookies viejas, siempre ahí
 
 
 class _FakePage:
-    def __init__(self, url, pass_visible=False, cookies_tras=0):
+    """entra_tras=N: al N-ésimo chequeo Facebook deja de mostrar el muro."""
+    def __init__(self, url, pass_visible=False, entra_tras=0):
         self.url = url
         self._pass_visible = pass_visible
-        self._cookies_tras = cookies_tras
+        self._entra_tras = entra_tras
         self.consultas = 0
         self.context = _FakeContext(self)
-    def locator(self, sel): return _FakeLocator(self._pass_visible)
+    def locator(self, sel):
+        self.consultas += 1
+        if self._entra_tras and self.consultas >= self._entra_tras:
+            self.url = "https://www.facebook.com/"
+            return _FakeLocator(False)
+        return _FakeLocator(self._pass_visible)
 
 
 async def _run(coro):
@@ -85,14 +88,26 @@ def test_espera_a_que_alejo_entre_a_mano_y_sigue():
     """Antes abortaba. Ahora espera el login en esa ventana — y como el perfil
     es persistente, es la única vez que lo va a pedir."""
     import asyncio
-    page = _FakePage("https://www.facebook.com/login/", cookies_tras=2)
+    # Facebook muestra el formulario de entrar sobre la propia URL del form.
+    page = _FakePage("https://www.facebook.com/marketplace/create/vehicle",
+                     pass_visible=True, entra_tras=3)
     asyncio.run(marketplace_poster.ensure_logged_in(page, segundos=10))
-    assert page.consultas >= 2
+    assert page.consultas >= 3
+
+
+def test_cookies_viejas_no_cuentan_como_sesion_viva():
+    """c_user y xs siguen en el perfil aunque estén vencidas. Si nos guiáramos
+    por ellas daríamos el login por bueno con la pantalla de entrar delante, y
+    el bot reportaría 'no se encontró el formulario'."""
+    import asyncio, pytest
+    page = _FakePage("https://www.facebook.com/login/", pass_visible=True)  # nunca entra
+    with pytest.raises(RuntimeError, match="no se completó el login"):
+        asyncio.run(marketplace_poster.ensure_logged_in(page, segundos=3))
 
 
 def test_si_nadie_entra_cancela_con_mensaje_claro():
     import asyncio, pytest
-    page = _FakePage("https://www.facebook.com/login/")   # nunca aparece c_user
+    page = _FakePage("https://www.facebook.com/login/", pass_visible=True)
     with pytest.raises(RuntimeError, match="no se completó el login"):
         asyncio.run(marketplace_poster.ensure_logged_in(page, segundos=2))
 
@@ -146,3 +161,32 @@ def test_usa_el_perfil_del_login_por_terminal_si_existe(tmp_path, monkeypatch):
     assert user_data_dir == str(perfil)
     assert "Chrome/120.0.0.0" in kw["user_agent"]          # mismo UA del login
     assert "--disable-blink-features=AutomationControlled" in kw["args"]
+
+
+def test_con_chrome_real_no_pisamos_el_user_agent(monkeypatch, tmp_path):
+    """Declarar Chrome/120 mientras el binario va por la 148 contradice los
+    client hints y Facebook lo lee como bot justo al loguearse. Con el Chrome
+    de verdad dejamos su UA en paz."""
+    import asyncio
+    monkeypatch.setattr(marketplace_poster, "SESSION_CHANNEL", "chrome")
+    monkeypatch.setattr(marketplace_poster, "load_session_cookies", lambda *a, **k: [])
+    monkeypatch.setattr(marketplace_poster.Path, "home", staticmethod(lambda: tmp_path))
+    visto = {}
+
+    class _Ctx:
+        pages = []
+        async def close(self): pass
+        async def add_cookies(self, c): pass
+
+    class _Chromium:
+        async def launch_persistent_context(self, user_data_dir, **kw):
+            visto.update(kw); visto["dir"] = user_data_dir
+            return _Ctx()
+
+    class _P:
+        chromium = _Chromium()
+
+    asyncio.run(marketplace_poster.open_session_context(_P()))
+    assert visto["channel"] == "chrome"
+    assert "user_agent" not in visto            # el UA real de Chrome, sin tocar
+    assert visto["dir"].endswith(".fb_playwright_profile_chrome")   # perfil aparte

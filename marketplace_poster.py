@@ -56,10 +56,23 @@ def session_profile() -> Path:
     abriría el otro, y FB pediría login otra vez. Si no existe ninguno se
     devuelve el del poster igual: Playwright lo crea y ahí queda guardado el
     login que haga Alejo a mano."""
+    if SESSION_CHANNEL:
+        # Perfil aparte: Chrome y Chromium no comparten formato de perfil sin
+        # riesgo, y mezclarlos deja a Alejo logueándose dos veces.
+        return Path.home() / f".fb_playwright_profile_{SESSION_CHANNEL}"
     for d in SESSION_PROFILES:
         if d.is_dir():
             return d
     return SESSION_PROFILES[0]
+# El Chromium que trae Playwright va por la 148, pero acá declarábamos
+# Chrome/120: Facebook compara el UA contra los client hints (Sec-CH-UA), que
+# Playwright sigue mandando con la versión real, y esa contradicción es una
+# señal de bot justo en el momento del login.
+#
+# Con FB_BROWSER_CHANNEL=chrome usamos el Google Chrome de verdad instalado en
+# la máquina y NO pisamos el UA: todo coherente, que es lo que menos fricción
+# le da a Facebook cuando Alejo entra a mano.
+SESSION_CHANNEL = os.environ.get("FB_BROWSER_CHANNEL", "").strip()
 SESSION_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
               "AppleWebKit/537.36 (KHTML, like Gecko) "
               "Chrome/120.0.0.0 Safari/537.36")
@@ -79,20 +92,19 @@ async def open_session_context(p):
     """
     perfil = session_profile()
     perfil.mkdir(parents=True, exist_ok=True)
-    print(f"  🔑 Perfil de sesión: {perfil.name}")
-    ctx = await p.chromium.launch_persistent_context(
-        str(perfil), headless=False, slow_mo=300,
-        user_agent=SESSION_UA, viewport=VIEWPORT,
-        args=SESSION_ARGS, ignore_default_args=SESSION_IGNORE_ARGS,
-    )
-    # Semilla: si el perfil es nuevo, arrancamos con las cookies guardadas.
-    # De ahí en adelante manda el perfil, que Facebook refresca solo.
-    cookies = load_session_cookies()
-    if cookies:
-        try:
-            await ctx.add_cookies(cookies)
-        except PlaywrightError:
-            pass
+    opciones = dict(headless=False, slow_mo=300, viewport=VIEWPORT,
+                    args=SESSION_ARGS, ignore_default_args=SESSION_IGNORE_ARGS)
+    if SESSION_CHANNEL:
+        opciones["channel"] = SESSION_CHANNEL      # UA propio y coherente
+        print(f"  🔑 Navegador: {SESSION_CHANNEL} | perfil: {perfil.name}")
+    else:
+        opciones["user_agent"] = SESSION_UA
+        print(f"  🔑 Perfil de sesión: {perfil.name}")
+    ctx = await p.chromium.launch_persistent_context(str(perfil), **opciones)
+    # A propósito NO sembramos las cookies de browser_session/: traen c_user y
+    # xs aunque estén muertas, y eso hacía que diéramos el login por bueno
+    # cuando Facebook seguía mostrando la pantalla de entrar. El perfil es la
+    # única fuente de verdad de la sesión.
     return ctx, ctx.close
 
 
@@ -125,19 +137,38 @@ async def ensure_logged_in(page, segundos: int = 240) -> None:
     print("\n  🔐 Facebook pidió login. Entrá en la ventana que se abrió.")
     print("     Es la última vez: queda guardado en el perfil.\n", flush=True)
 
+    avisado_2fa = False
     for i in range(segundos):
         await asyncio.sleep(1)
-        names = {c["name"] for c in await page.context.cookies()}
-        if "c_user" in names and "xs" in names:
+        try:
+            names = {c["name"] for c in await page.context.cookies()}
+            url = page.url
+        except PlaywrightError:
+            continue  # la ventana está navegando justo ahora
+
+        # Que exista la cookie c_user NO significa que la sesión sirva: puede
+        # estar vencida. La señal buena es que Facebook deje de mostrar el muro.
+        if not await hay_muro_de_login(page) and "c_user" in names:
             print("  ✅ Login detectado — sigo publicando", flush=True)
             await asyncio.sleep(2)
             return
-        if i and i % 30 == 0:
-            print(f"     ... esperando ({i}s)", flush=True)
+
+        # Facebook manda a un checkpoint (código por SMS/app, "¿fuiste vos?").
+        # Hasta que no lo pases NO entrega la cookie xs, así que no es que el
+        # script esté colgado: está esperando que termines ese paso.
+        if "/checkpoint" in url or "two_step" in url or "/authenticate" in url:
+            if not avisado_2fa:
+                print("  🔒 Facebook pidió verificación en dos pasos — completala "
+                      "en la ventana y sigo solo.", flush=True)
+                avisado_2fa = True
+
+        if i and i % 15 == 0:
+            faltan = [n for n in ("c_user", "xs") if n not in names]
+            print(f"     ... esperando ({i}s) | página: {url[:90]}", flush=True)
+            print(f"         cookies que faltan: {', '.join(faltan)}", flush=True)
 
     raise RuntimeError(
-        f"no se completó el login en {segundos}s — publicación cancelada. "
-        "La ventana de Chrome quedó esperando; volvé a darle Publicar.")
+        f"no se completó el login en {segundos}s. Última página: {page.url[:120]}")
 
 def load_posted() -> dict:
     try:
