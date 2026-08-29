@@ -569,6 +569,12 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     if not car and isinstance(state.get(f"car_{thread_id}"), dict):
         car = dict(state[f"car_{thread_id}"])
 
+    # Fallback 2: caché persistente — el thread ya fue identificado como listing
+    # en un ciclo anterior (el modo activo pasa sender_name vacío y el header
+    # de Messenger ya no expone el título — verificado 15 jul 2026)
+    if not car and isinstance(state.get(f"car_{thread_id}"), dict):
+        car = dict(state[f"car_{thread_id}"])
+
     # SEGURIDAD (3er candado): solo responder conversaciones de Marketplace reales
     # (con carro/listing). Sin contexto de carro no es un listing → no tocar. Junto
     # con el inbox /marketplace/ y el selector /marketplace/t/ — verificado 8 jul 2026.
