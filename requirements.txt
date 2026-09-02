@@ -7,3 +7,4 @@ playwright
 openai
 Pillow
 twilio
+tzdata
