@@ -106,12 +106,14 @@ def extract_lead_data(conversation_history: list, platform: str = "facebook") ->
         messages=[{
             "role": "user",
             "content": (
-                f"Extrae datos de este chat de venta de carros. "
+                f"Extrae datos de este chat de venta de carros. Alejo es asesor Toyota pero "
+                f"también atiende trade-ins usados de otras marcas (Lexus, Mercedes, Nissan, etc.) — "
+                f"usa 'vehicle_make' SOLO si el cliente mencionó una marca específica, si no déjalo null. "
                 f"Responde SOLO con JSON válido, campos vacíos como null:\n\n"
                 f"{convo_text}\n\n"
                 f"Formato exacto:\n"
                 f'{{"first_name":null,"last_name":null,"phone":null,"email":null,'
-                f'"vehicle_make":"Toyota","vehicle_model":null,"vehicle_year":null}}'
+                f'"vehicle_make":null,"vehicle_model":null,"vehicle_year":null}}'
             )
         }]
     )
@@ -163,7 +165,7 @@ def send_to_crm(lead_data: dict, conversation_summary: str = "") -> dict:
 
 
 def _build_crm_note(conversation_history: list, platform: str, name: str,
-                    model: str, trim: str, conv_url: str) -> str:
+                    make: str, model: str, trim: str, conv_url: str) -> str:
     """Uses AI to generate a concise briefing note for Alejo in the CRM."""
     if not conversation_history:
         return f"Lead desde {platform.upper()}. Sin historial de conversación."
@@ -193,7 +195,7 @@ def _build_crm_note(conversation_history: list, platform: str, name: str,
         )
         note = resp.content[0].text.strip()
     except Exception:
-        note = f"Interesado en Toyota {model} {trim}. Canal: {platform.upper()}."
+        note = f"Interesado en {make} {model} {trim}. Canal: {platform.upper()}."
 
     return f"{note}\n\nCanal: {platform.upper()} | Chat: {conv_url}"
 
@@ -359,7 +361,7 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     from notes import analyze_buyer
     buyer = analyze_buyer(conversation_history)
 
-    crm_note = _build_crm_note(conversation_history, platform, name, model, trim, conv_url)
+    crm_note = _build_crm_note(conversation_history, platform, name, make, model, trim, conv_url)
 
     if ref:
         crm_note = f"[CAMPAÑA: {ref}]\n{crm_note}"
