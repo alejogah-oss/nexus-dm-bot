@@ -11,7 +11,7 @@ import uuid
 import requests as req_lib
 from flask import Flask, request, jsonify, Response, send_file
 from dotenv import load_dotenv
-from dm_bot import handle_message, handle_get_started, handle_marketplace_message, generate_reply
+from dm_bot import handle_message, handle_get_started, handle_marketplace_message, generate_reply, notify_alejo_hot_lead
 from comment_bot import handle_facebook_comment, handle_instagram_comment
 from marketplace_agent import get_car_by_listing_id
 from scanner_api import bp as scanner_bp
@@ -222,6 +222,7 @@ def web_chat():
         print(
             f"[WEB-CHAT] HOT LEAD — session={session_id[:12]}... | msg={message[:80]}"
         )
+        notify_alejo_hot_lead(session_id, "web", message, history=_web_conversations[session_id])
 
     resp = jsonify({"reply": reply, "session_id": session_id})
     resp.headers.update(_CORS_HEADERS)

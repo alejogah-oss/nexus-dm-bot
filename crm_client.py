@@ -19,7 +19,11 @@ IG_USER_ID      = os.getenv("META_IG_USER_ID", "17841476248130016")
 
 
 def conversation_url(sender_id: str, platform: str) -> str:
-    """Returns direct link to the conversation in Meta Business Suite."""
+    """Returns direct link to the conversation in Meta Business Suite.
+    El chat del sitio web no vive en Meta — no hay link directo, solo la nota
+    con el resumen generado por _build_crm_note."""
+    if platform == "web":
+        return "Chat del sitio web (sin link directo — ver nota)"
     asset_id = IG_USER_ID if platform == "instagram" else PAGE_ID
     return f"https://business.facebook.com/latest/inbox/all?asset_id={asset_id}&selected_item_id={sender_id}"
 

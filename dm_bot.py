@@ -257,13 +257,17 @@ def send_instagram_reply(recipient_id: str, text: str):
     return resp.json()
 
 
-def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
-    """Notifies Alejo when a hot lead is detected — pushes to CRM (which sends WhatsApp)."""
+def notify_alejo_hot_lead(sender_id: str, platform: str, message: str, history: list | None = None):
+    """Notifies Alejo when a hot lead is detected — pushes to CRM (which sends WhatsApp).
+    `history` se puede pasar explícito para canales que no viven en `_conversations`
+    (ej. el chat web, que guarda su historial en `_web_conversations` dentro de
+    webhook_server.py)."""
     print(f"\n🔥 HOT LEAD DETECTADO")
     print(f"   Platform: {platform}")
     print(f"   Sender ID: {sender_id}")
     print(f"   Mensaje: {message}")
-    history = _conversations.get(sender_id, [])
+    if history is None:
+        history = _conversations.get(sender_id, [])
 
     # Guardar nota con resumen + cita detectada
     note = save_note(sender_id, platform, history)
