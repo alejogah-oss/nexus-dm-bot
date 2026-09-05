@@ -78,7 +78,16 @@ def _is_icebreaker(postback: dict) -> bool:
     contacto. Un payload desconocido NO cuenta: ahí el saludo sigue siendo la
     respuesta correcta.
     """
-    return (postback.get("payload") or "").strip().startswith(ICEBREAKER_PREFIX)
+    payload = (postback.get("payload") or "").strip()
+    if payload.startswith(ICEBREAKER_PREFIX):
+        return True
+    # Instagram DESCARTA el payload al guardar los ice breakers — verificado el
+    # 5 sep 2026: se cargan con ICEBREAKER::… y al releer el perfil vuelven con
+    # payload "". Facebook sí lo conserva. Así que en IG el único rastro del tap
+    # es el título del botón, y sin esto el cliente recibiría el saludo genérico
+    # justo en la plataforma a la que apunta la campaña. GET_STARTED se resuelve
+    # antes y nunca llega hasta aquí.
+    return not payload and bool((postback.get("title") or "").strip())
 
 
 def _postback_referral(postback: dict) -> tuple[str | None, str | None]:
