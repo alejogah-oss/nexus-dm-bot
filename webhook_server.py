@@ -41,6 +41,53 @@ def _verify_signature(payload: bytes, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+# ── ICE BREAKERS / POSTBACKS ─────────────────────────────────────────────────
+# Convención de payload: al configurar los ice breakers (messenger_profile en
+# FB, ig_icebreakers en IG) el payload de cada pregunta debe llevar el prefijo
+# ICEBREAKER:: seguido del texto EXACTO de la pregunta que ve el cliente. Así,
+# cuando la toca, el webhook extrae ese texto y lo manda a handle_message()
+# como si el cliente lo hubiera escrito — reusa el flujo y la voz existentes,
+# no inventa respuestas nuevas. El copy real de las preguntas lo define Ink.
+ICEBREAKER_PREFIX = "ICEBREAKER::"
+
+
+def _postback_text(postback: dict) -> str:
+    """Texto a rutear a handle_message() para un evento de postback.
+
+    - Ice breaker (payload con el prefijo ICEBREAKER::) -> el texto de la
+      pregunta tal como se configuró.
+    - Cualquier payload desconocido (persistent menu, CTA nueva, botón que
+      todavía no mapeamos, etc.) -> el título del botón, o un saludo genérico
+      si no hay título. NUNCA se deja al cliente en silencio — eso es peor
+      que el chat vacío que ya teníamos (ver incidente 3 sep 2026: 8 clics,
+      0 conversaciones en la campaña de IG).
+    """
+    payload = (postback.get("payload") or "").strip()
+    if payload.startswith(ICEBREAKER_PREFIX):
+        text = payload[len(ICEBREAKER_PREFIX):].strip()
+        if text:
+            return text
+    return (postback.get("title") or "").strip() or "Hola"
+
+
+def _is_icebreaker(postback: dict) -> bool:
+    """True si el tap vino de una pregunta de arranque configurada por nosotros.
+
+    Solo en ese caso el cliente ya dijo qué quiere, así que handle_message()
+    debe responderle de una en vez de mandarle el saludo genérico de primer
+    contacto. Un payload desconocido NO cuenta: ahí el saludo sigue siendo la
+    respuesta correcta.
+    """
+    return (postback.get("payload") or "").strip().startswith(ICEBREAKER_PREFIX)
+
+
+def _postback_referral(postback: dict) -> tuple[str | None, str | None]:
+    """Extrae ref/ad_id de campañas click-to-messenger desde postback.referral,
+    igual que ya se hace desde message.referral / event.referral."""
+    referral = postback.get("referral", {}) or {}
+    return referral.get("ref"), referral.get("ad_id")
+
+
 # ── WEBHOOK VERIFICATION ─────────────────────────────────────────────────────
 @app.get("/webhook")
 def verify_webhook():
@@ -72,10 +119,24 @@ def receive_webhook():
             if not sender_id or sender_id == PAGE_ID:
                 continue  # skip messages from the page itself
 
-            # Get Started button tap
-            postback = event.get("postback", {})
-            if postback.get("payload") == "GET_STARTED":
-                handle_get_started(sender_id, platform="facebook")
+            # Postback: botón "Get Started", ice breaker, o cualquier otro CTA
+            # de messenger_profile. IMPORTANTE: un evento de postback nunca
+            # trae event.message — si se deja caer al bloque de mensajes de
+            # abajo, el "if not text: continue" lo mata en silencio (bug
+            # detectado 3 sep 2026 — 8 clics al botón del anuncio, 0
+            # conversaciones). Por eso se resuelve aquí por completo.
+            postback = event.get("postback") or {}
+            if postback:
+                payload = (postback.get("payload") or "").strip()
+                if payload == "GET_STARTED":
+                    handle_get_started(sender_id, platform="facebook")
+                else:
+                    ad_ref, ad_id = _postback_referral(postback)
+                    handle_message(
+                        sender_id, _postback_text(postback),
+                        platform="facebook", ref=ad_ref, ad_id=ad_id,
+                        skip_welcome=_is_icebreaker(postback),
+                    )
                 continue
 
             message = event.get("message", {})
@@ -112,12 +173,53 @@ def receive_webhook():
             if field == "messages":
                 for msg in value.get("messages", []):
                     sender_id = msg.get("from", {}).get("id")
+                    if not sender_id:
+                        continue
+
+                    # Defensivo: si esta integración anida el postback (ice
+                    # breaker / botón) dentro del mismo item de "messages" en
+                    # vez de mandarlo como field aparte "messaging_postbacks"
+                    # (ver bloque elif abajo), igual queda cubierto aquí.
+                    postback = msg.get("postback") or {}
+                    if postback:
+                        payload = (postback.get("payload") or "").strip()
+                        if payload == "GET_STARTED":
+                            handle_get_started(sender_id, platform="instagram")
+                        else:
+                            ad_ref, ad_id = _postback_referral(postback)
+                            handle_message(
+                                sender_id, _postback_text(postback),
+                                platform="instagram", ref=ad_ref, ad_id=ad_id,
+                                skip_welcome=_is_icebreaker(postback),
+                            )
+                        continue
+
                     text = msg.get("text", {}).get("body", "")
                     msg_referral = msg.get("referral", {}) or {}
                     ad_ref = msg_referral.get("ref")
                     ad_id  = msg_referral.get("ad_id")
-                    if sender_id and text:
+                    if text:
                         handle_message(sender_id, text, platform="instagram", ref=ad_ref, ad_id=ad_id)
+
+            # Instagram postbacks (ice breakers, botones de messenger_profile
+            # aplicado a IG) — Meta los entrega como field aparte
+            # "messaging_postbacks" bajo el mismo objeto "instagram", con la
+            # misma forma que usa Messenger (sender/postback.payload/title).
+            # Ver Graph API Webhooks Reference: Instagram.
+            elif field == "messaging_postbacks":
+                sender_id = value.get("sender", {}).get("id")
+                postback = value.get("postback", {}) or {}
+                if sender_id:
+                    payload = (postback.get("payload") or "").strip()
+                    if payload == "GET_STARTED":
+                        handle_get_started(sender_id, platform="instagram")
+                    else:
+                        ad_ref, ad_id = _postback_referral(postback)
+                        handle_message(
+                            sender_id, _postback_text(postback),
+                            platform="instagram", ref=ad_ref, ad_id=ad_id,
+                            skip_welcome=_is_icebreaker(postback),
+                        )
 
             # Instagram comentarios en posts/anuncios
             elif field == "comments":

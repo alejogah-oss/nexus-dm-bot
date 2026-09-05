@@ -631,13 +631,17 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
 
 
 def handle_message(sender_id: str, message_text: str, platform: str = "facebook",
-                    ref: str | None = None, ad_id: str | None = None) -> str:
+                    ref: str | None = None, ad_id: str | None = None,
+                    skip_welcome: bool = False) -> str:
     """Main handler — processes incoming DM and sends reply."""
     _track_campaign_ref(sender_id, ref, ad_id)
     history = _conversations.get(sender_id, [])
 
-    # First message — send welcome only, skip AI reply
-    if not history:
+    # First message — send welcome only, skip AI reply.
+    # skip_welcome=True lo salta a propósito: cuando el cliente toca una pregunta
+    # de arranque (ice breaker) ya dijo qué quiere, así que responderle
+    # "¿En qué te puedo ayudar?" se lee como si el bot no lo hubiera leído.
+    if not history and not skip_welcome:
         log_event("CHAT_STARTED", f"Primer mensaje: {message_text[:80]}", platform)
         if platform == "instagram":
             send_instagram_reply(sender_id, WELCOME_MESSAGE)
@@ -645,6 +649,9 @@ def handle_message(sender_id: str, message_text: str, platform: str = "facebook"
             send_facebook_reply(sender_id, WELCOME_MESSAGE)
         _conversations[sender_id] = [{"role": "user", "content": message_text}]
         return WELCOME_MESSAGE
+
+    if not history:
+        log_event("CHAT_STARTED", f"Primer mensaje: {message_text[:80]}", platform)
 
     reply, is_hot, credit_form = generate_reply(history, message_text)
 
