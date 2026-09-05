@@ -6,6 +6,27 @@ CAR_UN_SOLO_TRIM = {"yr": 2026, "model": "GR Supra", "trim": "3.0", "color": "Re
                      "price": 58000, "price_hi": 0, "vin": "2FAKE"}
 
 
+def test_nunca_da_direccion_indica_contacto_por_whatsapp():
+    # Fix ago 2026 (pedido de Alejo): nunca dar la dirección en el chat, ni al
+    # cerrar la cita — el siguiente paso es contacto por WhatsApp.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    assert "2200 n state rd" not in p.lower()
+    idx = p.find("Con día + número")
+    assert idx != -1
+    cierre = p[idx:idx + 300]
+    assert "whatsapp" in cierre.lower()
+    assert "nunca des la dirección" in cierre.lower()
+
+
+def test_credito_bajo_pregunta_por_down_payment():
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("CRÉDITO BAJO")
+    assert idx != -1
+    seccion = p[idx:idx + 500].lower()
+    assert "mal crédito" in seccion
+    assert "enganche" in seccion or "down payment" in seccion
+
+
 def test_ofrece_dos_horarios_concretos_no_pregunta_abierta():
     p = _marketplace_voice(CAR_CON_RANGO)
     assert "Tengo espacio hoy en la tarde o mañana en la mañana" in p
@@ -235,6 +256,27 @@ def test_carros_usados_sigue_siendo_el_unico_camino_para_disponibilidad():
     assert "Tengo espacio hoy en la tarde o mañana en la mañana" not in seccion_usados
 
 
+def test_alt_options_bloque_ausente_por_defecto():
+    # Sin alt_options_text en el car dict (caso normal, sin match del scanner),
+    # el bloque de opciones alternativas no debe aparecer en el prompt.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    assert "OPCIONES REALES DISPONIBLES" not in p
+
+
+def test_alt_options_bloque_presente_con_alt_options_text():
+    car = dict(CAR_CON_RANGO)
+    car["alt_options_text"] = "- 2018 Corolla LE: $12,000\n- 2019 Camry LE: $15,500"
+    p = _marketplace_voice(car)
+    idx = p.find("OPCIONES REALES DISPONIBLES")
+    assert idx != -1
+    seccion = p[idx:idx + 700]
+    assert "2018 Corolla LE: $12,000" in seccion
+    assert "2019 Camry LE: $15,500" in seccion
+    assert "nunca inventes año, modelo o precio fuera de esta lista" in seccion.lower()
+    assert "una sola pregunta" in seccion.lower()
+    assert "nunca dos preguntas en el mismo mensaje" in seccion.lower()
+
+
 def test_direccion_solo_tras_horario_y_numero_confirmados():
     # Alineado con BOT_VOICE: el gate de nombre/dirección del dealer requiere
     # AMBOS (horario confirmado Y número dado) — no basta con uno de los dos.
@@ -245,3 +287,55 @@ def test_direccion_solo_tras_horario_y_numero_confirmados():
     seccion = p[idx:idx + 200]
     assert "confirmado una cita y dado su número" in seccion
     assert "confirmado una cita o dado su número" not in seccion
+
+
+def test_realismo_horario_no_ofrece_hoy_despues_de_las_5pm():
+    # Fix sep 2026 (reporte de Alejo): el bot ofrecía "hoy" sin dimensionar
+    # si ya era tarde. Corte explícito a las 5pm hora de Florida.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("REALISMO DEL HORARIO")
+    assert idx != -1
+    seccion = p[idx:idx + 900]
+    assert "5:00pm hora de florida" in seccion.lower()
+    assert "no ofrezcas \"hoy\"" in seccion.lower()
+    assert "mañana en la mañana o mañana en la tarde" in seccion.lower()
+
+
+def test_realismo_horario_zona_lejos_del_sur_de_florida():
+    # Fix sep 2026: si el cliente dice que está lejos del sur de FL, no se le
+    # ofrece hoy/mañana — se le pregunta qué día de la semana le queda mejor.
+    # Aplica SOLO cuando el cliente lo manifiesta explícitamente (decisión de
+    # Alejo: el bot nunca pregunta proactivamente de dónde viene).
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("REALISMO DEL HORARIO")
+    assert idx != -1
+    seccion = p[idx:idx + 900].lower()
+    assert "lejos del sur de la florida" in seccion
+    assert "no ofrezcas \"hoy\" ni \"mañana\"" in seccion
+    assert "qué día de esta semana le queda mejor" in seccion
+
+
+def test_realismo_horario_si_cliente_insiste_no_se_le_contradice():
+    # Ninguno de los dos cortes (hora/zona) es un rechazo: si el cliente
+    # insiste en venir hoy igual, el bot lo acepta y sigue el flujo normal.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("REALISMO DEL HORARIO")
+    assert idx != -1
+    seccion = p[idx:idx + 900].lower()
+    assert "ninguno de los dos cortes es un rechazo" in seccion
+    assert "no se lo cuestiones" in seccion
+
+
+def test_cierre_despues_de_las_8pm_no_confirma_avisa_dia_siguiente():
+    # Fix sep 2026 (Alejo): después de las 8pm, el bot sigue indagando y
+    # agendando igual — SOLO cambia la frase final de cierre, que ya no dice
+    # "quedas agendado" sino que avisa que se contacta al día siguiente.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("Con día + número")
+    assert idx != -1
+    seccion = p[idx:idx + 900]
+    assert "8:00pm hora de Florida" in seccion
+    assert "mañana a primera hora te contactamos" in seccion
+    # el resto del paso (WhatsApp, nunca dar dirección, HOT LEAD) sigue intacto
+    assert "nunca des la dirección" in seccion.lower()
+    assert "[HOT LEAD]" in seccion

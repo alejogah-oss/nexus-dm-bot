@@ -55,7 +55,10 @@ def test_extract_appointment_si_llama_a_claude_cuando_no_hay_cita_abierta(tmp_pa
     monkeypatch.setattr(appointments, "APPOINTMENTS_FILE", str(f))
 
     fake_response = MagicMock()
-    fake_response.content = [MagicMock(text='{"fecha": null, "hora": null, "nombre": null, "telefono": null}')]
+    fake_response.content = [MagicMock(text=(
+        '{"confirmada": false, "fecha": null, "hora": null, "nombre": null, '
+        '"telefono": null, "lugar_origen": null}'
+    ))]
 
     with patch.object(appointments._claude.messages, "create", return_value=fake_response) as mock_create:
         result = appointments.extract_appointment_from_conversation(
@@ -76,8 +79,8 @@ def test_extract_appointment_crea_cita_cuando_hay_fecha_real(tmp_path, monkeypat
 
     fake_response = MagicMock()
     fake_response.content = [MagicMock(text=(
-        '{"fecha": "2026-07-30", "hora": "3pm", '
-        '"nombre": "Maria Lopez", "telefono": "3055551234"}'
+        '{"confirmada": true, "fecha": "2026-07-30", "hora": "3pm", '
+        '"nombre": "Maria Lopez", "telefono": "3055551234", "lugar_origen": null}'
     ))]
 
     car = {"yr": 2026, "model": "Camry", "trim": "XLE", "color": "Blanco"}
@@ -85,7 +88,7 @@ def test_extract_appointment_crea_cita_cuando_hay_fecha_real(tmp_path, monkeypat
     with patch.object(appointments._claude.messages, "create", return_value=fake_response) as mock_create, \
          patch.object(appointments, "pulse_notify") as mock_notify:
         result = appointments.extract_appointment_from_conversation(
-            history=[{"role": "user", "content": "puedo ir el 2026-07-30 a las 3pm"}],
+            history=[{"role": "user", "content": "si, el 2026-07-30 a las 3pm"}],
             car=car,
             sender_id="cust3",
             platform="marketplace",
@@ -103,8 +106,82 @@ def test_extract_appointment_crea_cita_cuando_hay_fecha_real(tmp_path, monkeypat
     assert result["platform"] == "marketplace"
     assert result["car"] == "2026 Toyota Camry XLE Blanco"
     assert result["status"] == "pending"
+    assert result["customer_origin"] == ""
 
     saved = json.loads(f.read_text())
     assert len(saved) == 1
     assert saved[0]["id"] == result["id"]
     assert saved[0]["date_preference"] == "2026-07-30"
+
+
+def test_extract_appointment_no_crea_si_falta_confirmada(tmp_path, monkeypatch):
+    """Fecha+hora+telefono sin 'confirmada' explícita (ej. el cliente dijo 'quizás') no basta."""
+    f = tmp_path / "appts.json"
+    f.write_text("[]")
+    monkeypatch.setattr(appointments, "APPOINTMENTS_FILE", str(f))
+
+    fake_response = MagicMock()
+    fake_response.content = [MagicMock(text=(
+        '{"confirmada": false, "fecha": "2026-07-30", "hora": "3pm", '
+        '"nombre": "Pepe", "telefono": "3055551234", "lugar_origen": null}'
+    ))]
+
+    with patch.object(appointments._claude.messages, "create", return_value=fake_response):
+        result = appointments.extract_appointment_from_conversation(
+            history=[{"role": "user", "content": "quizas el 30 a las 3pm"}],
+            car={"yr": 2026, "model": "Camry", "trim": "", "color": ""},
+            sender_id="cust4",
+            platform="marketplace",
+        )
+
+    assert result is None
+
+
+def test_extract_appointment_no_crea_si_falta_hora(tmp_path, monkeypatch):
+    """Reproduce el bug reportado: confirmada+fecha+telefono sin hora NO debe crear cita."""
+    f = tmp_path / "appts.json"
+    f.write_text("[]")
+    monkeypatch.setattr(appointments, "APPOINTMENTS_FILE", str(f))
+
+    fake_response = MagicMock()
+    fake_response.content = [MagicMock(text=(
+        '{"confirmada": true, "fecha": "2026-07-30", "hora": null, '
+        '"nombre": "Pepe", "telefono": "3055551234", "lugar_origen": null}'
+    ))]
+
+    with patch.object(appointments._claude.messages, "create", return_value=fake_response):
+        result = appointments.extract_appointment_from_conversation(
+            history=[{"role": "user", "content": "si, el 30 me sirve"}],
+            car={"yr": 2026, "model": "Camry", "trim": "", "color": ""},
+            sender_id="cust5",
+            platform="marketplace",
+        )
+
+    assert result is None
+
+
+def test_extract_appointment_guarda_lugar_origen_sin_bloquear(tmp_path, monkeypatch):
+    """lugar_origen es informativo: se guarda si viene, pero su ausencia no bloquea la cita."""
+    f = tmp_path / "appts.json"
+    f.write_text("[]")
+    monkeypatch.setattr(appointments, "APPOINTMENTS_FILE", str(f))
+
+    fake_response = MagicMock()
+    fake_response.content = [MagicMock(text=(
+        '{"confirmada": true, "fecha": "2026-07-30", "hora": "3pm", '
+        '"nombre": "Ana", "telefono": "3055551234", "lugar_origen": "Orlando"}'
+    ))]
+
+    car = {"yr": 2026, "model": "Camry", "trim": "XLE", "color": "Blanco"}
+
+    with patch.object(appointments._claude.messages, "create", return_value=fake_response), \
+         patch.object(appointments, "pulse_notify"):
+        result = appointments.extract_appointment_from_conversation(
+            history=[{"role": "user", "content": "vengo desde Orlando, si el 30 a las 3pm"}],
+            car=car,
+            sender_id="cust6",
+            platform="marketplace",
+        )
+
+    assert result is not None
+    assert result["customer_origin"] == "Orlando"

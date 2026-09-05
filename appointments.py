@@ -141,6 +141,7 @@ def create_appointment(
     time_preference: str = "",
     customer_name: str = "",
     customer_phone: str = "",
+    customer_origin: str = "",
 ) -> dict:
     """
     Crea una cita nueva y notifica a Alejo vía WhatsApp.
@@ -152,6 +153,7 @@ def create_appointment(
         "customer_id": customer_id,
         "customer_name": customer_name or "Sin nombre",
         "customer_phone": customer_phone or "",
+        "customer_origin": customer_origin or "",
         "platform": platform,
         "car": car_description,
         "date_preference": date_preference,
@@ -182,12 +184,14 @@ def _notify_new_appointment(appt: dict):
     appt_id = appt["id"]
     phone = appt["customer_phone"]
     phone_line = f"\n📞 Tel: {phone}" if phone else ""
+    origin = appt.get("customer_origin", "")
+    origin_line = f"\n📍 Viene desde: {origin}" if origin else ""
 
     gcal = google_calendar_link(date_pref, time_pref, name, car)
 
     detail = (
         f"📅 NUEVA CITA — NEXUS\n"
-        f"Cliente: {name} ({platform}){phone_line}\n"
+        f"Cliente: {name} ({platform}){phone_line}{origin_line}\n"
         f"Carro: {car}\n"
         f"Fecha: {date_pref}\n"
         f"Hora: {time_pref}\n\n"
@@ -310,13 +314,22 @@ def extract_appointment_from_conversation(history: list, car: dict, sender_id: s
             "role": "user",
             "content": (
                 f"Hoy es {today_str}. Analiza esta conversación de venta de carros. "
-                f"¿El cliente mencionó CUÁNDO quiere venir al dealer? "
+                f"Solo cuenta como CITA CONFIRMADA si el cliente aceptó EXPLÍCITAMENTE un día "
+                f"específico para venir al dealer (ej. \"sí, el sábado\", \"dale, mañana a las 3\", "
+                f"\"perfecto, nos vemos el viernes\"). NO cuenta si es tentativo, condicional o una "
+                f"simple mención (ej. \"quizás el finde\", \"tal vez mañana\", \"déjame ver\", "
+                f"\"lo pienso\"), ni si fue solo el bot quien propuso el horario sin que el cliente "
+                f"lo aceptara claramente.\n"
                 f"Responde SOLO con JSON válido:\n\n"
                 f"{convo_text}\n\n"
-                f"Formato exacto (null si no mencionó):\n"
-                f'{{"fecha": null, "hora": null, "nombre": null, "telefono": null}}\n\n'
-                f"Para fecha: usa formato YYYY-MM-DD si puedes, o descripción natural (ej: \"este sábado\", \"mañana\"). "
-                f"Solo incluye si el cliente lo dijo explícitamente."
+                f'Formato exacto (usa null en cada campo que no aplique):\n'
+                f'{{"confirmada": false, "fecha": null, "hora": null, "nombre": null, "telefono": null, "lugar_origen": null}}\n\n'
+                f'"confirmada": true SOLO si el cliente aceptó explícitamente el día. '
+                f"Para fecha: formato YYYY-MM-DD si puedes, o descripción natural (ej: \"este sábado\"). "
+                f'"telefono": solo si el cliente dio un número de teléfono en la conversación. '
+                f'"lugar_origen": SOLO si el cliente dijo explícitamente de dónde viene o qué tan lejos '
+                f'está (ej. "vengo desde Orlando", "estoy a 2 horas", "vivo en Georgia") — no lo infieras '
+                f'ni lo completes si no lo dijo.'
             )
         }]
     )
@@ -327,10 +340,20 @@ def extract_appointment_from_conversation(history: list, car: dict, sender_id: s
 
     try:
         data = json.loads(text)
-        if not data.get("fecha"):
+        # Guarda (decisión de Alejo, ago 2026, ampliada sep 2026): crear cita SOLO si
+        # el cliente confirmó día/hora explícitamente Y dejó teléfono. Antes bastaba
+        # con que Haiku detectara cualquier fecha "mencionada" — un "quizás el finde"
+        # o un horario que solo propuso el bot creaba una cita fantasma que disparaba
+        # WhatsApp a Alejo y hasta un SMS de recordatorio al cliente (bug real:
+        # "manda mensajes que no son lead diciendo que hay citas"). Sin teléfono no
+        # se puede recordar ni contactar, así que tampoco se registra como cita.
+        # "hora" se sumó porque el gate original dejaba crear citas sin hora
+        # (quedaban como "Sin especificar"). "lugar_origen" es solo informativo —
+        # no bloquea la creación si el cliente no lo dijo.
+        if not (data.get("confirmada") and data.get("fecha") and data.get("hora") and data.get("telefono")):
             return None
 
-        car_desc = f"{car['yr']} Toyota {car['model']} {car.get('trim', '')} {car['color']}".strip()
+        car_desc = f"{car['yr']} {car.get('make') or 'Toyota'} {car['model']} {car.get('trim', '')} {car['color']}".strip()
         appt = create_appointment(
             customer_id=sender_id,
             platform=platform,
@@ -339,6 +362,7 @@ def extract_appointment_from_conversation(history: list, car: dict, sender_id: s
             time_preference=data.get("hora") or "",
             customer_name=data.get("nombre") or "",
             customer_phone=data.get("telefono") or "",
+            customer_origin=data.get("lugar_origen") or "",
         )
         return appt
     except Exception as e:
