@@ -183,15 +183,53 @@ def _price_table() -> str:
     return _price_table_cache["text"]
 
 
-def _voice_with_prices() -> str:
-    """BOT_VOICE + precios reales del inventario inyectados."""
+def _looks_like_name(value: str | None) -> bool:
+    """¿El nombre del perfil parece un nombre de persona y no un alias?
+
+    En Instagram mucha gente pone "Carlos 🔥", "elmecanico_954" o "🚗VENTAS🚗".
+    Saludar con eso literal queda peor que no saludar con nombre. Solo se acepta
+    algo corto, sin dígitos, sin emoji y sin guiones bajos/puntos de usuario.
+    """
+    v = (value or "").strip()
+    if not (2 <= len(v) <= 20):
+        return False
+    if any(c.isdigit() or c in "_@.·|/\\" for c in v):
+        return False
+    return all(c.isalpha() or c in " '-" for c in v)
+
+
+def _channel_line(channel: str, customer_name: str | None) -> str:
+    """Le dice al modelo por que canal llega el mensaje.
+
+    Sin esto el modelo no puede distinguir Instagram del chat de la web, y
+    termina aplicando la REGLA ABSOLUTA DEL NOMBRE (escrita solo para el chat
+    web, donde no hay perfil) en los DMs, donde el nombre ya lo da la
+    plataforma. Sintoma real: el cliente toca "¿Como quedaria la cuota
+    mensual?" y el bot le responde "¿como te llamas?".
+    """
+    if channel == "sitio web":
+        return ("\n\nCANAL: sitio web. Aqui NO tienes el nombre del cliente — "
+                "aplica la REGLA ABSOLUTA DEL NOMBRE tal como esta escrita.")
+    if customer_name:
+        return (f"\n\nCANAL: mensaje directo ({channel}). El cliente se llama "
+                f"{customer_name} — ya lo sabes por su perfil. NUNCA se lo preguntes. "
+                "Usalo con naturalidad, sin abusar. La REGLA ABSOLUTA DEL NOMBRE "
+                "NO aplica en este canal.")
+    return (f"\n\nCANAL: mensaje directo ({channel}). La REGLA ABSOLUTA DEL NOMBRE "
+            "NO aplica aqui: NO abras pidiendo el nombre. Responde primero lo que "
+            "el cliente pregunta. Si mas adelante hace falta para agendar, pidelo "
+            "en ese momento.")
+
+
+def _voice_with_prices(channel: str = "sitio web", customer_name: str | None = None) -> str:
+    """BOT_VOICE + precios reales del inventario + de que canal viene."""
     table = _price_table()
     fecha = ("\n\n" + _fecha_linea() +
              "\nUsa esa fecha para interpretar y confirmar cualquier día que mencione el cliente — "
              "\"mañana\", \"el sábado\", \"la próxima semana\" siempre se calculan desde HOY ES.")
     if not table:
-        return BOT_VOICE + fecha + "\n\nPRECIOS DEL INVENTARIO: no disponibles ahora — NUNCA des ningún número de precio; pide el número del cliente para confirmárselo."
-    return BOT_VOICE + fecha + f"\n\nPRECIOS DEL INVENTARIO (vehículos nuevos — usa SOLO estos números):\n{table}"
+        return BOT_VOICE + fecha + _channel_line(channel, customer_name) + "\n\nPRECIOS DEL INVENTARIO: no disponibles ahora — NUNCA des ningún número de precio; pide el número del cliente para confirmárselo."
+    return BOT_VOICE + fecha + _channel_line(channel, customer_name) + f"\n\nPRECIOS DEL INVENTARIO (vehículos nuevos — usa SOLO estos números):\n{table}"
 
 
 def _claude_create(model: str, max_tokens: int, system: str, messages: list, retries: int = 3) -> str:
@@ -211,10 +249,13 @@ def _claude_create(model: str, max_tokens: int, system: str, messages: list, ret
                 raise
 
 
-def generate_reply(conversation_history: list, new_message: str) -> tuple[str, bool, bool]:
+def generate_reply(conversation_history: list, new_message: str,
+                   channel: str = "sitio web",
+                   customer_name: str | None = None) -> tuple[str, bool, bool]:
     """Returns (reply_text, is_hot_lead, credit_form_confirmed)."""
     messages = conversation_history + [{"role": "user", "content": new_message}]
-    reply = _claude_create("claude-sonnet-4-6", 160, _voice_with_prices(), messages)
+    reply = _claude_create("claude-sonnet-4-6", 160,
+                           _voice_with_prices(channel, customer_name), messages)
     is_hot = "[HOT LEAD]" in reply
     credit_form = "[CREDIT_FORM]" in reply
     clean = reply.replace("[HOT LEAD]", "").replace("[CREDIT_FORM]", "").strip()
@@ -287,6 +328,7 @@ def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
 # In-memory conversation stores
 _conversations: dict[str, list] = {}
 _mp_conversations: dict[str, list] = {}  # Marketplace threads (separate namespace)
+_profile_names: dict[str, str | None] = {}  # nombre del perfil por sender (None = no usable)
 
 # Referral de campaña (Meta Ads Click-to-Messenger/Instagram) por sender_id — se
 # captura en el primer mensaje que lo trae y se conserva porque el HOT LEAD
@@ -650,10 +692,28 @@ def handle_message(sender_id: str, message_text: str, platform: str = "facebook"
         _conversations[sender_id] = [{"role": "user", "content": message_text}]
         return WELCOME_MESSAGE
 
+    customer_name = _profile_names.get(sender_id)
     if not history:
         log_event("CHAT_STARTED", f"Primer mensaje: {message_text[:80]}", platform)
+        # Reservar el hilo ANTES de llamar a Claude. La llamada tarda 1-3s y
+        # llegan varios eventos casi a la vez: sin esto todos leen el historial
+        # vacio y cada uno manda su propia respuesta (incidente 5 sep 2026:
+        # cinco saludos al mismo cliente en tres segundos).
+        _conversations[sender_id] = history
+        # El nombre lo da la plataforma — no hay que preguntarlo.
+        if sender_id not in _profile_names:
+            try:
+                from crm_client import fetch_user_profile
+                prof = fetch_user_profile(sender_id, platform) or {}
+                first = prof.get("first_name")
+                customer_name = first if _looks_like_name(first) else None
+                _profile_names[sender_id] = customer_name
+                print(f"[PERFIL] {sender_id[:10]}... → {customer_name or 'sin nombre usable'}")
+            except Exception as e:
+                print(f"  ⚠️  perfil no disponible: {e}")
+                customer_name = None
 
-    reply, is_hot, credit_form = generate_reply(history, message_text)
+    reply, is_hot, credit_form = generate_reply(history, message_text, platform, customer_name)
 
     # Update conversation history
     history.append({"role": "user", "content": message_text})

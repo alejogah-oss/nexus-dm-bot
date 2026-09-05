@@ -30,6 +30,11 @@ def scanner_pwa():
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "nexus_alejo_2026")
 APP_SECRET   = os.getenv("META_APP_SECRET", "")
 PAGE_ID      = os.getenv("META_PAGE_ID", "")
+IG_USER_ID   = os.getenv("META_IG_USER_ID", "")
+# Todo lo que sale de nuestras propias cuentas se ignora. Sin esto el bot
+# procesa el eco de sus propias respuestas como si fuera un cliente
+# escribiendo, y se contesta a si mismo (incidente 5 sep 2026).
+_OWN_IDS     = {i for i in (PAGE_ID, IG_USER_ID) if i}
 
 
 def _verify_signature(payload: bytes, signature: str) -> bool:
@@ -125,8 +130,10 @@ def receive_webhook():
         # Facebook Messenger
         for event in entry.get("messaging", []):
             sender_id = event.get("sender", {}).get("id")
-            if not sender_id or sender_id == PAGE_ID:
-                continue  # skip messages from the page itself
+            if not sender_id or sender_id in _OWN_IDS:
+                continue  # mensaje de nuestras propias cuentas
+            if (event.get("message") or {}).get("is_echo"):
+                continue  # eco de una respuesta que mandamos nosotros
 
             # Postback: botón "Get Started", ice breaker, o cualquier otro CTA
             # de messenger_profile. IMPORTANTE: un evento de postback nunca
@@ -182,6 +189,8 @@ def receive_webhook():
             if field == "messages":
                 for msg in value.get("messages", []):
                     sender_id = msg.get("from", {}).get("id")
+                    if not sender_id or sender_id in _OWN_IDS or msg.get("is_echo"):
+                        continue  # nuestro propio mensaje o su eco
                     if not sender_id:
                         continue
 
@@ -323,7 +332,7 @@ def web_chat():
             {"role": "assistant", "content": WEB_WELCOME},
         ]
 
-    reply, is_hot, _ = generate_reply(history, message)
+    reply, is_hot, _ = generate_reply(history, message, channel="sitio web")
 
     history.append({"role": "user", "content": message})
     history.append({"role": "assistant", "content": reply})
