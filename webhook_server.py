@@ -240,34 +240,25 @@ def receive_webhook():
                         )
 
             # Instagram comentarios en posts/anuncios
+            # DESACTIVADO 2026-09-06 — comment bot en loop de auto-respuestas, ver Wire.
+            # handle_instagram_comment no filtra si el comentario viene de la propia
+            # cuenta -> el bot respondia a sus propias respuestas -> loop infinito,
+            # y ademas respondia a TODO comentario en anuncios de alto trafico.
+            # comment_bot.py se conserva intacto. Para reactivar: agregar guard de
+            # PAGE_ID/IG_USER_ID + dedupe de comment_id + excluir anuncios (o rate
+            # limit), re-suscribir el campo en Meta, y recien ahi reponer esta rama.
             elif field == "comments":
-                comment_id = value.get("id")
-                username   = value.get("from", {}).get("username", "")
-                text       = value.get("text", "")
-                if comment_id and text:
-                    handle_instagram_comment(comment_id, username, text)
+                print("[COMMENTS] evento ignorado — comment bot DESACTIVADO 2026-09-06")
 
             # Facebook comentarios en posts/anuncios
+            # DESACTIVADO 2026-09-06 — comment bot en loop de auto-respuestas, ver Wire.
             elif field == "feed":
-                item = value.get("item")
-                verb = value.get("verb")
-                if item == "comment" and verb == "add":
-                    comment_id = value.get("comment_id", "")
-                    from_name  = value.get("from", {}).get("name", "")
-                    text       = value.get("message", "")
-                    post_id    = value.get("post_id", "")
-                    if comment_id and text:
-                        handle_facebook_comment(comment_id, from_name, text, post_id)
+                print("[FEED] evento ignorado — comment bot DESACTIVADO 2026-09-06")
 
             # Menciones de la página en comentarios de terceros
+            # DESACTIVADO 2026-09-06 — comment bot en loop de auto-respuestas, ver Wire.
             elif field == "mention":
-                comment_id = value.get("comment_id", "")
-                from_name  = value.get("sender", {}).get("name", "")
-                text       = value.get("message", "")
-                post_id    = value.get("post_id", "")
-                if comment_id and text:
-                    print(f"[MENTION] {from_name}: {text[:60]}...")
-                    handle_facebook_comment(comment_id, from_name, text, post_id)
+                print("[MENTION] evento ignorado — comment bot DESACTIVADO 2026-09-06")
 
     return "ok", 200
 
