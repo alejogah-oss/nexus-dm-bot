@@ -12,7 +12,7 @@ import requests as req_lib
 from flask import Flask, request, jsonify, Response, send_file
 from dotenv import load_dotenv
 from dm_bot import handle_message, handle_get_started, handle_marketplace_message, generate_reply, notify_alejo_hot_lead
-from comment_bot import handle_facebook_comment, handle_instagram_comment
+from comment_bot import handle_comment
 from marketplace_agent import get_car_by_listing_id
 from scanner_api import bp as scanner_bp
 
@@ -100,6 +100,42 @@ def _postback_referral(postback: dict) -> tuple[str | None, str | None]:
     igual que ya se hace desde message.referral / event.referral."""
     referral = postback.get("referral", {}) or {}
     return referral.get("ref"), referral.get("ad_id")
+
+
+def _comment_event(platform: str, field: str, value: dict) -> dict | None:
+    """Normaliza un payload de comentario (IG 'comments' / FB 'feed' / FB 'mention')
+    al contrato común que consume comment_bot.handle_comment. Devuelve None si el
+    evento no es un comentario nuevo."""
+    if field == "comments":  # Instagram
+        return {
+            "platform": "instagram",
+            "comment_id": value.get("id", ""),
+            "author_id": (value.get("from") or {}).get("id", ""),
+            "text": value.get("text", "") or "",
+            "post_id": (value.get("media") or {}).get("id", ""),
+            "parent_id": value.get("parent_id", "") or "",
+        }
+    if field == "feed":  # Facebook
+        if value.get("item") != "comment" or value.get("verb") != "add":
+            return None
+        return {
+            "platform": "facebook",
+            "comment_id": value.get("comment_id", ""),
+            "author_id": (value.get("from") or {}).get("id", ""),
+            "text": value.get("message", "") or "",
+            "post_id": value.get("post_id", ""),
+            "parent_id": value.get("parent_id", "") or "",
+        }
+    if field == "mention":  # Facebook — etiquetan a la página en un comentario
+        return {
+            "platform": "facebook",
+            "comment_id": value.get("comment_id", ""),
+            "author_id": (value.get("sender") or {}).get("id", ""),
+            "text": value.get("message", "") or "",
+            "post_id": value.get("post_id", ""),
+            "parent_id": value.get("parent_id", "") or "",
+        }
+    return None
 
 
 # ── WEBHOOK VERIFICATION ─────────────────────────────────────────────────────
@@ -239,26 +275,19 @@ def receive_webhook():
                             skip_welcome=_is_icebreaker(postback),
                         )
 
-            # Instagram comentarios en posts/anuncios
-            # DESACTIVADO 2026-09-06 — comment bot en loop de auto-respuestas, ver Wire.
-            # handle_instagram_comment no filtra si el comentario viene de la propia
-            # cuenta -> el bot respondia a sus propias respuestas -> loop infinito,
-            # y ademas respondia a TODO comentario en anuncios de alto trafico.
-            # comment_bot.py se conserva intacto. Para reactivar: agregar guard de
-            # PAGE_ID/IG_USER_ID + dedupe de comment_id + excluir anuncios (o rate
-            # limit), re-suscribir el campo en Meta, y recien ahi reponer esta rama.
-            elif field == "comments":
-                print("[COMMENTS] evento ignorado — comment bot DESACTIVADO 2026-09-06")
-
-            # Facebook comentarios en posts/anuncios
-            # DESACTIVADO 2026-09-06 — comment bot en loop de auto-respuestas, ver Wire.
-            elif field == "feed":
-                print("[FEED] evento ignorado — comment bot DESACTIVADO 2026-09-06")
-
-            # Menciones de la página en comentarios de terceros
-            # DESACTIVADO 2026-09-06 — comment bot en loop de auto-respuestas, ver Wire.
-            elif field == "mention":
-                print("[MENTION] evento ignorado — comment bot DESACTIVADO 2026-09-06")
+            # Comentarios: IG 'comments', FB 'feed', FB 'mention'.
+            # Todo pasa por comment_bot.handle_comment, que aplica las 7 guardas
+            # (kill switch, identidad, top-level, dedupe, rate limit, intención).
+            # Una excepción aquí NUNCA debe romper el 200 del webhook.
+            elif field in ("comments", "feed", "mention"):
+                try:
+                    platform = "instagram" if field == "comments" else "facebook"
+                    ev = _comment_event(platform, field, value)
+                    if ev and ev["comment_id"]:
+                        result = handle_comment(ev)
+                        print(f"[COMMENT] {field} {ev['comment_id']}: {result}")
+                except Exception as e:
+                    print(f"[COMMENT] error procesando {field}: {type(e).__name__}: {e}")
 
     return "ok", 200
 
