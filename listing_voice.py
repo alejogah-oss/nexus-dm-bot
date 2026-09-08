@@ -31,12 +31,12 @@ REGLAS DEL "title":
 - Máximo 100 caracteres.
 - Año + Marca + Modelo + Trim, directo, sin relleno ni emojis.
 
-REGLAS DE LA "description" — bilingüe, English SIEMPRE primero:
-- El texto completo va en English primero, y luego la MISMA información en Español, \
+REGLAS DE LA "description" — bilingüe, Español SIEMPRE primero:
+- El texto completo va en Español primero, y luego la MISMA información en English, \
 dentro del mismo campo "description" (no dos campos separados, un solo string).
 - Separa los dos bloques con un salto de línea doble y un encabezado corto, por \
-ejemplo "— En Español —" antes del bloque en Español.
-- Cada bloque (English y Español) sigue esta estructura:
+ejemplo "— In English —" antes del bloque en English.
+- Cada bloque (Español y English) sigue esta estructura:
   1. Hook — una línea que enganche con lo mejor de este carro puntual (condición, \
 millaje, dueño único, etc.), usando las notas reales del vendedor, no inventadas.
   2. Bullets ✅ con las specs clave tal como llegaron: año/marca/modelo/trim, motor, \
