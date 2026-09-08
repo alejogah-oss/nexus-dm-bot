@@ -251,8 +251,8 @@ async def run_comment_bot_test():
     loop = asyncio.get_event_loop()
     try:
         def _sync_comment():
-            from comment_bot import generate_comment_reply
-            return generate_comment_reply(test_comment, post_context='Post de inventario Camry 2024')
+            from comment_bot import generate_private_reply
+            return generate_private_reply(test_comment, 'PRECIO')
 
         reply = await loop.run_in_executor(None, _sync_comment)
 
