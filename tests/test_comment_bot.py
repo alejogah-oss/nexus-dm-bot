@@ -127,3 +127,31 @@ def test_rate_limit_ignora_entradas_sin_accion():
              for i in range(10)}
     with patch.object(comment_bot, "_load_handled", return_value=store):
         assert comment_bot.rate_limited("pX") is False
+
+
+# ── Guarda 6: intención ─────────────────────────────────────────────────────
+
+def _mock_anthropic_text(texto):
+    resp = MagicMock()
+    resp.content = [MagicMock(text=texto)]
+    return resp
+
+
+def test_classify_intent_normaliza_a_mayusculas_y_recorta():
+    with patch.object(comment_bot.client.messages, "create",
+                      return_value=_mock_anthropic_text("  compra\n")):
+        assert comment_bot.classify_intent("quiero un corolla") == "COMPRA"
+
+
+def test_classify_intent_valor_desconocido_cae_a_otro():
+    with patch.object(comment_bot.client.messages, "create",
+                      return_value=_mock_anthropic_text("no sé qué es")):
+        assert comment_bot.classify_intent("hola") == "OTRO"
+
+
+def test_classify_intent_error_de_api_devuelve_error():
+    # Falla cerrado: si Haiku falla, la clasificación devuelve "ERROR" y el
+    # orquestador NO responde.
+    with patch.object(comment_bot.client.messages, "create",
+                      side_effect=RuntimeError("timeout")):
+        assert comment_bot.classify_intent("hola") == "ERROR"

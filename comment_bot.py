@@ -92,3 +92,36 @@ def rate_limited(post_id: str) -> bool:
         return True
     en_post = [r for r in recientes if r.get("post_id") == post_id]
     return len(en_post) >= MAX_PER_HOUR_POST
+
+
+_INTENT_LABELS = {"COMPRA", "PRECIO", "CREDITO", "POSITIVO", "NEGATIVO", "SPAM", "OTRO"}
+
+_CLASSIFY_SYSTEM = """Clasifica el comentario de una publicación de un concesionario Toyota.
+Responde con UNA sola palabra, exactamente una de estas:
+
+COMPRA   - quiere comprar / cambiar de carro / pregunta disponibilidad de un modelo
+PRECIO   - pregunta precio, cuota mensual, enganche
+CREDITO  - pregunta por financiamiento, aprobación, mal crédito, sin seguro social
+POSITIVO - felicitación, agradecimiento, emoji suelto, "bonito carro"
+NEGATIVO - queja, reclamo, insulto, "puras mentiras", troll
+SPAM     - publicidad ajena, links, nada que ver
+OTRO     - cualquier otra cosa
+
+Solo la palabra. Sin explicación, sin puntuación."""
+
+
+def classify_intent(text: str) -> str:
+    """Guarda 6. Devuelve una etiqueta de _INTENT_LABELS, o "ERROR" si Haiku falla."""
+    try:
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=8,
+            system=_CLASSIFY_SYSTEM,
+            messages=[{"role": "user", "content": text[:500]}],
+        )
+        label = resp.content[0].text.strip().upper()
+        first = label.split()[0].strip(".,!") if label else "OTRO"
+        return first if first in _INTENT_LABELS else "OTRO"
+    except Exception as e:
+        print(f"[COMMENT] classify_intent falló: {e}")
+        return "ERROR"
