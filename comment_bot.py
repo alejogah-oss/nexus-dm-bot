@@ -167,3 +167,56 @@ def generate_private_reply(text: str, intent: str) -> str:
     except Exception as e:
         print(f"[COMMENT] generate_private_reply falló: {e}")
     return _PRIVATE_FALLBACK.get(intent, _PRIVATE_FALLBACK["COMPRA"])
+
+
+# ── Envío ───────────────────────────────────────────────────────────────────
+
+_ALREADY_REPLIED_CODES = {10900, 100}  # Meta: private reply duplicada / ya no aplica
+
+
+def _post_graph(url: str, *, params=None, json_body=None) -> tuple[bool, dict]:
+    """POST a Graph API. Devuelve (ok, payload). ok=True si 2xx o si Meta dice
+    que ya se respondió a ese comentario."""
+    try:
+        r = requests.post(url, params=params or {}, json=json_body, timeout=15)
+    except requests.exceptions.RequestException as e:
+        print(f"[COMMENT] red falló en {url}: {e}")
+        return False, {}
+    try:
+        payload = r.json()
+    except ValueError:
+        payload = {}
+    if r.status_code == 200 and payload.get("id"):
+        return True, payload
+    code = (payload.get("error") or {}).get("code")
+    if code in _ALREADY_REPLIED_CODES:
+        print(f"[COMMENT] Meta: comentario ya atendido (code {code}) — se cuenta como hecho")
+        return True, payload
+    print(f"[COMMENT] Graph API error {r.status_code}: {payload}")
+    return False, payload
+
+
+def send_private_reply(platform: str, comment_id: str, message: str) -> bool:
+    if platform == "instagram":
+        ok, _ = _post_graph(
+            f"{GRAPH}/{IG_USER_ID}/messages",
+            params={"access_token": PAGE_ACCESS_TOKEN},
+            json_body={"recipient": {"comment_id": comment_id},
+                       "message": {"text": message}},
+        )
+        return ok
+    ok, _ = _post_graph(
+        f"{GRAPH}/{comment_id}/private_replies",
+        params={"access_token": PAGE_ACCESS_TOKEN, "message": message},
+    )
+    return ok
+
+
+def send_public_ack(platform: str, comment_id: str) -> bool:
+    edge = "replies" if platform == "instagram" else "comments"
+    ok, _ = _post_graph(
+        f"{GRAPH}/{comment_id}/{edge}",
+        params={"access_token": PAGE_ACCESS_TOKEN},
+        json_body={"message": PUBLIC_ACK},
+    )
+    return ok

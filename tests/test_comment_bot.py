@@ -192,3 +192,61 @@ def test_generate_private_reply_fallo_usa_texto_de_respaldo():
                       side_effect=RuntimeError("boom")):
         out = comment_bot.generate_private_reply("hola", "COMPRA")
     assert "DM" in out or "954" in out   # respaldo fijo, nunca vacío
+
+
+# ── Envío (Graph API) ───────────────────────────────────────────────────────
+
+def _mock_post_ok():
+    r = MagicMock()
+    r.status_code = 200
+    r.json.return_value = {"id": "reply_1"}
+    return r
+
+
+def test_send_private_reply_fb_llama_endpoint_private_replies():
+    with patch("comment_bot.requests.post", return_value=_mock_post_ok()) as mp:
+        ok = comment_bot.send_private_reply("facebook", "c1", "hola")
+    assert ok is True
+    url = mp.call_args[0][0]
+    assert url.endswith("/c1/private_replies")
+
+
+def test_send_private_reply_ig_usa_messages_con_comment_id():
+    with patch("comment_bot.requests.post", return_value=_mock_post_ok()) as mp:
+        with patch.object(comment_bot, "IG_USER_ID", "IG456"):
+            ok = comment_bot.send_private_reply("instagram", "c1", "hola")
+    assert ok is True
+    url = mp.call_args[0][0]
+    assert url.endswith("/IG456/messages")
+    body = mp.call_args[1]["json"]
+    assert body["recipient"] == {"comment_id": "c1"}
+    assert body["message"] == {"text": "hola"}
+
+
+def test_send_private_reply_ya_respondido_cuenta_como_exito():
+    # Meta: (#10900) ya se envió una private reply para este comentario.
+    r = MagicMock()
+    r.status_code = 400
+    r.json.return_value = {"error": {"code": 10900, "message": "already replied"}}
+    with patch("comment_bot.requests.post", return_value=r):
+        assert comment_bot.send_private_reply("facebook", "c1", "hola") is True
+
+
+def test_send_private_reply_error_de_red_devuelve_false():
+    with patch("comment_bot.requests.post", side_effect=comment_bot.requests.exceptions.Timeout()):
+        assert comment_bot.send_private_reply("facebook", "c1", "hola") is False
+
+
+def test_send_public_ack_fb():
+    with patch("comment_bot.requests.post", return_value=_mock_post_ok()) as mp:
+        ok = comment_bot.send_public_ack("facebook", "c1")
+    assert ok is True
+    assert mp.call_args[0][0].endswith("/c1/comments")
+    assert mp.call_args[1]["json"]["message"] == comment_bot.PUBLIC_ACK
+
+
+def test_send_public_ack_ig_usa_replies():
+    with patch("comment_bot.requests.post", return_value=_mock_post_ok()) as mp:
+        ok = comment_bot.send_public_ack("instagram", "c1")
+    assert ok is True
+    assert mp.call_args[0][0].endswith("/c1/replies")
