@@ -57,3 +57,22 @@ def _load_handled() -> dict:
 def _save_handled(store: dict) -> None:
     with open(HANDLED_STORE, "w") as f:
         json.dump(store, f, ensure_ascii=False, indent=2)
+
+
+# ── Guardas puras ────────────────────────────────────────────────────────────
+
+def is_own_author(author_id: str) -> bool:
+    """Guarda 2. True si el comentario lo escribió nuestra propia página / cuenta IG."""
+    return bool(author_id) and author_id in _OWN_IDS
+
+
+def is_reply(event: dict) -> bool:
+    """Guarda 3. True si el comentario es respuesta a otro comentario (no top-level)."""
+    parent = event.get("parent_id") or ""
+    post = event.get("post_id") or ""
+    return bool(parent) and parent != post
+
+
+def already_handled(comment_id: str) -> bool:
+    """Guarda 4. True si ya evaluamos este comment_id antes."""
+    return comment_id in _load_handled()
