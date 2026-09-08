@@ -155,3 +155,40 @@ def test_classify_intent_error_de_api_devuelve_error():
     with patch.object(comment_bot.client.messages, "create",
                       side_effect=RuntimeError("timeout")):
         assert comment_bot.classify_intent("hola") == "ERROR"
+
+
+# ── Redacción ───────────────────────────────────────────────────────────────
+
+def test_comment_voice_tiene_el_telefono_correcto():
+    # El número correcto de Alejo es (954) 910-6671 (ver .env ALEJO_PHONE,
+    # nexus_agency.py). El 310 es una alucinación recurrente de Claude.
+    assert "(954) 910-6671" in comment_bot.COMMENT_VOICE
+    assert "310-6671" not in comment_bot.COMMENT_VOICE
+
+
+def test_comment_voice_prohibe_precios():
+    v = comment_bot.COMMENT_VOICE.lower()
+    assert "nunca" in v and ("precio" in v or "mensualidad" in v or "tasa" in v)
+
+
+def test_generate_private_reply_usa_haiku_y_recorta():
+    with patch.object(comment_bot.client.messages, "create",
+                      return_value=_mock_anthropic_text("  ¡Claro! Te escribo por DM 🙌\n")):
+        out = comment_bot.generate_private_reply("quiero un corolla", "COMPRA")
+    assert out == "¡Claro! Te escribo por DM 🙌"
+
+
+def test_generate_private_reply_corrige_telefono_alucinado():
+    # Mismo guard que dm_bot.py:222 — si Haiku pone 310-6671, se corrige a 910-6671.
+    with patch.object(comment_bot.client.messages, "create",
+                      return_value=_mock_anthropic_text("Llama al (954) 310-6671 🙌")):
+        out = comment_bot.generate_private_reply("hola", "COMPRA")
+    assert "310-6671" not in out
+    assert "910-6671" in out
+
+
+def test_generate_private_reply_fallo_usa_texto_de_respaldo():
+    with patch.object(comment_bot.client.messages, "create",
+                      side_effect=RuntimeError("boom")):
+        out = comment_bot.generate_private_reply("hola", "COMPRA")
+    assert "DM" in out or "954" in out   # respaldo fijo, nunca vacío

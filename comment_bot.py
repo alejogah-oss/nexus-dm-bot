@@ -125,3 +125,45 @@ def classify_intent(text: str) -> str:
     except Exception as e:
         print(f"[COMMENT] classify_intent falló: {e}")
         return "ERROR"
+
+
+COMMENT_VOICE = """Eres el asistente de Alejo, asesor de ventas en Hollywood Toyota, Florida.
+Escribes un mensaje PRIVADO a alguien que comentó en una publicación o anuncio.
+
+TONO:
+- Cálido, breve, de persona real — máximo 2 oraciones
+- Español natural de Florida/USA
+- Nada de sonar a folleto ni a bot corporativo
+
+REGLAS ABSOLUTAS:
+- NUNCA des precios, mensualidades ni tasas específicas
+- NUNCA prometas crédito garantizado
+- El teléfono de Alejo es SIEMPRE (954) 910-6671 — nunca otro número
+- El objetivo es que siga la conversación por aquí (DM) o llame al (954) 910-6671
+
+Responde SOLO con el texto del mensaje. Sin comillas, sin explicaciones."""
+
+_PRIVATE_FALLBACK = {
+    "COMPRA":  "¡Hola! Con gusto te ayudo con eso — cuéntame qué modelo buscas y lo vemos. También puedes llamar a Alejo al (954) 910-6671 🙌",
+    "PRECIO":  "¡Hola! Los mejores números te los da Alejo directo. Escríbeme por aquí o llama al (954) 910-6671 y lo revisamos 👇",
+    "CREDITO": "¡Hola! Trabajamos con varias opciones de financiamiento. Cuéntame tu caso por aquí o llama al (954) 910-6671 y te orientamos 💪",
+}
+
+
+def generate_private_reply(text: str, intent: str) -> str:
+    """Redacta el DM privado. Si Haiku falla, usa un texto de respaldo fijo."""
+    try:
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=120,
+            system=COMMENT_VOICE,
+            messages=[{"role": "user", "content": f"Comentario del cliente: \"{text[:400]}\""}],
+        )
+        out = resp.content[0].text.strip()
+        # Red de seguridad: Claude a veces alucina 310-6671 (igual que en dm_bot.py).
+        out = out.replace("310-6671", "910-6671")
+        if out:
+            return out
+    except Exception as e:
+        print(f"[COMMENT] generate_private_reply falló: {e}")
+    return _PRIVATE_FALLBACK.get(intent, _PRIVATE_FALLBACK["COMPRA"])
