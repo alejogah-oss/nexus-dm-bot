@@ -77,3 +77,53 @@ def test_already_handled_true():
 def test_already_handled_false():
     with patch.object(comment_bot, "_load_handled", return_value={}):
         assert comment_bot.already_handled("c1") is False
+
+
+# ── Guarda 5: rate limit ────────────────────────────────────────────────────
+
+def _store_con_respuestas(n_global, post_id="pX", n_post=0, edad_seg=60):
+    """Genera un store con n_global respuestas recientes (actions no vacío),
+    de las cuales n_post son en post_id."""
+    now = time.time()
+    store = {}
+    for i in range(n_global):
+        store[f"g{i}"] = {"ts": now - edad_seg, "post_id": "otro",
+                          "actions": ["private_ig"]}
+    for i in range(n_post):
+        store[f"p{i}"] = {"ts": now - edad_seg, "post_id": post_id,
+                          "actions": ["private_ig"]}
+    return store
+
+
+def test_rate_limit_global_alcanzado():
+    store = _store_con_respuestas(5)
+    with patch.object(comment_bot, "_load_handled", return_value=store):
+        assert comment_bot.rate_limited("pX") is True
+
+
+def test_rate_limit_global_no_alcanzado():
+    store = _store_con_respuestas(4)
+    with patch.object(comment_bot, "_load_handled", return_value=store):
+        assert comment_bot.rate_limited("pX") is False
+
+
+def test_rate_limit_por_post_alcanzado():
+    store = _store_con_respuestas(0, post_id="pX", n_post=3)
+    with patch.object(comment_bot, "_load_handled", return_value=store):
+        assert comment_bot.rate_limited("pX") is True
+
+
+def test_rate_limit_ignora_respuestas_viejas():
+    # Respuestas de hace más de 1 hora no cuentan.
+    store = _store_con_respuestas(10, edad_seg=3700)
+    with patch.object(comment_bot, "_load_handled", return_value=store):
+        assert comment_bot.rate_limited("pX") is False
+
+
+def test_rate_limit_ignora_entradas_sin_accion():
+    # Comentarios evaluados pero no respondidos (actions vacío) no cuentan.
+    now = time.time()
+    store = {f"s{i}": {"ts": now - 60, "post_id": "pX", "actions": []}
+             for i in range(10)}
+    with patch.object(comment_bot, "_load_handled", return_value=store):
+        assert comment_bot.rate_limited("pX") is False

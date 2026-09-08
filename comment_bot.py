@@ -76,3 +76,19 @@ def is_reply(event: dict) -> bool:
 def already_handled(comment_id: str) -> bool:
     """Guarda 4. True si ya evaluamos este comment_id antes."""
     return comment_id in _load_handled()
+
+
+def rate_limited(post_id: str) -> bool:
+    """Guarda 5. True si ya se respondió >= MAX_PER_HOUR_GLOBAL en la última hora,
+    o >= MAX_PER_HOUR_POST en este post en la última hora. Solo cuenta entradas
+    con una respuesta real enviada (actions no vacío)."""
+    cutoff = time.time() - 3600
+    store = _load_handled()
+    recientes = [
+        r for r in store.values()
+        if r.get("ts", 0) >= cutoff and r.get("actions")
+    ]
+    if len(recientes) >= MAX_PER_HOUR_GLOBAL:
+        return True
+    en_post = [r for r in recientes if r.get("post_id") == post_id]
+    return len(en_post) >= MAX_PER_HOUR_POST
