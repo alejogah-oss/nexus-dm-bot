@@ -6,6 +6,8 @@ import hmac
 import io
 import json
 import os
+import threading
+import time
 import uuid
 
 import requests as req_lib
@@ -102,6 +104,51 @@ def _postback_referral(postback: dict) -> tuple[str | None, str | None]:
     return referral.get("ref"), referral.get("ad_id")
 
 
+_seen_lock  = threading.Lock()
+_seen_msgs: dict[str, float] = {}
+_SEEN_FILE  = os.path.join(os.path.dirname(__file__), "seen_messages.json")
+_SEEN_TTL   = 3600  # 1 h — cubre de sobra la ventana de reintentos de Meta
+
+
+def _is_retry(mid: str | None) -> bool:
+    """Idempotencia para los reintentos de Meta.
+
+    El handler procesa síncrono (llama a Claude antes de responder 200), así que
+    si Meta no recibe el 200 a tiempo reenvía el mismo evento — y sin esto cada
+    reenvío corre handle_message otra vez y genera OTRA respuesta con texto
+    distinto (incidente 8 sep 2026: dos respuestas al mismo DM).
+
+    Dedup por message-id: lock en memoria para los 4 threads del worker +
+    archivo para cubrir el rollover de deploy de Render (2 instancias unos
+    segundos). Sin mid no se puede deduplicar → se procesa.
+    """
+    if not mid:
+        return False
+    now = time.time()
+    with _seen_lock:
+        if mid in _seen_msgs:
+            return True
+        _seen_msgs[mid] = now
+        if len(_seen_msgs) > 200:
+            for k in [k for k, t in _seen_msgs.items() if now - t > _SEEN_TTL]:
+                _seen_msgs.pop(k, None)
+        try:
+            with open(_SEEN_FILE) as f:
+                disk = json.load(f)
+        except (OSError, ValueError):
+            disk = {}
+        if mid in disk:
+            return True
+        disk[mid] = now
+        disk = {k: v for k, v in disk.items() if now - v <= _SEEN_TTL}
+        try:
+            with open(_SEEN_FILE, "w") as f:
+                json.dump(disk, f)
+        except OSError:
+            pass
+    return False
+
+
 def _comment_event(platform: str, field: str, value: dict) -> dict | None:
     """Normaliza un payload de comentario (IG 'comments' / FB 'feed' / FB 'mention')
     al contrato común que consume comment_bot.handle_comment. Devuelve None si el
@@ -195,6 +242,8 @@ def receive_webhook():
             text = message.get("text", "")
             if not text:
                 continue
+            if _is_retry(message.get("mid")):
+                continue  # reintento de Meta del mismo mensaje — ya respondido
 
             # Check if message came from a Marketplace listing, o si trae
             # referral.ref / referral.ad_id de una campaña Click-to-Messenger
@@ -252,7 +301,7 @@ def receive_webhook():
                     msg_referral = msg.get("referral", {}) or {}
                     ad_ref = msg_referral.get("ref")
                     ad_id  = msg_referral.get("ad_id")
-                    if text:
+                    if text and not _is_retry(msg.get("mid") or msg.get("id")):
                         handle_message(sender_id, text, platform="instagram", ref=ad_ref, ad_id=ad_id)
 
             # Instagram postbacks (ice breakers, botones de messenger_profile
