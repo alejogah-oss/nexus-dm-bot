@@ -17,6 +17,8 @@ import requests
 import anthropic
 from dotenv import load_dotenv
 
+from pulse import pulse_notify
+
 load_dotenv()
 
 client            = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -220,3 +222,71 @@ def send_public_ack(platform: str, comment_id: str) -> bool:
         json_body={"message": PUBLIC_ACK},
     )
     return ok
+
+
+# ── Orquestador ─────────────────────────────────────────────────────────────
+
+def handle_comment(event: dict) -> str:
+    """Punto de entrada único. Aplica las 7 guardas y responde si corresponde.
+    NUNCA lanza excepción — devuelve un código de resultado para logging/tests."""
+    try:
+        return _handle_comment_inner(event)
+    except Exception as e:
+        print(f"[COMMENT] handle_comment error: {type(e).__name__}: {e}")
+        return f"error:{type(e).__name__}"
+
+
+def _handle_comment_inner(event: dict) -> str:
+    cid      = event.get("comment_id", "")
+    platform = event.get("platform", "")
+    post_id  = event.get("post_id", "")
+    text     = event.get("text", "") or ""
+
+    # 1. kill switch
+    if not _enabled():
+        return "skipped:disabled"
+    # 2. identidad
+    if is_own_author(event.get("author_id", "")):
+        print(f"[COMMENT] {cid}: autor propio — ignorado (guarda anti-loop)")
+        return "skipped:identity"
+    # 3. solo top-level
+    if is_reply(event):
+        return "skipped:reply"
+    # 4. dedupe
+    if not cid or already_handled(cid):
+        return "skipped:dedupe"
+    # 5. rate limit
+    if rate_limited(post_id):
+        pulse_notify("MARKETPLACE_ERROR",
+                     f"Comment bot en rate limit — comentario {cid} en post {post_id} sin responder.")
+        return "skipped:ratelimit"
+    # 6. intención
+    intent = classify_intent(text)
+    if intent == "ERROR":
+        return "skipped:classify_error"
+    if intent not in INTENT_ACTIONABLE:
+        _record(cid, platform, post_id, intent, actions=[])
+        return "skipped:intent"
+
+    # dry run: hasta acá corre todo, pero no postea ni registra
+    if _dry_run():
+        print(f"[COMMENT] DRY RUN — respondería a {cid} ({intent}): {text[:60]}")
+        return f"dryrun:would_reply:{intent}"
+
+    # responder
+    reply = generate_private_reply(text, intent)
+    actions = []
+    if send_private_reply(platform, cid, reply):
+        actions.append(f"private_{platform}")
+    if send_public_ack(platform, cid):
+        actions.append(f"public_{platform}")
+    _record(cid, platform, post_id, intent, actions)
+    print(f"[COMMENT] {cid} ({intent}) → {actions}")
+    return "replied"
+
+
+def _record(cid: str, platform: str, post_id: str, intent: str, actions: list) -> None:
+    store = _load_handled()
+    store[cid] = {"ts": time.time(), "platform": platform,
+                  "post_id": post_id, "intent": intent, "actions": actions}
+    _save_handled(store)

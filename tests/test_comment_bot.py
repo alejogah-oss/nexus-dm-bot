@@ -250,3 +250,127 @@ def test_send_public_ack_ig_usa_replies():
         ok = comment_bot.send_public_ack("instagram", "c1")
     assert ok is True
     assert mp.call_args[0][0].endswith("/c1/replies")
+
+
+# ── Orquestador handle_comment ──────────────────────────────────────────────
+
+def _event(**over):
+    ev = {"platform": "instagram", "comment_id": "c1", "author_id": "cliente789",
+          "text": "quiero un corolla", "post_id": "p1", "parent_id": ""}
+    ev.update(over)
+    return ev
+
+
+@patch("comment_bot.requests.post")
+def test_handle_comment_kill_switch_apagado(mp, monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "0")
+    assert comment_bot.handle_comment(_event()) == "skipped:disabled"
+    mp.assert_not_called()
+
+
+@patch("comment_bot.requests.post")
+def test_handle_comment_ignora_comentario_propio_LOOP_REGRESSION(mp, monkeypatch):
+    # REGRESIÓN DEL INCIDENTE 6 sep 2026: un comentario cuyo autor es nuestra
+    # propia cuenta IG NUNCA debe procesarse. Sin esto el bot se responde a sí
+    # mismo y entra en loop (fueron ~950 comentarios).
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    with patch.object(comment_bot, "_OWN_IDS", {"IG456"}):
+        res = comment_bot.handle_comment(_event(author_id="IG456"))
+    assert res == "skipped:identity"
+    mp.assert_not_called()
+
+
+@patch("comment_bot.requests.post")
+def test_handle_comment_ignora_respuesta_anidada(mp, monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    res = comment_bot.handle_comment(_event(parent_id="c0"))
+    assert res == "skipped:reply"
+    mp.assert_not_called()
+
+
+@patch("comment_bot.requests.post")
+def test_handle_comment_dedupe(mp, monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    with patch.object(comment_bot, "_load_handled", return_value={"c1": {"ts": 1}}):
+        res = comment_bot.handle_comment(_event())
+    assert res == "skipped:dedupe"
+    mp.assert_not_called()
+
+
+@patch("comment_bot.pulse_notify")
+@patch("comment_bot.requests.post")
+def test_handle_comment_rate_limit_avisa_a_pulse(mp, mpulse, monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    with patch.object(comment_bot, "_load_handled", return_value={}), \
+         patch.object(comment_bot, "rate_limited", return_value=True):
+        res = comment_bot.handle_comment(_event())
+    assert res == "skipped:ratelimit"
+    mp.assert_not_called()
+    mpulse.assert_called_once()
+
+
+@patch("comment_bot.requests.post")
+def test_handle_comment_felicitacion_no_responde_pero_se_registra(mp, monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    saved = {}
+    with patch.object(comment_bot, "_load_handled", return_value={}), \
+         patch.object(comment_bot, "rate_limited", return_value=False), \
+         patch.object(comment_bot, "classify_intent", return_value="POSITIVO"), \
+         patch.object(comment_bot, "_save_handled", side_effect=lambda s: saved.update(s)):
+        res = comment_bot.handle_comment(_event(text="bonito carro!"))
+    assert res == "skipped:intent"
+    mp.assert_not_called()
+    assert saved["c1"]["actions"] == []
+
+
+@patch("comment_bot.requests.post")
+def test_handle_comment_error_de_clasificacion_no_responde(mp, monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    with patch.object(comment_bot, "_load_handled", return_value={}), \
+         patch.object(comment_bot, "rate_limited", return_value=False), \
+         patch.object(comment_bot, "classify_intent", return_value="ERROR"):
+        res = comment_bot.handle_comment(_event())
+    assert res == "skipped:classify_error"
+    mp.assert_not_called()
+
+
+def test_handle_comment_intencion_compra_responde_privado_y_publico(monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    saved = {}
+    with patch.object(comment_bot, "_load_handled", return_value={}), \
+         patch.object(comment_bot, "rate_limited", return_value=False), \
+         patch.object(comment_bot, "classify_intent", return_value="COMPRA"), \
+         patch.object(comment_bot, "generate_private_reply", return_value="Te escribo 🙌"), \
+         patch.object(comment_bot, "send_private_reply", return_value=True) as sp, \
+         patch.object(comment_bot, "send_public_ack", return_value=True) as pa, \
+         patch.object(comment_bot, "_save_handled", side_effect=lambda s: saved.update(s)):
+        res = comment_bot.handle_comment(_event())
+    assert res == "replied"
+    sp.assert_called_once_with("instagram", "c1", "Te escribo 🙌")
+    pa.assert_called_once_with("instagram", "c1")
+    assert saved["c1"]["intent"] == "COMPRA"
+    assert saved["c1"]["actions"] == ["private_instagram", "public_instagram"]
+
+
+def test_handle_comment_dry_run_no_postea(monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    monkeypatch.setenv("COMMENT_BOT_DRY_RUN", "1")
+    with patch.object(comment_bot, "_load_handled", return_value={}), \
+         patch.object(comment_bot, "rate_limited", return_value=False), \
+         patch.object(comment_bot, "classify_intent", return_value="COMPRA"), \
+         patch.object(comment_bot, "send_private_reply") as sp, \
+         patch.object(comment_bot, "send_public_ack") as pa, \
+         patch.object(comment_bot, "_save_handled") as sv:
+        res = comment_bot.handle_comment(_event())
+    assert res == "dryrun:would_reply:COMPRA"
+    sp.assert_not_called()
+    pa.assert_not_called()
+    sv.assert_not_called()
+
+
+@patch("comment_bot.requests.post")
+def test_handle_comment_nunca_lanza_excepcion(mp, monkeypatch):
+    monkeypatch.setenv("COMMENT_BOT_ENABLED", "1")
+    with patch.object(comment_bot, "_load_handled", side_effect=RuntimeError("disco lleno")):
+        res = comment_bot.handle_comment(_event())
+    assert res.startswith("error:")
