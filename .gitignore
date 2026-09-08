@@ -42,3 +42,5 @@ venv/
 logs/*.log
 CREDENCIALES.md
 archive/
+
+comments_handled.json
