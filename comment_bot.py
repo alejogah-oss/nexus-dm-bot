@@ -31,8 +31,6 @@ GRAPH             = "https://graph.facebook.com/v19.0"
 HANDLED_STORE     = os.path.join(os.path.dirname(__file__), "comments_handled.json")
 PUBLIC_ACK        = "¡Te escribimos al DM! 🙌"
 INTENT_ACTIONABLE = {"COMPRA", "PRECIO", "CREDITO"}
-MAX_PER_HOUR_GLOBAL = 5
-MAX_PER_HOUR_POST   = 3
 PRIVATE_REPLY_WINDOW_DAYS = 7
 
 
@@ -42,6 +40,22 @@ def _enabled() -> bool:
 
 def _dry_run() -> bool:
     return os.getenv("COMMENT_BOT_DRY_RUN", "0") == "1"
+
+
+def _max_global() -> int:
+    """Tope de respuestas por hora en total. Ajustable en vivo por env."""
+    try:
+        return int(os.getenv("COMMENT_MAX_PER_HOUR_GLOBAL", "20"))
+    except ValueError:
+        return 20
+
+
+def _max_post() -> int:
+    """Tope de respuestas por hora por publicación. Ajustable en vivo por env."""
+    try:
+        return int(os.getenv("COMMENT_MAX_PER_HOUR_POST", "8"))
+    except ValueError:
+        return 8
 
 
 # ── Store ────────────────────────────────────────────────────────────────────
@@ -81,8 +95,8 @@ def already_handled(comment_id: str) -> bool:
 
 
 def rate_limited(post_id: str) -> bool:
-    """Guarda 5. True si ya se respondió >= MAX_PER_HOUR_GLOBAL en la última hora,
-    o >= MAX_PER_HOUR_POST en este post en la última hora. Solo cuenta entradas
+    """Guarda 5. True si ya se respondió >= _max_global() en la última hora,
+    o >= _max_post() en este post en la última hora. Solo cuenta entradas
     con una respuesta real enviada (actions no vacío)."""
     cutoff = time.time() - 3600
     store = _load_handled()
@@ -90,10 +104,10 @@ def rate_limited(post_id: str) -> bool:
         r for r in store.values()
         if r.get("ts", 0) >= cutoff and r.get("actions")
     ]
-    if len(recientes) >= MAX_PER_HOUR_GLOBAL:
+    if len(recientes) >= _max_global():
         return True
     en_post = [r for r in recientes if r.get("post_id") == post_id]
-    return len(en_post) >= MAX_PER_HOUR_POST
+    return len(en_post) >= _max_post()
 
 
 _INTENT_LABELS = {"COMPRA", "PRECIO", "CREDITO", "POSITIVO", "NEGATIVO", "SPAM", "OTRO"}

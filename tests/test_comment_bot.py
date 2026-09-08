@@ -2,6 +2,8 @@ import json
 import time
 from unittest.mock import patch, mock_open, MagicMock
 
+import pytest
+
 import comment_bot
 
 
@@ -80,6 +82,14 @@ def test_already_handled_false():
 
 
 # ── Guarda 5: rate limit ────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def _pin_rate_limits(monkeypatch):
+    # Los topes son configurables por env (default 20/8 en prod). Se fijan a
+    # 5/3 para que los tests de esta sección sean deterministas.
+    monkeypatch.setenv("COMMENT_MAX_PER_HOUR_GLOBAL", "5")
+    monkeypatch.setenv("COMMENT_MAX_PER_HOUR_POST", "3")
+
 
 def _store_con_respuestas(n_global, post_id="pX", n_post=0, edad_seg=60):
     """Genera un store con n_global respuestas recientes (actions no vacío),
