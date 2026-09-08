@@ -187,6 +187,8 @@ CRM_WEBHOOK_URL=https://crm.tucarroconalejo.com/api/webhook/tucarro
 CRM_WEBHOOK_KEY=crm-wh-k3y-2025-AutoXz9pLm
 CRM_AGENT_CODE=alejo
 VERIFY_TOKEN=nexus_alejo_2026
+COMMENT_BOT_ENABLED=0    # 1 = el bot responde comentarios. Default apagado.
+COMMENT_BOT_DRY_RUN=0    # 1 = corre guardas + clasificación pero NO postea nada.
 ```
 
 **Sesiones de browser:**
