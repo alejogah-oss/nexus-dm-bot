@@ -370,6 +370,9 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     if ref:
         crm_note = f"[CAMPAÑA: {ref}]\n{crm_note}"
 
+    if ref:
+        crm_note = f"[CAMPAÑA: {ref}]\n{crm_note}"
+
     if buyer:
         crm_note += (
             f"\n\n━━ PERFIL DEL COMPRADOR ━━"

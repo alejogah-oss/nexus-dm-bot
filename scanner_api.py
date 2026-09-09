@@ -1,18 +1,28 @@
 """Endpoints del VIN Scanner PWA. Auth: X-Scanner-Key == env SCANNER_KEY."""
-import base64, functools, json, os, re, traceback
+import base64, functools, json, os, re, threading, time, traceback
 from pathlib import Path
 from flask import Blueprint, jsonify, request, send_file
 from vin_utils import validate_vin, decode_vin, clean_vin, repair_vin
 from listing_voice import LISTING_SYSTEM, build_listing_prompt
+from site_publisher import push_scanner_car_to_site
 import anthropic
 
+def _sync_to_site_bg(folder: Path):
+    """Sincroniza en un hilo aparte para no frenar la respuesta al scanner
+    (el POST a tucarroconalejo.com puede tardar unos segundos por las fotos)."""
+    threading.Thread(target=push_scanner_car_to_site, args=(folder,), daemon=True).start()
+
 bp = Blueprint("scanner", __name__)
-INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
+INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventario"))
 OCR_MODEL, COPY_MODEL = "claude-haiku-4-5-20251001", "claude-sonnet-5"
 _client = anthropic.Anthropic()
 
-# Claves que marketplace_poster necesita en listing.json (notes es opcional)
-REQUIRED_LISTING_KEYS = ("vin", "yr", "model", "trim", "color", "price", "mileage", "title", "description")
+# Claves que marketplace_poster necesita en listing.json (notes es opcional).
+# trim NO es obligatorio: NHTSA vPIC suele devolver "Trim" vacío en modelos
+# nuevos/raros (ej. GR Corolla) y todo el resto del código ya lo trata como
+# opcional (v.get("trim", "")) — exigirlo aquí solo bloqueaba el guardado
+# sin avisar por qué.
+REQUIRED_LISTING_KEYS = ("vin", "yr", "model", "color", "price", "mileage", "title", "description")
 
 def _bad(msg: str, code: int = 400):
     return jsonify({"error": msg}), code
@@ -106,6 +116,14 @@ def scan_odometer():
     digits = re.sub(r"[^0-9]", "", raw)
     return jsonify({"mileage": int(digits) if digits else 0})
 
+def generate_copy(car: dict) -> dict:
+    """Genera {"title", "description"} para un carro. Puede lanzar excepción."""
+    text = _copy_call(build_listing_prompt(car))
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    out = json.loads(m.group()) if m else {"title": "", "description": text}
+    out["title"] = out.get("title", "")[:100]
+    return out
+
 @bp.route("/api/scanner/listing", methods=["POST"])
 @require_key
 def gen_listing():
@@ -116,14 +134,11 @@ def gen_listing():
     if missing:
         return _bad("faltan campos: " + ", ".join(missing))
     try:
-        text = _copy_call(build_listing_prompt(car))
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        out = json.loads(m.group()) if m else {"title": "", "description": text}
+        out = generate_copy(car)
     except Exception:
         print("[SCANNER] /listing falló:", flush=True)
         traceback.print_exc()
         return _bad("no se pudo generar el copy — reintenta", 502)
-    out["title"] = out.get("title", "")[:100]
     return jsonify(out)
 
 @bp.route("/api/scanner/inventory", methods=["POST"])
@@ -135,6 +150,14 @@ def save_inventory():
         return _bad("campo 'data' ausente o JSON inválido")
     if not isinstance(data, dict):
         return _bad("campo 'data' debe ser un objeto JSON")
+    if not data.get("make") and data.get("vin"):
+        # Sin marca (OCR del VIN falló o Alejo no la llenó a mano): la
+        # averiguamos del VIN en vez de asumir Toyota — Alejo también
+        # escanea trade-ins de otras marcas (fix ago 2026).
+        try:
+            data["make"] = decode_vin(str(data["vin"])).get("make", "")
+        except Exception:
+            pass
     missing = [k for k in REQUIRED_LISTING_KEYS if data.get(k) in ("", None)]
     if missing:
         return _bad("faltan campos: " + ", ".join(missing))
@@ -149,6 +172,7 @@ def save_inventory():
         request.files["video"].save(folder / "video.mp4")
     (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
     (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
+    _sync_to_site_bg(folder)  # sube como pendiente a tucarroconalejo.com/admin.html
     return jsonify({"folder": str(folder)})
 
 # ── Pendientes por subir: listar, ver, editar ───────────────────────
@@ -182,6 +206,9 @@ def list_inventory():
                 "yr": data.get("yr", ""), "model": data.get("model", ""),
                 "trim": data.get("trim", ""), "price": data.get("price"),
                 "mileage": data.get("mileage"),
+                "published": bool(data.get("published", False)),
+                "internal_price": data.get("internal_price") or 0,
+                "updated_at": time.strftime("%d/%m %H:%M", time.localtime(lj.stat().st_mtime)),
                 "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
                 "video": (d / "video.mp4").exists(),
             })
@@ -199,6 +226,12 @@ def get_inventory_item(slug):
                     "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
                     "video": (folder / "video.mp4").exists()})
 
+# De las claves editables por PUT, estas son las únicas que site_publisher.
+# build_payload() realmente envía al sitio (title/description/notes no
+# viajan; internal_price/alt_price_low/alt_price_high son privadas y nunca
+# salen de este archivo). Editar solo esas otras no amerita un re-sync.
+SITE_SYNC_KEYS = ("price", "mileage", "color", "make")
+
 @bp.route("/api/scanner/inventory/<slug>", methods=["PUT"])
 @require_key
 def update_inventory_item(slug):
@@ -209,12 +242,24 @@ def update_inventory_item(slug):
     if not isinstance(body, dict):
         return _bad("body JSON inválido")
     data = json.loads((folder / "listing.json").read_text())
-    for k in ("title", "description", "price", "mileage", "color", "notes"):
+    # Si el último intento de sync falló (o nunca se hizo), cualquier edición
+    # reintenta — igual que antes. Si ya está sincronizado, solo reintenta
+    # cuando cambia un campo que realmente afecta el payload del sitio (evita
+    # re-codificar hasta 12 fotos a base64 cada vez que se edita el precio
+    # real privado desde /admin, que ahora se hace a diario).
+    prev_synced_ok = bool(data.get("site_synced")) and not data.get("site_error")
+    needs_site_sync = (not prev_synced_ok) or any(
+        k in body and body[k] != data.get(k) for k in SITE_SYNC_KEYS
+    )
+    for k in ("title", "description", "price", "mileage", "color", "make", "notes",
+              "internal_price", "alt_price_low", "alt_price_high"):
         if k in body:
             data[k] = body[k]
     data["title"] = str(data.get("title", ""))[:100]
     (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
     (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
+    if needs_site_sync:
+        _sync_to_site_bg(folder)  # re-sincroniza cambios (no toca 'active' si ya fue aprobado)
     return jsonify({"ok": True, "data": data})
 
 @bp.route("/api/scanner/inventory/<slug>/photo/<int:n>", methods=["GET"])

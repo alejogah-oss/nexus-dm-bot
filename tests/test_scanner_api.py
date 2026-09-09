@@ -127,13 +127,46 @@ def test_inventory_missing_keys_400(tmp_path):
 
 def _guardar_carro(tmp_path, titulo="Corolla lindo"):
     scanner_api.INVENTORY_DIR = str(tmp_path)
-    data = {"vin": "1HGCM82633A004352", "yr": "2021", "model": "Corolla", "trim": "SE",
+    data = {"vin": "1HGCM82633A004352", "yr": "2021", "make": "Honda", "model": "Corolla", "trim": "SE",
             "color": "Blanco", "price": 17500, "mileage": 42000,
             "title": titulo, "description": "descripcion larga", "notes": ""}
     r = c.post("/api/scanner/inventory", headers=H, data={
         "data": json.dumps(data),
         "photos": [(io.BytesIO(b"a"), "1.jpg"), (io.BytesIO(b"b"), "2.jpg")]})
     return r.json["folder"].split("/")[-1]
+
+def test_guardar_sin_marca_la_averigua_del_vin(tmp_path):
+    # Bug real (ago 2026): sin esto, un carro sin 'make' quedaba con marca
+    # vacía y site_publisher/marketplace_poster lo default-eaban a "Toyota"
+    # aunque fuera un trade-in de otra marca. decode_vin se mockea — nunca
+    # pegarle a la red real de NHTSA en un test.
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    data = {"vin": "1HGCM82633A004352", "yr": "2021", "model": "Corolla", "trim": "SE",
+            "color": "Blanco", "price": 17500, "mileage": 42000,
+            "title": "t", "description": "d", "notes": ""}
+    with patch.object(scanner_api, "decode_vin", return_value={"make": "Honda"}) as mock_decode:
+        r = c.post("/api/scanner/inventory", headers=H, data={
+            "data": json.dumps(data),
+            "photos": [(io.BytesIO(b"a"), "1.jpg")]})
+    assert r.status_code == 200
+    mock_decode.assert_called_once_with("1HGCM82633A004352")
+    slug = r.json["folder"].split("/")[-1]
+    r2 = c.get(f"/api/scanner/inventory/{slug}", headers=H)
+    assert r2.json["data"]["make"] == "Honda"
+
+
+def test_guardar_con_marca_no_llama_decode_vin(tmp_path):
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    data = {"vin": "1HGCM82633A004352", "yr": "2021", "make": "Toyota", "model": "Corolla",
+            "trim": "SE", "color": "Blanco", "price": 17500, "mileage": 42000,
+            "title": "t", "description": "d", "notes": ""}
+    with patch.object(scanner_api, "decode_vin") as mock_decode:
+        r = c.post("/api/scanner/inventory", headers=H, data={
+            "data": json.dumps(data),
+            "photos": [(io.BytesIO(b"a"), "1.jpg")]})
+    assert r.status_code == 200
+    mock_decode.assert_not_called()
+
 
 def test_pendientes_list(tmp_path):
     slug = _guardar_carro(tmp_path)
@@ -172,3 +205,56 @@ def test_inventory_no_photos_400(tmp_path):
             "title": "t", "description": "d", "notes": ""}
     r = c.post("/api/scanner/inventory", headers=H, data={"data": json.dumps(data)})
     assert r.status_code == 400 and "foto" in r.json["error"]
+
+def test_put_permite_editar_make(tmp_path):
+    slug = _guardar_carro(tmp_path)
+    r = c.put(f"/api/scanner/inventory/{slug}", headers=H, json={"make": "Honda"})
+    assert r.status_code == 200 and r.json["data"]["make"] == "Honda"
+    r2 = c.get(f"/api/scanner/inventory/{slug}", headers=H)
+    assert r2.json["data"]["make"] == "Honda"
+
+# ── Precio real privado + rango de alternativas (spec 2026-08-16) ──────────
+
+def test_put_permite_editar_precio_interno_y_rango_alternativas(tmp_path):
+    slug = _guardar_carro(tmp_path)
+    r = c.put(f"/api/scanner/inventory/{slug}", headers=H, json={
+        "internal_price": 15500, "alt_price_low": 9000, "alt_price_high": 13000})
+    assert r.status_code == 200
+    assert r.json["data"]["internal_price"] == 15500
+    assert r.json["data"]["alt_price_low"] == 9000
+    assert r.json["data"]["alt_price_high"] == 13000
+    r2 = c.get(f"/api/scanner/inventory/{slug}", headers=H)
+    assert r2.json["data"]["internal_price"] == 15500
+    assert r2.json["data"]["alt_price_low"] == 9000
+    assert r2.json["data"]["alt_price_high"] == 13000
+
+def test_save_inventory_persiste_precio_interno_sin_requerirlo(tmp_path):
+    # save_inventory() persiste el dict completo tal cual (sin cambios) — los
+    # campos nuevos son opcionales, no deben bloquear el guardado si faltan.
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    data = {"vin": "1HGCM82633A004352", "yr": "2021", "model": "Corolla", "trim": "SE",
+            "color": "Blanco", "price": 17500, "mileage": 42000,
+            "title": "t", "description": "d", "notes": "",
+            "internal_price": 21000, "alt_price_low": 15000, "alt_price_high": 19000}
+    r = c.post("/api/scanner/inventory", headers=H, data={
+        "data": json.dumps(data),
+        "photos": (io.BytesIO(b"a"), "1.jpg")})
+    folder = tmp_path / r.json["folder"].split("/")[-1]
+    saved = json.loads((folder / "listing.json").read_text())
+    assert saved["internal_price"] == 21000
+    assert saved["alt_price_low"] == 15000
+    assert saved["alt_price_high"] == 19000
+
+def test_build_payload_nunca_incluye_precio_interno_ni_alternativas(tmp_path):
+    # site_publisher.build_payload() arma su propio dict campo por campo — los
+    # campos privados del scanner deben quedar estructuralmente imposibles de
+    # publicar, sin depender de un guard que alguien pueda olvidar.
+    import site_publisher
+    data = {"vin": "1HGCM82633A004352", "yr": "2021", "model": "Corolla", "trim": "SE",
+            "color": "Blanco", "price": 17500, "mileage": 42000,
+            "title": "t", "description": "d",
+            "internal_price": 21000, "alt_price_low": 15000, "alt_price_high": 19000}
+    payload = site_publisher.build_payload(data, tmp_path)
+    assert "internal_price" not in payload
+    assert "alt_price_low" not in payload
+    assert "alt_price_high" not in payload
