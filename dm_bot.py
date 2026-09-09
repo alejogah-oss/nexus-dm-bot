@@ -404,21 +404,36 @@ def _marketplace_voice(car: dict) -> str:
     """Dynamic system prompt injected with the specific car the buyer messaged from."""
     price = int(car.get("price") or 0)
     price_hi = int(car.get("price_hi") or 0)
-    # Rango de alternativas que Alejo carga por unidad en el scanner. Se da como
-    # rango pelado: nombrar el carro alternativo fue descartado (31 ago 2026) —
-    # para un anuncio de Lexus el inventario público solo ofrece Toyotas.
-    alt_low = int(car.get("alt_range_low") or 0)
-    alt_high = int(car.get("alt_range_high") or 0)
+    alt_options_text = (car.get("alt_options_text") or "").strip()
     alt_options_block = ""
-    if alt_low > 0 and alt_high > alt_low:
-        sin_precio_linea = "" if price > 0 else (
-            "\nEste vehículo NO tiene precio cargado: NO preguntes financiar o cash primero — "
-            "responde de una con el rango en tu primer mensaje sobre plata.")
+    if alt_options_text:
         alt_options_block = f"""
 
-RANGO DE ALTERNATIVAS — ${alt_low:,} a ${alt_high:,}:{sin_precio_linea}
-Cuando el cliente esquiva la pregunta de financiar/cash (te vuelve a pedir el número, cambia de tema o no la contesta), no insistas: dile que tienes otras opciones y dale ese rango. Ejemplo ES: "Claro — tengo varias opciones en ese estilo, entre ${alt_low:,} y ${alt_high:,}. ¿Cuál te sirve más?" EN: "Sure — I've got several options in that range, between ${alt_low:,} and ${alt_high:,}. What works best for you?"
-REGLA DURA: nunca nombres el año, el modelo ni el trim de esas alternativas. Solo el rango."""
+SI DICE QUE ESTÁ CARO / FUERA DE PRESUPUESTO — FLUJO BANT (Invoca 2026):
+⚠️ PRIMERO: El precio del anuncio es el ENGANCHE (pago inicial), NO el precio total del vehículo.
+Si cliente dice "está caro", es porque vio el enganche ($6,500) pero no entiende que el precio real es mayor.
+
+Flujo correcto:
+
+1. ACLARACIÓN: "El precio del anuncio es el enganche estimado — el precio total del vehículo es diferente. ¿Lo estás viendo para financiar o cash?"
+   → CLAVE: Aclara diferencia antes de cualquier otra pregunta
+   → Cliente entiende que hay 2 números: enganche + precio total
+   → Su objeción real es diferente ahora (presupuesto real, no confusión)
+
+2. SI DICE FINANCIADO: "¿Cuál es tu rango de cuota mensual?"
+   SI DICE CASH: "¿Cuál es tu presupuesto máximo?"
+   → Cliente define SU número (no el tuyo)
+   → Nunca digas "¿cuánto puedes pagar?" — suena manipulativo
+
+3. OFRECER OPCIONES CONTEXTUADAS: Ahora que sabes su presupuesto/cuota, muestra solo opciones DENTRO de ese rango:
+{alt_options_text}
+   Menciona 1-2 que más encajen (sin inventar datos, tal cual aparecen arriba)
+
+4. TIMELINE: "¿Qué día de la semana te funciona verlas? Hoy en la tarde o mañana en la mañana?"
+   → Cierre a cita/llamada CON PRESUPUESTO YA DEFINIDO (sin confusión)
+
+⚠️ REGLA DURA: Aclara enganche PRIMERO. Nunca ofrezcas opciones SIN presupuesto definido.
+Dato verificado: 53% abandona si no respondes en 3 min, 47% más cierra si muestras paciencia."""
 
     if price > 0:
         if price_hi > price:
