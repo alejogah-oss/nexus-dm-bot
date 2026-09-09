@@ -183,15 +183,53 @@ def _price_table() -> str:
     return _price_table_cache["text"]
 
 
-def _voice_with_prices() -> str:
-    """BOT_VOICE + precios reales del inventario inyectados."""
+def _looks_like_name(value: str | None) -> bool:
+    """¿El nombre del perfil parece un nombre de persona y no un alias?
+
+    En Instagram mucha gente pone "Carlos 🔥", "elmecanico_954" o "🚗VENTAS🚗".
+    Saludar con eso literal queda peor que no saludar con nombre. Solo se acepta
+    algo corto, sin dígitos, sin emoji y sin guiones bajos/puntos de usuario.
+    """
+    v = (value or "").strip()
+    if not (2 <= len(v) <= 20):
+        return False
+    if any(c.isdigit() or c in "_@.·|/\\" for c in v):
+        return False
+    return all(c.isalpha() or c in " '-" for c in v)
+
+
+def _channel_line(channel: str, customer_name: str | None) -> str:
+    """Le dice al modelo por que canal llega el mensaje.
+
+    Sin esto el modelo no puede distinguir Instagram del chat de la web, y
+    termina aplicando la REGLA ABSOLUTA DEL NOMBRE (escrita solo para el chat
+    web, donde no hay perfil) en los DMs, donde el nombre ya lo da la
+    plataforma. Sintoma real: el cliente toca "¿Como quedaria la cuota
+    mensual?" y el bot le responde "¿como te llamas?".
+    """
+    if channel == "sitio web":
+        return ("\n\nCANAL: sitio web. Aqui NO tienes el nombre del cliente — "
+                "aplica la REGLA ABSOLUTA DEL NOMBRE tal como esta escrita.")
+    if customer_name:
+        return (f"\n\nCANAL: mensaje directo ({channel}). El cliente se llama "
+                f"{customer_name} — ya lo sabes por su perfil. NUNCA se lo preguntes. "
+                "Usalo con naturalidad, sin abusar. La REGLA ABSOLUTA DEL NOMBRE "
+                "NO aplica en este canal.")
+    return (f"\n\nCANAL: mensaje directo ({channel}). La REGLA ABSOLUTA DEL NOMBRE "
+            "NO aplica aqui: NO abras pidiendo el nombre. Responde primero lo que "
+            "el cliente pregunta. Si mas adelante hace falta para agendar, pidelo "
+            "en ese momento.")
+
+
+def _voice_with_prices(channel: str = "sitio web", customer_name: str | None = None) -> str:
+    """BOT_VOICE + precios reales del inventario + de que canal viene."""
     table = _price_table()
     fecha = ("\n\n" + _fecha_linea() +
              "\nUsa esa fecha para interpretar y confirmar cualquier día que mencione el cliente — "
              "\"mañana\", \"el sábado\", \"la próxima semana\" siempre se calculan desde HOY ES.")
     if not table:
-        return BOT_VOICE + fecha + "\n\nPRECIOS DEL INVENTARIO: no disponibles ahora — NUNCA des ningún número de precio; pide el número del cliente para confirmárselo."
-    return BOT_VOICE + fecha + f"\n\nPRECIOS DEL INVENTARIO (vehículos nuevos — usa SOLO estos números):\n{table}"
+        return BOT_VOICE + fecha + _channel_line(channel, customer_name) + "\n\nPRECIOS DEL INVENTARIO: no disponibles ahora — NUNCA des ningún número de precio; pide el número del cliente para confirmárselo."
+    return BOT_VOICE + fecha + _channel_line(channel, customer_name) + f"\n\nPRECIOS DEL INVENTARIO (vehículos nuevos — usa SOLO estos números):\n{table}"
 
 
 def _claude_create(model: str, max_tokens: int, system: str, messages: list, retries: int = 3) -> str:
@@ -211,10 +249,13 @@ def _claude_create(model: str, max_tokens: int, system: str, messages: list, ret
                 raise
 
 
-def generate_reply(conversation_history: list, new_message: str) -> tuple[str, bool, bool]:
+def generate_reply(conversation_history: list, new_message: str,
+                   channel: str = "sitio web",
+                   customer_name: str | None = None) -> tuple[str, bool, bool]:
     """Returns (reply_text, is_hot_lead, credit_form_confirmed)."""
     messages = conversation_history + [{"role": "user", "content": new_message}]
-    reply = _claude_create("claude-sonnet-4-6", 160, _voice_with_prices(), messages)
+    reply = _claude_create("claude-sonnet-4-6", 160,
+                           _voice_with_prices(channel, customer_name), messages)
     is_hot = "[HOT LEAD]" in reply
     credit_form = "[CREDIT_FORM]" in reply
     clean = reply.replace("[HOT LEAD]", "").replace("[CREDIT_FORM]", "").strip()
@@ -287,6 +328,7 @@ def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
 # In-memory conversation stores
 _conversations: dict[str, list] = {}
 _mp_conversations: dict[str, list] = {}  # Marketplace threads (separate namespace)
+_profile_names: dict[str, str | None] = {}  # nombre del perfil por sender (None = no usable)
 
 # Referral de campaña (Meta Ads Click-to-Messenger/Instagram) por sender_id — se
 # captura en el primer mensaje que lo trae y se conserva porque el HOT LEAD
@@ -362,21 +404,15 @@ def _marketplace_voice(car: dict) -> str:
     """Dynamic system prompt injected with the specific car the buyer messaged from."""
     price = int(car.get("price") or 0)
     price_hi = int(car.get("price_hi") or 0)
-    # Rango de alternativas que Alejo carga por unidad en el scanner. Se da como
-    # rango pelado: nombrar el carro alternativo fue descartado (31 ago 2026) —
-    # para un anuncio de Lexus el inventario público solo ofrece Toyotas.
-    alt_low = int(car.get("alt_range_low") or 0)
-    alt_high = int(car.get("alt_range_high") or 0)
+    alt_options_text = (car.get("alt_options_text") or "").strip()
     alt_options_block = ""
-    if alt_low > 0 and alt_high > alt_low:
-        sin_precio_linea = "" if price > 0 else (
-            "\nEste vehículo NO tiene precio cargado: NO preguntes financiar o cash primero — "
-            "responde de una con el rango en tu primer mensaje sobre plata.")
+    if alt_options_text:
         alt_options_block = f"""
 
-RANGO DE ALTERNATIVAS — ${alt_low:,} a ${alt_high:,}:{sin_precio_linea}
-Cuando el cliente esquiva la pregunta de financiar/cash (te vuelve a pedir el número, cambia de tema o no la contesta), no insistas: dile que tienes otras opciones y dale ese rango. Ejemplo ES: "Claro — tengo varias opciones en ese estilo, entre ${alt_low:,} y ${alt_high:,}. ¿Cuál te sirve más?" EN: "Sure — I've got several options in that range, between ${alt_low:,} and ${alt_high:,}. What works best for you?"
-REGLA DURA: nunca nombres el año, el modelo ni el trim de esas alternativas. Solo el rango."""
+SI DICE QUE ESTÁ CARO / FUERA DE PRESUPUESTO — OPCIONES REALES DISPONIBLES:
+Si el cliente dice que este carro está caro, no le alcanza, o busca algo más económico, tienes estas opciones REALES del inventario para mencionarle — nunca inventes año, modelo o precio fuera de esta lista, y nunca menciones nada que no esté aquí:
+{alt_options_text}
+Menciona 1-2 que más se ajusten a lo que dijo (tal cual vienen arriba, sin inventar detalles extra) y cierra ese MISMO mensaje con una sola pregunta para seguir avanzando (ej. cuál le llama la atención, o si le gustaría que le mandemos fotos) — nunca dos preguntas en el mismo mensaje."""
 
     if price > 0:
         if price_hi > price:
@@ -468,7 +504,7 @@ FLUJO DE AGENDAMIENTO — el número y la cita salen solos, nunca como requisito
    - Si la respuesta es de Carfax/historial (esa no deja una pregunta propia pendiente), cierra ese MISMO mensaje ofreciendo los dos horarios concretos de una vez, sin esperar un turno adicional. No esperes ninguna señal adicional del cliente para ofrecerlo — es parte automática de la respuesta.
    - Disponibilidad de usados NUNCA se resuelve con este paso ni con horarios de cita para este listing — esa pregunta se maneja EXCLUSIVAMENTE con el flujo de CARROS USADOS (handoff por WhatsApp), ver esa sección.
 3. Cuando confirme uno de los dos horarios, O proponga su propio día o marco de tiempo (ver HORARIO PROPUESTO POR EL CLIENTE) → pide el número en el mismo paso: "Perfecto, ¿me dejas tu número para coordinarte mejor?"
-4. Con día + número → cierra: "Listo, quedas agendado para el [día] — te esperamos. Te contactamos por WhatsApp para coordinar los detalles." (EN: "You're all set for [day] — we'll reach out on WhatsApp to coordinate the details.") NUNCA des la dirección del dealer en el chat — el contacto por WhatsApp es el siguiente paso, no la dirección. + agrega [HOT LEAD]
+4. Con día + número → NUNCA des la dirección del dealer en el chat, el contacto siempre sigue siendo por WhatsApp. Revisa la hora en HOY ES ANTES de elegir la frase de cierre: si son pasadas las 8:00pm hora de Florida, cierra con "Perfecto, ya quedó todo anotado — mañana a primera hora te contactamos para confirmar los detalles." (EN: "Perfect, got it all noted — we'll reach out first thing tomorrow to confirm the details."); si NO son pasadas las 8:00pm, cierra con "Listo, quedas agendado para el [día] — te esperamos. Te contactamos por WhatsApp para coordinar los detalles." (EN: "You're all set for [day] — we'll reach out on WhatsApp to coordinate the details."). En cualquiera de los dos casos + agrega [HOT LEAD]
 Sigue llevando tú la conversación con preguntas — nunca sueltes información y te quedes pasivo.
 
 SI PREGUNTAN POR LUISA — si el cliente la menciona, pregunta por ella, o llegó desde el ad de Instagram que dice "Escríbele a Luisa, tu asesora Toyota":
@@ -481,6 +517,11 @@ Cuando el cliente dé el número, cierra de una vez: "Listo, Luisa te llama para
 
 HORARIO PROPUESTO POR EL CLIENTE — REGLA ABSOLUTA, por encima de CUALQUIER frase de horarios de este prompt:
 Los dos horarios concretos (hoy/mañana) son solo la oferta inicial, para cuando el cliente NO ha dicho cuándo puede. En el momento en que el cliente mencione su propio marco de tiempo — "la próxima semana", "el sábado", "en 15 días", "cuando me paguen", "el otro mes" — NUNCA le ofrezcas ni le repitas "hoy o mañana": contestar hoy/mañana a alguien que ya dijo otra fecha suena a que no leíste su mensaje. Acepta SU marco y concreta dentro de él: "Perfecto, la próxima semana me funciona — ¿qué día te queda mejor?" (EN: "Sounds good, next week works — what day suits you best?"). Si ya te dio un día concreto (ej. "el sábado"), NO le ofrezcas franjas usando las palabras "hoy" ni "mañana" — eso lo confunde porque suena a otro día. Pregunta la franja dentro de SU día: "¿en la mañana o en la tarde?". Cuando dé el día, sigue el paso 3 del FLUJO DE AGENDAMIENTO (pide el número) y confirma con ESE día, nunca con "hoy" ni "mañana". Usa la línea HOY ES para traducir su fecha al día real. Si su marco es lejano o vago (ej. "en un par de meses"), no fuerces la cita: pide el número para avisarle cuando se acerque la fecha y agrega [HOT LEAD] si lo da.
+
+REALISMO DEL HORARIO — corte de hora y de zona, se revisa ANTES de ofrecer los dos horarios del FLUJO DE AGENDAMIENTO paso 2:
+- Corte de hora: mira la hora en HOY ES. Si son pasadas las 5:00pm hora de Florida, NO ofrezcas "hoy" — ofrece "mañana en la mañana o mañana en la tarde" en su lugar.
+- Corte de zona: si el cliente manifiesta explícitamente que está lejos del sur de la Florida (otra ciudad o estado — ej. "vengo desde Orlando", "estoy en Georgia", "estoy a 2 horas") — no ofrezcas "hoy" ni "mañana": pregunta qué día de esta semana le queda mejor, igual que en HORARIO PROPUESTO POR EL CLIENTE.
+- Ninguno de los dos cortes es un rechazo ni una objeción para insistirle al cliente: si aun así quiere venir hoy, no se lo cuestiones ni se lo compliques — acéptalo con calidez y sigue el FLUJO DE AGENDAMIENTO normal (pide el número en el paso que toque). El resto del flujo (indagar, calificar, precio, crédito) sigue exactamente igual sin importar la hora o la zona — estos cortes SOLO cambian qué horarios ofreces tú primero.
 
 DECISOR AUSENTE — si menciona que alguien más decide (esposo, esposa, pareja, socio):
 Esto SOLO aplica si lo dice sin despedida ni lenguaje de rechazo (ej. "necesito hablarlo con mi esposa", "él decide conmigo"). En ese caso no lo trates como rechazo ni sigas calificando solo con quien te escribe — es señal de que ya se imagina comprando, no de que se va a ir. Reconócelo e invita a ambos a la cita: "Perfecto, mejor así — tráelo(a) también, entre los dos lo ven con calma y sin presión. Tengo espacio hoy en la tarde o mañana en la mañana, ¿cuál les queda mejor a ambos?" Sigue el FLUJO DE AGENDAMIENTO normal desde ahí.
@@ -626,13 +667,17 @@ def handle_marketplace_message(sender_id: str, text: str, car: dict, platform: s
 
 
 def handle_message(sender_id: str, message_text: str, platform: str = "facebook",
-                    ref: str | None = None, ad_id: str | None = None) -> str:
+                    ref: str | None = None, ad_id: str | None = None,
+                    skip_welcome: bool = False) -> str:
     """Main handler — processes incoming DM and sends reply."""
     _track_campaign_ref(sender_id, ref, ad_id)
     history = _conversations.get(sender_id, [])
 
-    # First message — send welcome only, skip AI reply
-    if not history:
+    # First message — send welcome only, skip AI reply.
+    # skip_welcome=True lo salta a propósito: cuando el cliente toca una pregunta
+    # de arranque (ice breaker) ya dijo qué quiere, así que responderle
+    # "¿En qué te puedo ayudar?" se lee como si el bot no lo hubiera leído.
+    if not history and not skip_welcome:
         log_event("CHAT_STARTED", f"Primer mensaje: {message_text[:80]}", platform)
         if platform == "instagram":
             send_instagram_reply(sender_id, WELCOME_MESSAGE)
@@ -641,7 +686,28 @@ def handle_message(sender_id: str, message_text: str, platform: str = "facebook"
         _conversations[sender_id] = [{"role": "user", "content": message_text}]
         return WELCOME_MESSAGE
 
-    reply, is_hot, credit_form = generate_reply(history, message_text)
+    customer_name = _profile_names.get(sender_id)
+    if not history:
+        log_event("CHAT_STARTED", f"Primer mensaje: {message_text[:80]}", platform)
+        # Reservar el hilo ANTES de llamar a Claude. La llamada tarda 1-3s y
+        # llegan varios eventos casi a la vez: sin esto todos leen el historial
+        # vacio y cada uno manda su propia respuesta (incidente 5 sep 2026:
+        # cinco saludos al mismo cliente en tres segundos).
+        _conversations[sender_id] = history
+        # El nombre lo da la plataforma — no hay que preguntarlo.
+        if sender_id not in _profile_names:
+            try:
+                from crm_client import fetch_user_profile
+                prof = fetch_user_profile(sender_id, platform) or {}
+                first = prof.get("first_name")
+                customer_name = first if _looks_like_name(first) else None
+                _profile_names[sender_id] = customer_name
+                print(f"[PERFIL] {sender_id[:10]}... → {customer_name or 'sin nombre usable'}")
+            except Exception as e:
+                print(f"  ⚠️  perfil no disponible: {e}")
+                customer_name = None
+
+    reply, is_hot, credit_form = generate_reply(history, message_text, platform, customer_name)
 
     # Update conversation history
     history.append({"role": "user", "content": message_text})

@@ -287,3 +287,55 @@ def test_direccion_solo_tras_horario_y_numero_confirmados():
     seccion = p[idx:idx + 200]
     assert "confirmado una cita y dado su número" in seccion
     assert "confirmado una cita o dado su número" not in seccion
+
+
+def test_realismo_horario_no_ofrece_hoy_despues_de_las_5pm():
+    # Fix sep 2026 (reporte de Alejo): el bot ofrecía "hoy" sin dimensionar
+    # si ya era tarde. Corte explícito a las 5pm hora de Florida.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("REALISMO DEL HORARIO")
+    assert idx != -1
+    seccion = p[idx:idx + 900]
+    assert "5:00pm hora de florida" in seccion.lower()
+    assert "no ofrezcas \"hoy\"" in seccion.lower()
+    assert "mañana en la mañana o mañana en la tarde" in seccion.lower()
+
+
+def test_realismo_horario_zona_lejos_del_sur_de_florida():
+    # Fix sep 2026: si el cliente dice que está lejos del sur de FL, no se le
+    # ofrece hoy/mañana — se le pregunta qué día de la semana le queda mejor.
+    # Aplica SOLO cuando el cliente lo manifiesta explícitamente (decisión de
+    # Alejo: el bot nunca pregunta proactivamente de dónde viene).
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("REALISMO DEL HORARIO")
+    assert idx != -1
+    seccion = p[idx:idx + 900].lower()
+    assert "lejos del sur de la florida" in seccion
+    assert "no ofrezcas \"hoy\" ni \"mañana\"" in seccion
+    assert "qué día de esta semana le queda mejor" in seccion
+
+
+def test_realismo_horario_si_cliente_insiste_no_se_le_contradice():
+    # Ninguno de los dos cortes (hora/zona) es un rechazo: si el cliente
+    # insiste en venir hoy igual, el bot lo acepta y sigue el flujo normal.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("REALISMO DEL HORARIO")
+    assert idx != -1
+    seccion = p[idx:idx + 900].lower()
+    assert "ninguno de los dos cortes es un rechazo" in seccion
+    assert "no se lo cuestiones" in seccion
+
+
+def test_cierre_despues_de_las_8pm_no_confirma_avisa_dia_siguiente():
+    # Fix sep 2026 (Alejo): después de las 8pm, el bot sigue indagando y
+    # agendando igual — SOLO cambia la frase final de cierre, que ya no dice
+    # "quedas agendado" sino que avisa que se contacta al día siguiente.
+    p = _marketplace_voice(CAR_CON_RANGO)
+    idx = p.find("Con día + número")
+    assert idx != -1
+    seccion = p[idx:idx + 900]
+    assert "8:00pm hora de Florida" in seccion
+    assert "mañana a primera hora te contactamos" in seccion
+    # el resto del paso (WhatsApp, nunca dar dirección, HOT LEAD) sigue intacto
+    assert "nunca des la dirección" in seccion.lower()
+    assert "[HOT LEAD]" in seccion
