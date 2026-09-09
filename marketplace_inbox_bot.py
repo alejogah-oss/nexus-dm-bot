@@ -164,7 +164,7 @@ def _enrich_car(car: dict) -> dict:
 # filesystem (sin API nueva). internal_price/alt_price_low/alt_price_high nunca
 # salen de este archivo — solo se usan para armar el prompt del bot.
 
-INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
+INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventario"))
 _scanner_inv_cache: dict = {"ts": 0.0, "by_vin": {}}
 
 

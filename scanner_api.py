@@ -13,7 +13,7 @@ def _sync_to_site_bg(folder: Path):
     threading.Thread(target=push_scanner_car_to_site, args=(folder,), daemon=True).start()
 
 bp = Blueprint("scanner", __name__)
-INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventory"))
+INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventario"))
 OCR_MODEL, COPY_MODEL = "claude-haiku-4-5-20251001", "claude-sonnet-5"
 _client = anthropic.Anthropic()
 
