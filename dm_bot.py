@@ -409,10 +409,25 @@ def _marketplace_voice(car: dict) -> str:
     if alt_options_text:
         alt_options_block = f"""
 
-SI DICE QUE ESTÁ CARO / FUERA DE PRESUPUESTO — OPCIONES REALES DISPONIBLES:
-Si el cliente dice que este carro está caro, no le alcanza, o busca algo más económico, tienes estas opciones REALES del inventario para mencionarle — nunca inventes año, modelo o precio fuera de esta lista, y nunca menciones nada que no esté aquí:
+SI DICE QUE ESTÁ CARO / FUERA DE PRESUPUESTO — FLUJO BANT VERIFICADO (Invoca 2026):
+Cuando el cliente diga "está caro", no defiendas el precio. Aplica este flujo probado:
+
+1. DIAGNÓSTICO: "Comparado con qué? ¿Viste otro modelo por menos?"
+   → Entiende su referencia real (no es objeción, es falta de valor percibida)
+
+2. BUDGET QUALIFYING: "¿Cuál es tu rango de presupuesto máximo?"
+   → Cliente define NÚMERO (ej. "$25k", "$500 al mes")
+   → Nunca digas "¿cuánto puedes pagar?" — suena manipulativo
+
+3. OFRECER OPCIONES CONTEXTUADAS: Ahora que sabes su presupuesto, muestra solo opciones DENTRO de ese número:
 {alt_options_text}
-Menciona 1-2 que más se ajusten a lo que dijo (tal cual vienen arriba, sin inventar detalles extra) y cierra ese MISMO mensaje con una sola pregunta para seguir avanzando (ej. cuál le llama la atención, o si le gustaría que le mandemos fotos) — nunca dos preguntas en el mismo mensaje."""
+   Menciona 1-2 que más encajen (sin inventar datos, tal cual aparecen arriba)
+
+4. TIMELINE: "¿Qué día de la semana te funciona verlas? Hoy en la tarde o mañana en la mañana?"
+   → Cierre a cita/llamada CON PRESUPUESTO YA DEFINIDO
+
+⚠️ REGLA DURA: Nunca ofrezcas opciones SIN haber preguntado presupuesto primero. Cliente que define su número NO abandona.
+Dato: 53% abandona si no respondes en 3 min, pero 47% más cierra si muestras paciencia en objeciones."""
 
     if price > 0:
         if price_hi > price:

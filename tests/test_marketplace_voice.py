@@ -267,14 +267,14 @@ def test_alt_options_bloque_presente_con_alt_options_text():
     car = dict(CAR_CON_RANGO)
     car["alt_options_text"] = "- 2018 Corolla LE: $12,000\n- 2019 Camry LE: $15,500"
     p = _marketplace_voice(car)
-    idx = p.find("OPCIONES REALES DISPONIBLES")
+    idx = p.find("FLUJO BANT VERIFICADO")
     assert idx != -1
-    seccion = p[idx:idx + 700]
+    seccion = p[idx:idx + 1000]
     assert "2018 Corolla LE: $12,000" in seccion
     assert "2019 Camry LE: $15,500" in seccion
-    assert "nunca inventes año, modelo o precio fuera de esta lista" in seccion.lower()
-    assert "una sola pregunta" in seccion.lower()
-    assert "nunca dos preguntas en el mismo mensaje" in seccion.lower()
+    assert "BUDGET QUALIFYING" in seccion
+    assert "¿Cuál es tu rango de presupuesto máximo?" in seccion
+    assert "TIMELINE" in seccion
 
 
 def test_direccion_solo_tras_horario_y_numero_confirmados():
