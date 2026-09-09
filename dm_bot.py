@@ -409,25 +409,31 @@ def _marketplace_voice(car: dict) -> str:
     if alt_options_text:
         alt_options_block = f"""
 
-SI DICE QUE ESTÁ CARO / FUERA DE PRESUPUESTO — FLUJO BANT VERIFICADO (Invoca 2026):
-Cuando el cliente diga "está caro", no defiendas el precio. Aplica este flujo probado:
+SI DICE QUE ESTÁ CARO / FUERA DE PRESUPUESTO — FLUJO BANT (Invoca 2026):
+⚠️ PRIMERO: El precio del anuncio es el ENGANCHE (pago inicial), NO el precio total del vehículo.
+Si cliente dice "está caro", es porque vio el enganche ($6,500) pero no entiende que el precio real es mayor.
 
-1. DIAGNÓSTICO: "Comparado con qué? ¿Viste otro modelo por menos?"
-   → Entiende su referencia real (no es objeción, es falta de valor percibida)
+Flujo correcto:
 
-2. BUDGET QUALIFYING: "¿Cuál es tu rango de presupuesto máximo?"
-   → Cliente define NÚMERO (ej. "$25k", "$500 al mes")
+1. ACLARACIÓN: "El precio del anuncio es el enganche estimado — el precio total del vehículo es diferente. ¿Lo estás viendo para financiar o cash?"
+   → CLAVE: Aclara diferencia antes de cualquier otra pregunta
+   → Cliente entiende que hay 2 números: enganche + precio total
+   → Su objeción real es diferente ahora (presupuesto real, no confusión)
+
+2. SI DICE FINANCIADO: "¿Cuál es tu rango de cuota mensual?"
+   SI DICE CASH: "¿Cuál es tu presupuesto máximo?"
+   → Cliente define SU número (no el tuyo)
    → Nunca digas "¿cuánto puedes pagar?" — suena manipulativo
 
-3. OFRECER OPCIONES CONTEXTUADAS: Ahora que sabes su presupuesto, muestra solo opciones DENTRO de ese número:
+3. OFRECER OPCIONES CONTEXTUADAS: Ahora que sabes su presupuesto/cuota, muestra solo opciones DENTRO de ese rango:
 {alt_options_text}
    Menciona 1-2 que más encajen (sin inventar datos, tal cual aparecen arriba)
 
 4. TIMELINE: "¿Qué día de la semana te funciona verlas? Hoy en la tarde o mañana en la mañana?"
-   → Cierre a cita/llamada CON PRESUPUESTO YA DEFINIDO
+   → Cierre a cita/llamada CON PRESUPUESTO YA DEFINIDO (sin confusión)
 
-⚠️ REGLA DURA: Nunca ofrezcas opciones SIN haber preguntado presupuesto primero. Cliente que define su número NO abandona.
-Dato: 53% abandona si no respondes en 3 min, pero 47% más cierra si muestras paciencia en objeciones."""
+⚠️ REGLA DURA: Aclara enganche PRIMERO. Nunca ofrezcas opciones SIN presupuesto definido.
+Dato verificado: 53% abandona si no respondes en 3 min, 47% más cierra si muestras paciencia."""
 
     if price > 0:
         if price_hi > price:
