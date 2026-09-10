@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 import requests
-from PIL import Image
+from PIL import Image, ImageOps
 
 SITE_API_URL = os.environ.get("SITE_API_URL", "https://tucarroconalejo.com/api.php")
 SITE_ADMIN_PASSWORD = os.environ.get("SITE_ADMIN_PASSWORD", "")
@@ -29,7 +29,10 @@ JPEG_QUALITY = 78
 
 
 def _photo_data_uri(path: Path) -> str:
-    img = Image.open(path).convert("RGB")
+    # El celular guarda la foto con los píxeles acostados y la rotación aparte, en un
+    # tag EXIF. Al reescribir el JPEG ese tag se pierde, así que sin exif_transpose el
+    # carro queda de lado en el sitio. Hay que aplicarla a los píxeles antes de guardar.
+    img = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
     img.thumbnail((MAX_DIM, MAX_DIM))
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=True)
