@@ -10,6 +10,7 @@ from assistant import log_event
 from appointments import extract_appointment_from_conversation
 from marketplace_analytics import track_message, track_hot_lead, track_declined
 from notes import save_note
+from listing_voice import DOWN_PAYMENT_THRESHOLD
 
 load_dotenv()
 
@@ -76,7 +77,7 @@ Los dos horarios concretos (hoy/mañana) son solo la oferta inicial, para cuando
 CARRO ECONÓMICO — si el cliente pide algo económico, barato, accesible, o menciona un presupuesto bajo sin decir si es nuevo o usado:
 Antes de ofrecer precio o modelos, tu siguiente pregunta es SOLO: "Claro — ¿lo estás buscando nuevo o usado?" (única pregunta de este mensaje, no dependas de suponerlo).
 - Si responde NUEVO → sigue el FLUJO GENERAL normal; el precio de anclaje es el trim de entrada (el más económico) de la lista PRECIOS DEL INVENTARIO.
-- Si responde USADO → confirma con calidez que sí manejamos usados en ese rango y sigue con el FLUJO GENERAL para agendar una visita — nunca des precios de usados en el chat (ver PRECIO).
+- Si responde USADO → confirma con calidez que sí manejamos usados, incluidos de otras marcas, y sigue la regla de USADOS Y OTRAS MARCAS: nombra solo unidades listadas, sin cifras, y pide el número para mandarle la info completa.
 
 DECISOR AUSENTE — si menciona que alguien más decide (esposo, esposa, pareja, socio):
 Esto SOLO aplica si lo dice sin despedida ni lenguaje de rechazo (ej. "necesito hablarlo con mi esposa", "él decide conmigo"). En ese caso no lo trates como rechazo ni sigas calificando solo con quien te escribe — es señal de que ya se imagina comprando, no de que se va a ir. Reconócelo e invita a ambos a que se acerquen juntos: "Perfecto, mejor así — tráelo(a) también, entre los dos lo ven con calma y sin presión. Tengo espacio hoy en la tarde o mañana en la mañana, ¿cuál les queda mejor?" Sigue el FLUJO GENERAL normal desde ahí.
@@ -96,6 +97,13 @@ Si el cliente se despide o agradece SIN haber confirmado todavía un horario, ti
 Si el cliente rechaza ese intento, dice que no por ahora, ya confirmó que viene, o ya rechazó 2 veces antes (ver RECHAZOS) — ahí sí responde con UNA sola frase corta y cálida de despedida. SIN pregunta, sin seguir vendiendo, sin agregar información nueva. Solo vuelve a hablar si el cliente te escribe de nuevo.
 Ejemplos: "Perfecto, qué gusto hablar contigo — aquí estamos cuando quieras dar el siguiente paso." · "Genial, gracias a ti — nos vemos pronto por el dealer." · "Está bien, sin problema — cualquier cosa me escribes."
 
+USADOS Y OTRAS MARCAS — REGLA ABSOLUTA, por encima de cualquier cosa que vayas a decir sobre marcas:
+Sí manejamos usados, y no solo Toyota — en el inventario hay unidades de otras marcas. NUNCA digas "solo vendemos Toyota", "solo manejamos Toyota", "esa marca no la manejamos" ni ninguna variante: es falso y despide a un cliente que sí tenía su carro con nosotros.
+- Habla ÚNICAMENTE de unidades listadas en PRECIOS DEL INVENTARIO o en EN STOCK SIN PRECIO PUBLICADO — esas son las que existen de verdad. Si pregunta por un modelo o una marca que no está en ninguna de las dos listas, no le digas que no la manejamos: dile que ahora mismo no la tienes a la mano, ofrécele lo más parecido que sí esté listado y, si nada le encaja, pídele el número para avisarle apenas entre algo así (ver CIERRE POR NO AJUSTE).
+- PRECIO DE UN USADO — SIN precio publicado (el caso normal): NO tienes ese número. PROHIBIDO que lo des, lo estimes, lo aproximes, sueltes un rango o digas "desde" — ni aunque el cliente insista. Reconoce el carro en una frase y pídele el teléfono para mandarle la info completa de esa unidad: "Sí, ese lo tenemos — te mando la info completa de esa unidad, ¿me das tu número?" (EN: "Yes, we've got that one — I'll send you the full details on it, can I get your number?"). Cuando te dé el número: agradece, confírmale que le llega la info y agrega [HOT LEAD] al final.
+- PRECIO DE UN USADO — CON precio publicado en PRECIOS DEL INVENTARIO: ese número sí es el precio real de esa unidad. Dalo DE UNA, igual que con los nuevos: "Ese está en $X, más taxes y fees", y cierra ese MISMO mensaje con UNA sola pregunta — "¿Lo estás viendo para financiar o cash?" si todavía no lo sabes, y si ya lo sabes "¿Para cuándo lo necesitas?". Nada de OTD y nunca inventes la mensualidad.
+- El millaje que aparece en la lista sí se lo puedes decir. Lo demás de la unidad (accidentes, dueños, título) se maneja con la regla del Carfax que viene más abajo.
+
 PRECIO — es señal de compra, no un obstáculo. El rango va DE UNA en tu primer mensaje de plata — NUNCA lo retengas detrás de una pregunta de calificación: el cliente está comparando varias opciones a la vez y se queda con quien sí le respondió; contestar el precio con una contra-pregunta suena a táctica de dealer y lo espanta.
 1. La primera vez que pregunte precio: da el rango REAL del modelo usando SOLO la lista "PRECIOS DEL INVENTARIO" de abajo, con palabras sencillas de chat — ej. "Arranca en $X y según el trim sube hasta unos $Y, más taxes y fees" — Y cierra ese MISMO mensaje con UNA sola pregunta: si todavía no sabes si es financiar o cash → "¿Lo estás viendo para financiar o cash?"; si ya lo dijo o se deduce de su mensaje (ej. preguntó "precio cash") → NUNCA se lo preguntes, cierra con "¿Para cuándo lo necesitas?".
 2. Cuando conteste financiar/cash → ese siguiente mensaje cierra con "¿Para cuándo lo necesitas?", sin repetir el precio que ya diste.
@@ -106,7 +114,7 @@ Si insiste en el número EXACTO o la mensualidad: "Ese número exacto sale en pe
 - PROHIBIDO mencionar o calcular OTD, precios "out the door" o precios con taxes/fees incluidos. Jamás.
 - NUNCA des precio si el cliente no lo preguntó.
 - NUNCA inventes un número que no esté en la lista. Si el modelo no aparece → "Déjame confirmarte el precio exacto — ¿me das tu número y te lo mando en unos minutos?"
-- Usados/certificados: el precio depende de la unidad específica — no des números, invita a verlos en persona.
+- Usados/certificados: el precio de un usado NO sale de esta lista — se maneja con la regla de USADOS Y OTRAS MARCAS (sin cifras y pidiendo el teléfono, salvo que la unidad aparezca con precio publicado).
 - NUNCA prometas financiamiento garantizado ni inventes tasas.
 
 MENSUALIDAD — solo si pregunta:
@@ -153,34 +161,87 @@ INVENTARIO — solo si insiste en ver opciones, comparte UNO:
 """
 
 
-# ── Tabla de precios reales del inventario (caché 10 min) ────────────────────
+# ── Tablas del inventario real (caché 10 min) ───────────────────────────────
+#
+# Dos bloques, no uno. Lo que separa a uno del otro es si el número cargado es
+# un PRECIO de verdad: por debajo de $10.000 lo que hay guardado es el enganche
+# (misma regla del scanner, listing_voice.DOWN_PAYMENT_THRESHOLD), y decirlo
+# como precio le miente al cliente. Esas unidades van al bloque sin precio, de
+# donde el bot solo puede sacar que existen — el número lo manda el equipo por
+# WhatsApp después de pedirle el teléfono.
 
-_price_table_cache = {"ts": 0.0, "text": ""}
+_inventory_cache = {"ts": 0.0, "precios": "", "sin_precio": ""}
 
 
-def _price_table() -> str:
-    """Rangos reales por modelo (nuevos): desde trim de entrada hasta el más caro en stock."""
+def _num(value) -> float:
+    """Los campos del API llegan como string con comas ("12,504") o vacíos."""
+    try:
+        return float(str(value or "").replace(",", "").replace("$", "").strip() or 0)
+    except ValueError:
+        return 0.0
+
+
+def _es_nuevo(v: dict) -> bool:
+    """Nuevo = sin millaje.
+
+    Es el MISMO criterio que usa inventario.html para pintar las secciones
+    NUEVOS y USADOS (`const esNuevo = v => !v.mileage || v.mileage === '0'`),
+    y no `type`, que en el inventario real se desalinea: hay unidades con
+    millaje cargadas como "new". El bot tiene que ver lo mismo que ve el
+    cliente en la página, o le discute lo que está mirando en pantalla.
+    """
+    return _num(v.get("mileage")) <= 0
+
+
+def _build_inventory_tables(vehicles: list) -> tuple:
+    """(precios reales, unidades sin precio publicado) a partir del inventario.
+
+    Nuevos con precio ≥ $10.000 → rango por modelo, como siempre.
+    Usados con precio ≥ $10.000 → línea propia, ese precio sí es real.
+    Todo lo demás → bloque sin precio, con año, marca, modelo y millaje.
+    """
+    grupos: dict = {}
+    usados_con_precio, sin_precio = [], []
+
+    for v in vehicles:
+        precio = _num(v.get("price"))
+        nombre = " ".join(str(v.get(k) or "").strip()
+                          for k in ("yr", "make", "model", "trim")).strip()
+        nombre = " ".join(nombre.split())
+        if precio >= DOWN_PAYMENT_THRESHOLD:
+            if _es_nuevo(v):
+                grupos.setdefault((v.get("yr"), v.get("model")), []).append(precio)
+            else:
+                usados_con_precio.append(
+                    f"- {nombre} — {_num(v.get('mileage')):,.0f} millas — ${precio:,.0f}")
+        else:
+            millas = _num(v.get("mileage"))
+            detalle = f" — {millas:,.0f} millas" if millas > 0 else ""
+            sin_precio.append(f"- {nombre}{detalle}")
+
+    lineas = []
+    for (yr, model), precios in sorted(grupos.items(), key=lambda kv: str(kv[0])):
+        lo, hi = min(precios), max(precios)
+        rango = (f"desde ${lo:,.0f} hasta ${hi:,.0f}" if hi > lo
+                 else f"${lo:,.0f} (único trim)")
+        lineas.append(f"- {yr} {model}: {rango}")
+
+    return "\n".join(lineas + sorted(usados_con_precio)), "\n".join(sorted(sin_precio))
+
+
+def _inventory_tables() -> tuple:
+    """_build_inventory_tables contra el inventario en vivo, con caché de 10 min."""
     now = time.time()
-    if now - _price_table_cache["ts"] > 600 or not _price_table_cache["text"]:
+    if now - _inventory_cache["ts"] > 600 or not _inventory_cache["precios"]:
         try:
             r = requests.get("https://tucarroconalejo.com/api.php?action=list",
                              headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-            groups: dict = {}
-            for v in r.json().get("vehicles", []):
-                if v.get("type") != "new" or not v.get("price"):
-                    continue
-                groups.setdefault((v.get("yr"), v.get("model")), []).append(v["price"])
-            lines = []
-            for (yr, model), prices in sorted(groups.items()):
-                lo, hi = min(prices), max(prices)
-                rango = f"desde ${lo:,} hasta ${hi:,}" if hi > lo else f"${lo:,} (único trim)"
-                lines.append(f"- {yr} {model}: {rango}")
-            if lines:
-                _price_table_cache["text"] = "\n".join(lines)
-                _price_table_cache["ts"] = now
+            precios, sin_precio = _build_inventory_tables(r.json().get("vehicles", []))
+            if precios or sin_precio:
+                _inventory_cache.update(ts=now, precios=precios, sin_precio=sin_precio)
         except Exception as e:
-            print(f"[BOT] Error tabla de precios: {e}")
-    return _price_table_cache["text"]
+            print(f"[BOT] Error tablas de inventario: {e}")
+    return _inventory_cache["precios"], _inventory_cache["sin_precio"]
 
 
 def _looks_like_name(value: str | None) -> bool:
@@ -222,14 +283,26 @@ def _channel_line(channel: str, customer_name: str | None) -> str:
 
 
 def _voice_with_prices(channel: str = "sitio web", customer_name: str | None = None) -> str:
-    """BOT_VOICE + precios reales del inventario + de que canal viene."""
-    table = _price_table()
+    """BOT_VOICE + inventario real (con y sin precio) + de qué canal viene."""
+    precios, sin_precio = _inventory_tables()
     fecha = ("\n\n" + _fecha_linea() +
              "\nUsa esa fecha para interpretar y confirmar cualquier día que mencione el cliente — "
              "\"mañana\", \"el sábado\", \"la próxima semana\" siempre se calculan desde HOY ES.")
-    if not table:
-        return BOT_VOICE + fecha + _channel_line(channel, customer_name) + "\n\nPRECIOS DEL INVENTARIO: no disponibles ahora — NUNCA des ningún número de precio; pide el número del cliente para confirmárselo."
-    return BOT_VOICE + fecha + _channel_line(channel, customer_name) + f"\n\nPRECIOS DEL INVENTARIO (vehículos nuevos — usa SOLO estos números):\n{table}"
+    base = BOT_VOICE + fecha + _channel_line(channel, customer_name)
+
+    if precios:
+        base += ("\n\nPRECIOS DEL INVENTARIO (usa SOLO estos números — ningún otro):\n"
+                 + precios)
+    else:
+        base += ("\n\nPRECIOS DEL INVENTARIO: no disponibles ahora — NUNCA des ningún "
+                 "número de precio; pide el número del cliente para confirmárselo.")
+
+    if sin_precio:
+        base += ("\n\nEN STOCK SIN PRECIO PUBLICADO (unidades reales que SÍ tenemos; "
+                 "de estas NO tienes el precio y NUNCA puedes dar, estimar ni insinuar "
+                 "una cifra — ver USADOS Y OTRAS MARCAS):\n" + sin_precio)
+
+    return base
 
 
 def _claude_create(model: str, max_tokens: int, system: str, messages: list, retries: int = 3) -> str:
