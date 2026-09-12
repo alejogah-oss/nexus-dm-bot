@@ -20,6 +20,8 @@ from pathlib import Path
 import requests
 from PIL import Image, ImageOps
 
+from vin_utils import resolve_make
+
 SITE_API_URL = os.environ.get("SITE_API_URL", "https://tucarroconalejo.com/api.php")
 SITE_ADMIN_PASSWORD = os.environ.get("SITE_ADMIN_PASSWORD", "")
 
@@ -59,7 +61,7 @@ def build_payload(data: dict, folder: Path) -> dict:
     mileage = data.get("mileage", "")
     payload = {
         "yr": int(data.get("yr") or 2020),
-        "make": data.get("make") or "Toyota",
+        "make": resolve_make(data, vin),
         "model": data.get("model", ""),
         "trim": data.get("trim", ""),
         "color": data.get("color", ""),
