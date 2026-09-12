@@ -371,13 +371,21 @@ def send_instagram_reply(recipient_id: str, text: str):
     return resp.json()
 
 
-def notify_alejo_hot_lead(sender_id: str, platform: str, message: str):
-    """Notifies Alejo when a hot lead is detected — pushes to CRM (which sends WhatsApp)."""
+def notify_alejo_hot_lead(sender_id: str, platform: str, message: str,
+                          history: list | None = None):
+    """Notifies Alejo when a hot lead is detected — pushes to CRM (which sends WhatsApp).
+
+    `history` se pasa explícito para los canales que NO viven en `_conversations`
+    (el chat web guarda el suyo en `_web_conversations`, dentro de webhook_server).
+    Sin este parámetro el lead del sitio llegaba al CRM sin conversación — y desde
+    que el llamador lo empezó a mandar (ae47c62), la llamada reventaba con
+    TypeError: cada cliente que daba su teléfono en la web recibía un 500."""
     print(f"\n🔥 HOT LEAD DETECTADO")
     print(f"   Platform: {platform}")
     print(f"   Sender ID: {sender_id}")
     print(f"   Mensaje: {message}")
-    history = _conversations.get(sender_id, [])
+    if history is None:
+        history = _conversations.get(sender_id, [])
 
     # Guardar nota con resumen + cita detectada
     note = save_note(sender_id, platform, history)
