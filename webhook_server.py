@@ -15,6 +15,8 @@ from flask import Flask, request, jsonify, Response, send_file
 from dotenv import load_dotenv
 from dm_bot import handle_message, handle_get_started, handle_marketplace_message, generate_reply, notify_alejo_hot_lead
 from comment_bot import handle_comment
+from crm_client import send_to_crm
+from pulse import pulse_notify
 from marketplace_agent import get_car_by_listing_id
 from scanner_api import bp as scanner_bp
 
@@ -328,6 +330,15 @@ def receive_webhook():
             # Todo pasa por comment_bot.handle_comment, que aplica las 7 guardas
             # (kill switch, identidad, top-level, dedupe, rate limit, intención).
             # Una excepción aquí NUNCA debe romper el 200 del webhook.
+            # Lead ads: el formulario instantáneo de Facebook/Instagram.
+            # Igual que los comentarios, una excepción acá NUNCA debe romper el
+            # 200 — si Meta no recibe 200 reintenta y duplica el lead.
+            elif field == "leadgen":
+                try:
+                    handle_leadgen(value)
+                except Exception as e:
+                    print(f"[LEADGEN] error procesando el lead: {type(e).__name__}: {e}")
+
             elif field in ("comments", "feed", "mention"):
                 try:
                     platform = "instagram" if field == "comments" else "facebook"
@@ -339,6 +350,101 @@ def receive_webhook():
                     print(f"[COMMENT] error procesando {field}: {type(e).__name__}: {e}")
 
     return "ok", 200
+
+
+# ── LEAD ADS (formulario instantáneo de Meta) ────────────────────────────────
+
+# Asesora a la que se asignan los leads de pauta. Es el `source_agent_code` del
+# CRM, no el nombre: el webhook del CRM resuelve
+# `SELECT id FROM users WHERE source_agent_code = ?` y con eso dispara su
+# WhatsApp. Si el código no existe, el lead entra igual pero sin asignar.
+ADS_AGENT_CODE = os.getenv("CRM_ADS_AGENT_CODE", "LUISA")
+
+
+def _lead_phone_10(raw: str) -> str:
+    """Meta entrega el teléfono en E.164 (+17862942144). El CRM guarda 10
+    dígitos, como los que ya trae de Marketplace — se normaliza para que no
+    queden dos formatos distintos en la misma columna."""
+    digits = "".join(c for c in (raw or "") if c.isdigit())
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    return digits
+
+
+def handle_leadgen(value: dict):
+    """Lead de formulario instantáneo (lead ads) → CRM + aviso a Alejo.
+
+    El webhook NO trae los datos del cliente: solo un `leadgen_id` que hay que
+    canjear contra la Graph API con un token que tenga `leads_retrieval`
+    (META_PAGE_ACCESS_TOKEN ya lo tiene, verificado 14 sep 2026).
+
+    Antes de esto los leads de pauta no llegaban a ningún lado: la Página ni
+    siquiera estaba suscrita al campo `leadgen`, y los 6 primeros de la campaña
+    IMG_6265 se quedaron un día enteros sin que nadie los llamara.
+    """
+    leadgen_id = value.get("leadgen_id")
+    if not leadgen_id:
+        print("[LEADGEN] evento sin leadgen_id — ignorado")
+        return
+    if _is_retry(f"leadgen:{leadgen_id}"):
+        print(f"[LEADGEN] {leadgen_id} ya procesado — reintento de Meta")
+        return
+
+    token = os.getenv("META_PAGE_ACCESS_TOKEN")
+    if not token:
+        print("[LEADGEN] falta META_PAGE_ACCESS_TOKEN — no se puede bajar el lead")
+        return
+
+    r = req_lib.get(
+        f"https://graph.facebook.com/v21.0/{leadgen_id}",
+        params={"fields": "created_time,field_data,ad_id,form_id", "access_token": token},
+        timeout=20,
+    )
+    if r.status_code != 200:
+        print(f"[LEADGEN] no se pudo leer {leadgen_id}: {r.status_code} {r.text[:200]}")
+        return
+    data = r.json()
+
+    fields = {f.get("name"): ", ".join(f.get("values") or []) for f in data.get("field_data", [])}
+    full_name = (fields.get("full_name") or "").strip()
+    parts = full_name.split(" ", 1)
+    first_name = parts[0] if parts else ""
+    last_name = parts[1] if len(parts) > 1 else ""
+    phone = _lead_phone_10(fields.get("phone_number", ""))
+
+    # Todo lo que el cliente respondió y no es nombre/teléfono/email va a la
+    # nota: si mañana el formulario suma preguntas, aparecen solas.
+    extra = {k: v for k, v in fields.items()
+             if k not in ("full_name", "phone_number", "email") and v}
+    extra_txt = "\n".join(f"{k}: {v}" for k, v in extra.items())
+
+    notes = (
+        f"Canal: ADS | Formulario instantáneo de Meta\n"
+        f"Anuncio: {data.get('ad_id', '?')} | Formulario: {data.get('form_id', '?')}\n"
+        f"Meta entregó el lead: {data.get('created_time', '?')}\n"
+        f"Sin conversación previa: dejó sus datos pidiendo que lo contacten."
+    )
+    if extra_txt:
+        notes += f"\n\nRespuestas del formulario:\n{extra_txt}"
+
+    lead = {
+        # El CRM ignora un `source` que no conozca y cae a 'tucarro', así que
+        # mandarlo es seguro incluso antes de que 'ads' exista en su ENUM.
+        "source": "ads",
+        "agent_code": ADS_AGENT_CODE,
+        "first_name": first_name,
+        "last_name": last_name,
+        "phone": phone,
+        "email": fields.get("email") or None,
+    }
+    print(f"[LEADGEN] {leadgen_id} → {full_name} {phone}")
+    send_to_crm(lead, notes)
+
+    pulse_notify(
+        event="LEAD_ADS",
+        detail=(f"Lead nuevo de pauta: {full_name or 'sin nombre'} — {phone or 'sin teléfono'}. "
+                f"Asignado a {ADS_AGENT_CODE} en el CRM."),
+    )
 
 
 # ── HEALTH CHECK ─────────────────────────────────────────────────────────────
