@@ -13,6 +13,10 @@ LEAD_RESPONSE = {
     "id": "111",
     "ad_id": "120255566743020348",
     "form_id": "28422664124061710",
+    "campaign_id": "120255675582210348",
+    "campaign_name": "TEAM CARS - Leads - Dos Opciones bZ/Prius - Sep2026",
+    "adset_name": "AS - Weekend Sab-Dom $30d",
+    "ad_name": "IMG_6435 v1",
     "field_data": [
         {"name": "full_name", "values": ["Candida Zeledon"]},
         {"name": "phone_number", "values": ["+17862942144"]},
@@ -98,3 +102,49 @@ def test_respuestas_extra_del_formulario_van_a_la_nota(capturado, monkeypatch):
     ws.handle_leadgen({"leadgen_id": "111"})
     _, notes = capturado["crm"][0]
     assert "Para trabajar" in notes
+
+
+def test_pide_los_campos_de_campana(capturado, monkeypatch):
+    pedidos = []
+    def fake_get(url, params=None, timeout=None):
+        pedidos.append(params["fields"])
+        return FakeResp(LEAD_RESPONSE)
+    monkeypatch.setattr(ws.req_lib, "get", fake_get)
+    ws.handle_leadgen({"leadgen_id": "111"})
+    for campo in ("campaign_id", "campaign_name", "adset_name", "ad_name"):
+        assert campo in pedidos[0].split(",")
+
+
+def test_manda_la_campana_al_crm(capturado):
+    ws.handle_leadgen({"leadgen_id": "111"})
+    lead, _ = capturado["crm"][0]
+    assert lead["ad_campaign_id"] == "120255675582210348"
+    assert lead["ad_campaign_name"] == "TEAM CARS - Leads - Dos Opciones bZ/Prius - Sep2026"
+
+
+def test_la_nota_trae_nombres_legibles(capturado):
+    ws.handle_leadgen({"leadgen_id": "111"})
+    _, notes = capturado["crm"][0]
+    assert "Campaña: TEAM CARS - Leads - Dos Opciones bZ/Prius - Sep2026" in notes
+    assert "Conjunto: AS - Weekend Sab-Dom $30d" in notes
+    assert "Anuncio: IMG_6435 v1" in notes
+
+
+def test_lead_sin_campana_se_crea_igual(capturado, monkeypatch):
+    sin = {k: v for k, v in LEAD_RESPONSE.items()
+           if k not in ("campaign_id", "campaign_name", "adset_name", "ad_name")}
+    monkeypatch.setattr(ws.req_lib, "get", lambda url, params=None, timeout=None: FakeResp(sin))
+    ws.handle_leadgen({"leadgen_id": "111"})
+    lead, notes = capturado["crm"][0]
+    assert lead["ad_campaign_id"] is None
+    assert lead["ad_campaign_name"] is None
+    assert lead["first_name"] == "Candida"
+    assert "Campaña: ?" in notes
+
+
+def test_campaign_id_numerico_viaja_como_string(capturado, monkeypatch):
+    num = dict(LEAD_RESPONSE, campaign_id=120255675582210348)
+    monkeypatch.setattr(ws.req_lib, "get", lambda url, params=None, timeout=None: FakeResp(num))
+    ws.handle_leadgen({"leadgen_id": "111"})
+    lead, _ = capturado["crm"][0]
+    assert lead["ad_campaign_id"] == "120255675582210348"

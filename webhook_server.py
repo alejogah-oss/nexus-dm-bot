@@ -397,7 +397,11 @@ def handle_leadgen(value: dict):
 
     r = req_lib.get(
         f"https://graph.facebook.com/v21.0/{leadgen_id}",
-        params={"fields": "created_time,field_data,ad_id,form_id", "access_token": token},
+        params={
+            "fields": "created_time,field_data,ad_id,form_id,"
+                      "campaign_id,campaign_name,adset_name,ad_name",
+            "access_token": token,
+        },
         timeout=20,
     )
     if r.status_code != 200:
@@ -418,9 +422,18 @@ def handle_leadgen(value: dict):
              if k not in ("full_name", "phone_number", "email") and v}
     extra_txt = "\n".join(f"{k}: {v}" for k, v in extra.items())
 
+    # De qué campaña viene: es lo único que sabemos de qué quiere el lead (los
+    # formularios de una pantalla solo piden nombre y teléfono). El CRM usa el ID
+    # para escoger el texto del WhatsApp; la nota lleva los nombres legibles.
+    campaign_id = data.get("campaign_id")
+    campaign_id = str(campaign_id) if campaign_id not in (None, "") else None
+    campaign_name = data.get("campaign_name") or None
+
     notes = (
         f"Canal: ADS | Formulario instantáneo de Meta\n"
-        f"Anuncio: {data.get('ad_id', '?')} | Formulario: {data.get('form_id', '?')}\n"
+        f"Campaña: {campaign_name or '?'}\n"
+        f"Conjunto: {data.get('adset_name', '?')} · Anuncio: {data.get('ad_name', '?')}\n"
+        f"IDs: anuncio {data.get('ad_id', '?')} · formulario {data.get('form_id', '?')}\n"
         f"Meta entregó el lead: {data.get('created_time', '?')}\n"
         f"Sin conversación previa: dejó sus datos pidiendo que lo contacten."
     )
@@ -436,6 +449,8 @@ def handle_leadgen(value: dict):
         "last_name": last_name,
         "phone": phone,
         "email": fields.get("email") or None,
+        "ad_campaign_id": campaign_id,
+        "ad_campaign_name": campaign_name,
     }
     print(f"[LEADGEN] {leadgen_id} → {full_name} {phone}")
     send_to_crm(lead, notes)
