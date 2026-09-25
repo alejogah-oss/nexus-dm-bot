@@ -429,14 +429,12 @@ def handle_leadgen(value: dict):
     campaign_id = str(campaign_id) if campaign_id not in (None, "") else None
     campaign_name = data.get("campaign_name") or None
 
-    notes = (
-        f"Canal: ADS | Formulario instantáneo de Meta\n"
-        f"Campaña: {campaign_name or '?'}\n"
-        f"Conjunto: {data.get('adset_name', '?')} · Anuncio: {data.get('ad_name', '?')}\n"
-        f"IDs: anuncio {data.get('ad_id', '?')} · formulario {data.get('form_id', '?')}\n"
-        f"Meta entregó el lead: {data.get('created_time', '?')}\n"
-        f"Sin conversación previa: dejó sus datos pidiendo que lo contacten."
-    )
+    # La nota es para el vendedor: qué pasó, en una línea. Canal y tema de la
+    # campaña ya se ven por fuera en la tarjeta del CRM; los datos técnicos
+    # (IDs, conjunto, anuncio, hora de Meta) viajan en el payload y quedan en el
+    # webhook_log del CRM por si hay que investigar algo, no en la nota.
+    notes = ("Dejó sus datos en un anuncio de Meta. "
+             "Aún no ha hablado con nadie: espera que lo contacten.")
     if extra_txt:
         notes += f"\n\nRespuestas del formulario:\n{extra_txt}"
 
@@ -451,6 +449,14 @@ def handle_leadgen(value: dict):
         "email": fields.get("email") or None,
         "ad_campaign_id": campaign_id,
         "ad_campaign_name": campaign_name,
+        "channel": "ads",
+        # Solo para el webhook_log del CRM (no tienen columna).
+        "meta_leadgen_id": leadgen_id,
+        "meta_ad_id": data.get("ad_id"),
+        "meta_form_id": data.get("form_id"),
+        "meta_adset_name": data.get("adset_name"),
+        "meta_ad_name": data.get("ad_name"),
+        "meta_created_time": data.get("created_time"),
     }
     print(f"[LEADGEN] {leadgen_id} → {full_name} {phone}")
     send_to_crm(lead, notes)

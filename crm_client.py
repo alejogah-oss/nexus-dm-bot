@@ -21,9 +21,14 @@ IG_USER_ID      = os.getenv("META_IG_USER_ID", "17841476248130016")
 def conversation_url(sender_id: str, platform: str) -> str:
     """Returns direct link to the conversation in Meta Business Suite.
     El chat del sitio web no vive en Meta — no hay link directo, solo la nota
-    con el resumen generado por _build_crm_note."""
+    con el resumen generado por _build_crm_brief."""
     if platform == "web":
         return "Chat del sitio web (sin link directo — ver nota)"
+    # Marketplace sale del perfil personal, no de la Página: su chat no está en
+    # la bandeja de Business Suite. Es el mismo link que usan las alertas del
+    # bot de Marketplace (marketplace_inbox_bot.py).
+    if platform in ("marketplace_personal", "marketplace"):
+        return f"https://www.messenger.com/marketplace/t/{sender_id}"
     asset_id = IG_USER_ID if platform == "instagram" else PAGE_ID
     return f"https://business.facebook.com/latest/inbox/all?asset_id={asset_id}&selected_item_id={sender_id}"
 
@@ -168,40 +173,80 @@ def send_to_crm(lead_data: dict, conversation_summary: str = "") -> dict:
         return {"error": str(e)}
 
 
-def _build_crm_note(conversation_history: list, platform: str, name: str,
-                    make: str, model: str, trim: str, conv_url: str) -> str:
-    """Uses AI to generate a concise briefing note for Alejo in the CRM."""
+# Canal que el CRM muestra por fuera en cada tarjeta (ver lead_intake.php).
+CRM_CHANNELS = {
+    "marketplace_personal": "marketplace", "marketplace": "marketplace",
+    "facebook": "facebook", "instagram": "instagram", "web": "web",
+}
+BUYER_PROFILES = ("Analítico", "Emocional", "Desconfiado", "Impulsivo", "Negociador")
+BUYER_STATES   = ("Explorando", "Interesado", "Considerando", "Decidido", "Urgente")
+# Con menos mensajes del cliente que esto, un perfil es adivinar: la IA tiene
+# que escoger uno aunque el chat sea "hola / ¿precio? / mi número es…", y un
+# "Desconfiado" inventado predispone al asesor. Mejor no mostrar nada.
+MIN_CLIENT_MSGS_FOR_PROFILE = 4
+
+
+def _build_crm_brief(conversation_history: list, platform: str, name: str,
+                     make: str, model: str, trim: str, ref: str | None = None) -> dict:
+    """Nota corta para el asesor + perfil y estado del comprador, en UNA llamada.
+
+    La nota tiene siempre la misma forma — Quiere / Situación / Cómo abrirle —
+    para que el asesor la lea de un vistazo. El canal, el perfil y el link al
+    chat NO van en la nota: el CRM los muestra por fuera de la tarjeta.
+    Devuelve {"note", "buyer_profile", "buyer_state"} (los dos últimos o None).
+    """
+    carro = " ".join(x for x in (make, model, trim) if x and x != "no especificado").strip()
+    fallback = {"note": f"Quiere: {carro or 'no lo dijo'}", "buyer_profile": None, "buyer_state": None}
+    head = f"Llegó por el anuncio: {ref}\n" if ref else ""
     if not conversation_history:
-        return f"Lead desde {platform.upper()}. Sin historial de conversación."
+        fallback["note"] = head + fallback["note"]
+        return fallback
 
-    # Format transcript (last 16 messages max)
-    transcript = ""
-    for msg in conversation_history[-16:]:
-        role = "Cliente" if msg["role"] == "user" else "Bot"
-        transcript += f"{role}: {msg['content']}\n"
-
+    transcript = "".join(
+        f"{'Cliente' if m['role'] == 'user' else 'Bot'}: {m['content']}\n"
+        for m in conversation_history[-16:]
+    )
     prompt = (
-        "Eres asistente de Alejo Garcia, asesor Toyota. "
-        "Resume esta conversación en 3-4 oraciones cortas para que Alejo sepa exactamente con quién va a hablar. "
-        "Incluye: nombre del cliente si lo mencionó, qué modelo le interesa, el valor o rango de precio del carro que busca "
-        "(el que se le dio en el chat, o el presupuesto que mencionó si no se le dio ninguno), su situación (primera vez, trade-in, crédito, familia), "
-        "señales de urgencia o intención, y cualquier detalle útil para el primer contacto. "
-        "Escribe en español, tono directo, sin introducciones.\n\n"
-        f"CLIENTE IDENTIFICADO: {name}\n"
+        "Eres asistente de un equipo de ventas Toyota. Lee este chat y prepara al asesor "
+        "que va a llamar al cliente. Responde SOLO con JSON válido:\n"
+        "{\n"
+        '  "quiere": "modelo que le interesa y precio o presupuesto hablado (enganche si lo dijo)",\n'
+        '  "situacion": "primera vez, trade-in, crédito, familia, trabajo — lo que se sepa, corto",\n'
+        '  "como_abrirle": "1 oración: con qué empezar la llamada según lo que mostró en el chat",\n'
+        '  "perfil": "Analítico|Emocional|Desconfiado|Impulsivo|Negociador, o null si el chat no da para saberlo",\n'
+        '  "estado": "Explorando|Interesado|Considerando|Decidido|Urgente, o null si no se sabe"\n'
+        "}\n"
+        "Cada campo en una línea corta, en español, sin introducciones. Si algo no se sabe, "
+        "escribe \"no lo dijo\" — no inventes.\n\n"
+        f"CLIENTE: {name}\nCARRO DEL ANUNCIO: {carro or 'ninguno'}\n"
         f"CONVERSACIÓN:\n{transcript}"
     )
     try:
         client = anthropic.Anthropic()
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=200,
-            messages=[{"role": "user", "content": prompt}]
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}],
         )
-        note = resp.content[0].text.strip()
-    except Exception:
-        note = f"Interesado en {make} {model} {trim}. Canal: {platform.upper()}."
+        text = resp.content[0].text.strip()
+        if "```" in text:
+            text = text.split("```")[1].split("```")[0].replace("json", "").strip()
+        data = json.loads(text)
+    except Exception as e:
+        print(f"  ⚠️  CRM — no se pudo armar la nota con IA: {e}")
+        fallback["note"] = head + fallback["note"]
+        return fallback
 
-    return f"{note}\n\nCanal: {platform.upper()} | Chat: {conv_url}"
+    note = head + (
+        f"Quiere: {data.get('quiere') or 'no lo dijo'}\n"
+        f"Situación: {data.get('situacion') or 'no lo dijo'}\n"
+        f"Cómo abrirle: {data.get('como_abrirle') or '—'}"
+    )
+    client_msgs = sum(1 for m in conversation_history if m.get("role") == "user")
+    enough = client_msgs >= MIN_CLIENT_MSGS_FOR_PROFILE
+    profile = data.get("perfil") if enough and data.get("perfil") in BUYER_PROFILES else None
+    state = data.get("estado") if enough and data.get("estado") in BUYER_STATES else None
+    return {"note": note, "buyer_profile": profile, "buyer_state": state}
 
 
 def _clean_sender_name(sender_name: str) -> str:
@@ -360,29 +405,15 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
 
     lead_data["link"]             = conv_url
     lead_data["source_url"]       = conv_url
-    lead_data["conversation_link"] = conv_url
 
-    from notes import analyze_buyer
-    buyer = analyze_buyer(conversation_history)
+    brief = _build_crm_brief(conversation_history, platform, name, make, model, trim, ref)
+    lead_data["channel"] = CRM_CHANNELS.get(platform)
+    lead_data["buyer_profile"] = brief["buyer_profile"]
+    lead_data["buyer_state"] = brief["buyer_state"]
+    if conv_url.startswith("https://"):
+        lead_data["conversation_link"] = conv_url
 
-    crm_note = _build_crm_note(conversation_history, platform, name, make, model, trim, conv_url)
-
-    if ref:
-        crm_note = f"[CAMPAÑA: {ref}]\n{crm_note}"
-
-    if ref:
-        crm_note = f"[CAMPAÑA: {ref}]\n{crm_note}"
-
-    if buyer:
-        crm_note += (
-            f"\n\n━━ PERFIL DEL COMPRADOR ━━"
-            f"\nPerfil:  {buyer.get('perfil', '—')}"
-            f"\nEstado:  {buyer.get('estado', '—')}"
-            f"\nSeñales: {buyer.get('señales', '—')}"
-            f"\nApproach: {buyer.get('approach', '—')}"
-        )
-
-    result = send_to_crm(lead_data, crm_note)
+    result = send_to_crm(lead_data, brief["note"])
 
     # Mark as sent so future HOT_LEAD signals don't create duplicate CRM entries
     if result.get("success") or result.get("ok"):

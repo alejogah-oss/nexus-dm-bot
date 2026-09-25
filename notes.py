@@ -108,7 +108,7 @@ def analyze_buyer(conversation_history: list) -> dict:
                     '  "perfil": "Analítico|Emocional|Desconfiado|Impulsivo|Negociador",\n'
                     '  "estado": "Explorando|Interesado|Considerando|Decidido|Urgente",\n'
                     '  "señales": "2 señales clave observadas en el chat",\n'
-                    '  "approach": "1-2 oraciones: cómo debe abordarlo Alejo en la negociación"\n'
+                    '  "approach": "1-2 oraciones: cómo debe abordarlo el asesor en la negociación"\n'
                     "}\n\n"
                     f"CONVERSACIÓN:\n{transcript}"
                 )

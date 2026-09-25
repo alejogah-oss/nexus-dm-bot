@@ -59,9 +59,8 @@ def test_push_hot_lead_usa_sender_name_si_la_ia_no_encuentra_nombre(tmp_path, mo
     with patch("crm_client.fetch_user_profile", return_value={}), \
          patch("crm_client.extract_lead_data",
                return_value={"source_platform": "marketplace_personal", "phone": "7865551234"}), \
-         patch("crm_client._build_crm_note", return_value="nota") as mock_note, \
+         patch("crm_client._build_crm_brief", return_value={"note": "nota", "buyer_profile": None, "buyer_state": None}) as mock_note, \
          patch("crm_client.send_to_crm", return_value={"success": True, "lead_id": 1}) as mock_send, \
-         patch("notes.analyze_buyer", return_value=None), \
          patch("pulse.pulse_notify") as mock_notify:
         result = crm_client.push_hot_lead("sender999", "marketplace_personal", [],
                                            sender_name="Kimonia · 2025 Nissan Altima")
@@ -116,9 +115,8 @@ def _push_with_mocks(tmp_path, monkeypatch, *, sender_name="", extracted=None, p
          patch("crm_client.extract_lead_data",
                return_value={"source_platform": "marketplace_personal", "phone": "7865551234",
                              **(extracted or {})}), \
-         patch("crm_client._build_crm_note", return_value="nota"), \
+         patch("crm_client._build_crm_brief", return_value={"note": "nota", "buyer_profile": None, "buyer_state": None}), \
          patch("crm_client.send_to_crm", return_value={"success": True, "lead_id": 1}) as mock_send, \
-         patch("notes.analyze_buyer", return_value=None), \
          patch("pulse.pulse_notify"):
         crm_client.push_hot_lead("s_" + str(id(tmp_path)), "marketplace_personal", [],
                                  sender_name=sender_name)
@@ -161,7 +159,6 @@ def test_id_numerico_del_sidebar_no_se_manda_como_nombre(tmp_path, monkeypatch):
          patch("crm_client.extract_lead_data",
                return_value={"source_platform": "marketplace_personal", "phone": "7865551234"}), \
          patch("crm_client.send_to_crm") as mock_send, \
-         patch("notes.analyze_buyer", return_value=None), \
          patch("pulse.pulse_notify"):
         crm_client.push_hot_lead("s_numeric", "marketplace_personal", [],
                                  sender_name="1027487763443921")
@@ -180,9 +177,8 @@ def test_telefono_recuperado_por_regex_llega_al_payload(tmp_path, monkeypatch):
     with patch("crm_client.fetch_user_profile", return_value={}), \
          patch("crm_client.extract_lead_data",
                return_value={"source_platform": "marketplace_personal"}), \
-         patch("crm_client._build_crm_note", return_value="nota"), \
+         patch("crm_client._build_crm_brief", return_value={"note": "nota", "buyer_profile": None, "buyer_state": None}), \
          patch("crm_client.send_to_crm", return_value={"success": True, "lead_id": 1}) as mock_send, \
-         patch("notes.analyze_buyer", return_value=None), \
          patch("pulse.pulse_notify"):
         crm_client.push_hot_lead("s_phone", "marketplace_personal", convo,
                                  sender_name="Amaurys")
@@ -190,3 +186,111 @@ def test_telefono_recuperado_por_regex_llega_al_payload(tmp_path, monkeypatch):
     sent = mock_send.call_args[0][0]
     assert sent["phone"] == "7865551234"
     assert sent["first_name"] == "Amaurys"
+
+
+# ── Nota corta para el asesor + perfil condensado (sep 2026) ──
+
+class _FakeClaude:
+    def __init__(self, text):
+        self._text = text
+        self.messages = self
+    def create(self, **kw):
+        return type("R", (), {"content": [type("C", (), {"text": self._text})()]})()
+
+
+_BRIEF_JSON = ('{"quiere": "Corolla LE 2024, ~$22k, enganche $3.000", '
+               '"situacion": "primera vez, sin crédito", '
+               '"como_abrirle": "preguntó dos veces por financiamiento: empezar por ahí", '
+               '"perfil": "Desconfiado", "estado": "Decidido"}')
+
+
+def _chat(n_cliente):
+    h = []
+    for i in range(n_cliente):
+        h += [{"role": "user", "content": f"msg {i}"}, {"role": "assistant", "content": "ok"}]
+    return h
+
+
+def test_brief_formato_fijo_y_perfil_con_chat_suficiente():
+    with patch("crm_client.anthropic.Anthropic", return_value=_FakeClaude(_BRIEF_JSON)):
+        b = crm_client._build_crm_brief(_chat(4), "marketplace_personal", "Ana", "Toyota", "Corolla", "LE")
+    assert b["note"].splitlines() == [
+        "Quiere: Corolla LE 2024, ~$22k, enganche $3.000",
+        "Situación: primera vez, sin crédito",
+        "Cómo abrirle: preguntó dos veces por financiamiento: empezar por ahí",
+    ]
+    assert b["buyer_profile"] == "Desconfiado"
+    assert b["buyer_state"] == "Decidido"
+    # canal, perfil y link van por fuera, no en la nota
+    assert "Canal" not in b["note"] and "PERFIL" not in b["note"] and "http" not in b["note"]
+
+
+def test_brief_sin_perfil_si_el_cliente_escribio_poco():
+    with patch("crm_client.anthropic.Anthropic", return_value=_FakeClaude(_BRIEF_JSON)):
+        b = crm_client._build_crm_brief(_chat(3), "marketplace_personal", "Ana", "Toyota", "Corolla", "")
+    assert b["buyer_profile"] is None and b["buyer_state"] is None
+    assert b["note"].startswith("Quiere:")
+
+
+def test_brief_descarta_perfil_inventado():
+    raro = _BRIEF_JSON.replace('"Desconfiado"', '"Tacaño"')
+    with patch("crm_client.anthropic.Anthropic", return_value=_FakeClaude(raro)):
+        b = crm_client._build_crm_brief(_chat(6), "facebook", "Ana", "Toyota", "Corolla", "")
+    assert b["buyer_profile"] is None
+    assert b["buyer_state"] == "Decidido"
+
+
+def test_brief_campana_sale_una_sola_vez():
+    with patch("crm_client.anthropic.Anthropic", return_value=_FakeClaude(_BRIEF_JSON)):
+        b = crm_client._build_crm_brief(_chat(4), "facebook", "Ana", "Toyota", "", "", ref="PROMO_RAV4")
+    assert b["note"].count("PROMO_RAV4") == 1
+    assert b["note"].startswith("Llegó por el anuncio: PROMO_RAV4\n")
+
+
+def test_brief_si_la_ia_falla_queda_el_carro():
+    with patch("crm_client.anthropic.Anthropic", side_effect=RuntimeError("sin crédito")):
+        b = crm_client._build_crm_brief(_chat(5), "marketplace_personal", "Ana", "Toyota", "Camry", "SE")
+    assert b["note"] == "Quiere: Toyota Camry SE"
+    assert b["buyer_profile"] is None
+
+
+def test_link_de_marketplace_abre_el_chat_de_messenger():
+    assert crm_client.conversation_url("123456", "marketplace_personal") == \
+        "https://www.messenger.com/marketplace/t/123456"
+    assert "business.facebook.com" in crm_client.conversation_url("123456", "facebook")
+
+
+def test_push_hot_lead_manda_canal_perfil_y_link(tmp_path, monkeypatch):
+    fake_module = tmp_path / "crm_client.py"
+    fake_module.write_text("")
+    monkeypatch.setattr(crm_client, "__file__", str(fake_module))
+    brief = {"note": "Quiere: Corolla", "buyer_profile": "Analítico", "buyer_state": "Interesado"}
+    with patch("crm_client.fetch_user_profile", return_value={}), \
+         patch("crm_client.extract_lead_data",
+               return_value={"source_platform": "marketplace_personal", "phone": "7865551234"}), \
+         patch("crm_client._build_crm_brief", return_value=brief), \
+         patch("crm_client.send_to_crm", return_value={"success": True, "lead_id": 1}) as mock_send, \
+         patch("pulse.pulse_notify"):
+        crm_client.push_hot_lead("777", "marketplace_personal", [], sender_name="Ana")
+    lead, nota = mock_send.call_args[0]
+    assert nota == "Quiere: Corolla"
+    assert lead["channel"] == "marketplace"
+    assert lead["buyer_profile"] == "Analítico"
+    assert lead["buyer_state"] == "Interesado"
+    assert lead["conversation_link"] == "https://www.messenger.com/marketplace/t/777"
+
+
+def test_push_hot_lead_web_no_manda_link(tmp_path, monkeypatch):
+    fake_module = tmp_path / "crm_client.py"
+    fake_module.write_text("")
+    monkeypatch.setattr(crm_client, "__file__", str(fake_module))
+    with patch("crm_client.fetch_user_profile", return_value={}), \
+         patch("crm_client.extract_lead_data",
+               return_value={"source_platform": "web", "phone": "7865551234", "first_name": "Ana"}), \
+         patch("crm_client._build_crm_brief", return_value={"note": "n", "buyer_profile": None, "buyer_state": None}), \
+         patch("crm_client.send_to_crm", return_value={"success": True, "lead_id": 1}) as mock_send, \
+         patch("pulse.pulse_notify"):
+        crm_client.push_hot_lead("w1", "web", [])
+    lead, _ = mock_send.call_args[0]
+    assert lead["channel"] == "web"
+    assert "conversation_link" not in lead

@@ -53,7 +53,8 @@ def test_crea_el_lead_con_nombre_y_telefono_normalizado(capturado):
     assert lead["last_name"] == "Zeledon"
     # E.164 de Meta -> 10 dígitos, como el resto de la columna phone del CRM
     assert lead["phone"] == "7862942144"
-    assert "Canal: ADS" in notes
+    assert "Dejó sus datos en un anuncio de Meta" in notes
+    assert "IDs:" not in notes and "Conjunto:" not in notes
 
 
 def test_marca_el_canal_ads(capturado):
@@ -122,12 +123,16 @@ def test_manda_la_campana_al_crm(capturado):
     assert lead["ad_campaign_name"] == "TEAM CARS - Leads - Dos Opciones bZ/Prius - Sep2026"
 
 
-def test_la_nota_trae_nombres_legibles(capturado):
+def test_los_datos_tecnicos_viajan_en_el_payload_no_en_la_nota(capturado):
     ws.handle_leadgen({"leadgen_id": "111"})
-    _, notes = capturado["crm"][0]
-    assert "Campaña: TEAM CARS - Leads - Dos Opciones bZ/Prius - Sep2026" in notes
-    assert "Conjunto: AS - Weekend Sab-Dom $30d" in notes
-    assert "Anuncio: IMG_6435 v1" in notes
+    lead, notes = capturado["crm"][0]
+    assert lead["channel"] == "ads"
+    assert lead["meta_ad_id"] == "120255566743020348"
+    assert lead["meta_form_id"] == "28422664124061710"
+    assert lead["meta_adset_name"] == "AS - Weekend Sab-Dom $30d"
+    assert lead["meta_ad_name"] == "IMG_6435 v1"
+    assert "120255566743020348" not in notes
+    assert "$30d" not in notes
 
 
 def test_lead_sin_campana_se_crea_igual(capturado, monkeypatch):
@@ -139,7 +144,7 @@ def test_lead_sin_campana_se_crea_igual(capturado, monkeypatch):
     assert lead["ad_campaign_id"] is None
     assert lead["ad_campaign_name"] is None
     assert lead["first_name"] == "Candida"
-    assert "Campaña: ?" in notes
+    assert "Dejó sus datos" in notes
 
 
 def test_campaign_id_numerico_viaja_como_string(capturado, monkeypatch):
