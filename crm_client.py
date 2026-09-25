@@ -266,6 +266,21 @@ def _clean_sender_name(sender_name: str) -> str:
     return "" if not name or name.isdigit() else name
 
 
+def _missing_required(name: str, phone: str) -> list[str]:
+    """Qué falta para poder crear el lead en el CRM.
+
+    El mínimo es el TELÉFONO y SOLO el teléfono (decisión de Alejo, ago 2026):
+    es el único dato que hace al lead accionable. El nombre NO bloquea — la
+    tabla `leads` lo acepta nulo y el Kanban muestra "Sin nombre", que es un
+    problema de cosmética, no de negocio.
+
+    Antes exigía ambos y eso contradecía la decisión escrita dos líneas más
+    abajo: en sep 2026 se perdieron 7 leads CON teléfono real porque el bot no
+    tenía el nombre a mano (ver `_resolve_sender_name` en marketplace_inbox_bot).
+    """
+    return [] if phone else ["teléfono"]
+
+
 def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
                   car: dict | None = None, ref: str | None = None,
                   sender_name: str = "") -> dict:
@@ -361,13 +376,13 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     # accionable; se avisa a Alejo una vez por WhatsApp y se espera al teléfono.
     # (Las citas confirmadas — el otro camino válido — ahora también exigen
     # teléfono, así que ese flujo entra por aquí con teléfono presente.)
-    missing = []
+    missing = _missing_required(name, phone)
     if not name:
-        missing.append("nombre")
-    if not phone:
-        missing.append("teléfono")
+        # El nombre NO bloquea. Un lead sin nombre se arregla en 10 segundos
+        # mirando el chat; uno que nunca entró al CRM se pierde entero.
+        print("  📋 CRM — Lead sin nombre, se crea igual (el mínimo es el teléfono).")
     if missing:
-        # Sin teléfono/nombre el lead NUNCA llega a crearse en CRM, así que
+        # Sin teléfono el lead NUNCA llega a crearse en CRM, así que
         # crm_sent nunca queda True — sin este guard, cada [HOT LEAD] repetido
         # en la misma conversación volvía a mandar WhatsApp para siempre. Se
         # avisa una sola vez por sender_id, con su propio flag.
@@ -393,7 +408,7 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
             print(f"  ⚠️  CRM — No se pudo marcar incomplete_alert_sent: {e}")
         return {"ok": True, "skipped": True, "reason": "incomplete_data", "missing": missing}
 
-    print(f"  Nombre: {name} | Tel: {phone} | Carro: {lead_data.get('vehicle_year','')} {make} {model} {trim}")
+    print(f"  Nombre: {name or '—'} | Tel: {phone} | Carro: {lead_data.get('vehicle_year','')} {make} {model} {trim}")
     print(f"  Conversación: {conv_url}")
 
     # WhatsApp notification includes direct link

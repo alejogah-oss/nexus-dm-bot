@@ -152,18 +152,37 @@ def test_nombre_de_la_ia_tiene_prioridad_sobre_sender_name(tmp_path, monkeypatch
 
 
 def test_id_numerico_del_sidebar_no_se_manda_como_nombre(tmp_path, monkeypatch):
-    # Sin nombre válido el lead ni siquiera debe crearse (guard de datos mínimos).
+    # El ID del thread no es un nombre: no debe guardarse como tal. Pero el
+    # nombre NO bloquea (el mínimo es el teléfono, fix del 15 sep 2026): el
+    # lead se crea igual, sin nombre.
     fake_module = tmp_path / "crm_client.py"
     fake_module.write_text("")
     monkeypatch.setattr(crm_client, "__file__", str(fake_module))
     with patch("crm_client.fetch_user_profile", return_value={}), \
          patch("crm_client.extract_lead_data",
                return_value={"source_platform": "marketplace_personal", "phone": "7865551234"}), \
-         patch("crm_client.send_to_crm") as mock_send, \
+         patch("crm_client._build_crm_brief", return_value={"note": "n", "buyer_profile": None, "buyer_state": None}), \
+         patch("crm_client.send_to_crm", return_value={"success": True, "lead_id": 1}) as mock_send, \
          patch("pulse.pulse_notify"):
         crm_client.push_hot_lead("s_numeric", "marketplace_personal", [],
                                  sender_name="1027487763443921")
+    lead, _ = mock_send.call_args[0]
+    assert not lead.get("first_name")
+    assert lead["phone"] == "7865551234"
+
+
+def test_sin_telefono_no_se_crea(tmp_path, monkeypatch):
+    fake_module = tmp_path / "crm_client.py"
+    fake_module.write_text("")
+    monkeypatch.setattr(crm_client, "__file__", str(fake_module))
+    with patch("crm_client.fetch_user_profile", return_value={}), \
+         patch("crm_client.extract_lead_data",
+               return_value={"source_platform": "facebook", "first_name": "Ana"}), \
+         patch("crm_client.send_to_crm") as mock_send, \
+         patch("pulse.pulse_notify"):
+        r = crm_client.push_hot_lead("s_nophone", "facebook", [])
     mock_send.assert_not_called()
+    assert r["missing"] == ["teléfono"]
 
 
 def test_telefono_recuperado_por_regex_llega_al_payload(tmp_path, monkeypatch):
