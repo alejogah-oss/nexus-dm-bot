@@ -232,15 +232,21 @@ def _build_crm_brief(conversation_history: list, platform: str, name: str,
         if "```" in text:
             text = text.split("```")[1].split("```")[0].replace("json", "").strip()
         data = json.loads(text)
+        if not isinstance(data, dict):
+            raise ValueError(f"la IA no devolvió un objeto JSON: {type(data).__name__}")
     except Exception as e:
         print(f"  ⚠️  CRM — no se pudo armar la nota con IA: {e}")
         fallback["note"] = head + fallback["note"]
         return fallback
 
+    def campo(k, vacio):
+        v = data.get(k)
+        return str(v).strip() if isinstance(v, (str, int, float)) and str(v).strip() else vacio
+
     note = head + (
-        f"Quiere: {data.get('quiere') or 'no lo dijo'}\n"
-        f"Situación: {data.get('situacion') or 'no lo dijo'}\n"
-        f"Cómo abrirle: {data.get('como_abrirle') or '—'}"
+        f"Quiere: {campo('quiere', 'no lo dijo')}\n"
+        f"Situación: {campo('situacion', 'no lo dijo')}\n"
+        f"Cómo abrirle: {campo('como_abrirle', '—')}"
     )
     client_msgs = sum(1 for m in conversation_history if m.get("role") == "user")
     enough = client_msgs >= MIN_CLIENT_MSGS_FOR_PROFILE

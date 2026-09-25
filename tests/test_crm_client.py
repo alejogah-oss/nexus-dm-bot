@@ -1,3 +1,4 @@
+import pytest
 import json
 from unittest.mock import patch, mock_open
 import crm_client
@@ -294,3 +295,20 @@ def test_push_hot_lead_web_no_manda_link(tmp_path, monkeypatch):
     lead, _ = mock_send.call_args[0]
     assert lead["channel"] == "web"
     assert "conversation_link" not in lead
+
+
+@pytest.mark.parametrize("respuesta", ['["a", "b"]', "null", '"texto"', "42"])
+def test_brief_json_que_no_es_objeto_cae_al_carro(respuesta):
+    # Si reventara, en los DMs el WhatsApp de aviso sale y el lead nunca llega al CRM.
+    with patch("crm_client.anthropic.Anthropic", return_value=_FakeClaude(respuesta)):
+        b = crm_client._build_crm_brief(_chat(5), "facebook", "Ana", "Toyota", "Camry", "")
+    assert b["note"] == "Quiere: Toyota Camry"
+    assert b["buyer_profile"] is None
+
+
+def test_brief_campos_raros_no_rompen_la_nota():
+    raro = '{"quiere": ["Camry"], "situacion": null, "como_abrirle": {"x": 1}, "perfil": 5, "estado": null}'
+    with patch("crm_client.anthropic.Anthropic", return_value=_FakeClaude(raro)):
+        b = crm_client._build_crm_brief(_chat(5), "facebook", "Ana", "Toyota", "Camry", "")
+    assert b["note"].splitlines() == ["Quiere: no lo dijo", "Situación: no lo dijo", "Cómo abrirle: —"]
+    assert b["buyer_profile"] is None and b["buyer_state"] is None
