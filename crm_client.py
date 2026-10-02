@@ -283,7 +283,7 @@ def _missing_required(name: str, phone: str) -> list[str]:
 
 def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
                   car: dict | None = None, ref: str | None = None,
-                  sender_name: str = "") -> dict:
+                  sender_name: str = "", extra: dict | None = None) -> dict:
     """
     Full flow: extract data from conversation → send to CRM.
     First HOT_LEAD: crea la entrada en el CRM y avisa por WhatsApp UNA vez.
@@ -434,6 +434,12 @@ def push_hot_lead(sender_id: str, platform: str, conversation_history: list,
     if conv_url.startswith("https://"):
         lead_data["conversation_link"] = conv_url
 
+    # Datos para que Leo escriba primero (spec 2026-10-01): ficha, precio, idioma,
+    # cita. Nunca pisan lo que ya se decidió arriba (nombre, teléfono, canal).
+    _protegidas = {"first_name", "last_name", "phone", "channel"}
+    for k, v in (extra or {}).items():
+        if k not in _protegidas and v not in (None, "", 0):
+            lead_data[k] = v
     result = send_to_crm(lead_data, brief["note"])
 
     # Mark as sent so future HOT_LEAD signals don't create duplicate CRM entries

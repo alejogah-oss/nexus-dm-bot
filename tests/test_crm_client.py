@@ -331,3 +331,28 @@ def test_brief_campos_raros_no_rompen_la_nota():
         b = crm_client._build_crm_brief(_chat(5), "facebook", "Ana", "Toyota", "Camry", "")
     assert b["note"].splitlines() == ["Quiere: no lo dijo", "Situación: no lo dijo", "Cómo abrirle: —"]
     assert b["buyer_profile"] is None and b["buyer_state"] is None
+
+
+# al final de tests/test_crm_client.py
+def test_push_hot_lead_mezcla_extra_en_el_payload(tmp_path, monkeypatch):
+    fake_module = tmp_path / "crm_client.py"
+    fake_module.write_text("")
+    monkeypatch.setattr(crm_client, "__file__", str(fake_module))
+    captured = {}
+    def fake_send(lead_data, note=""):
+        captured.update(lead_data)
+        return {"success": True, "lead_id": 1}
+    with patch("crm_client.fetch_user_profile", return_value={}), \
+         patch("crm_client.extract_lead_data", return_value={"first_name": "Ana", "phone": "7865550142"}), \
+         patch("crm_client._build_crm_brief", return_value={"note": "n", "buyer_profile": "", "buyer_state": ""}), \
+         patch("crm_client.send_to_crm", side_effect=fake_send), \
+         patch("pulse.pulse_notify"):
+        crm_client.push_hot_lead("t1", "marketplace_personal", [], sender_name="Ana",
+                                 extra={"vehicle_card_es": "🚙 X", "vehicle_price": 27988,
+                                        "appointment_time": "", "vehicle_card_en": None,
+                                        "phone": "0000000000", "channel": "otro"})
+    assert captured["vehicle_card_es"] == "🚙 X"
+    assert captured["vehicle_price"] == 27988
+    assert "appointment_time" not in captured and "vehicle_card_en" not in captured
+    assert captured["phone"] == "7865550142"          # extra no pisa lo esencial
+    assert captured["channel"] == "marketplace"
