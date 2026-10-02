@@ -1,341 +1,202 @@
+"""Reglas del prompt de Marketplace (_marketplace_voice).
+
+Rediseño oct 2026 (pedido de Alejo): solo el 8% de las conversaciones dejaba el
+teléfono. El bot vuelve a concentrarse en la CITA, da el precio después de UNA
+pregunta de apertura, no pregunta "¿financiar o cash?" como paso obligatorio,
+acepta llamadas, y pide el número a cambio de más fotos/info. Estos tests
+fijan esas decisiones y las reglas viejas que siguen vigentes.
+"""
 from dm_bot import _marketplace_voice
 
 CAR_CON_RANGO = {"yr": 2026, "model": "Camry", "trim": "LE", "color": "White",
                   "price": 28000, "price_hi": 35000, "vin": "1FAKE"}
 CAR_UN_SOLO_TRIM = {"yr": 2026, "model": "GR Supra", "trim": "3.0", "color": "Red",
                      "price": 58000, "price_hi": 0, "vin": "2FAKE"}
+CAR_SIN_PRECIO = {"yr": 2026, "model": "Corolla", "trim": "LE", "color": "Blue",
+                  "price": 0, "price_hi": 0, "vin": "3FAKE"}
 
 
-def test_nunca_da_direccion_indica_contacto_por_whatsapp():
-    # Fix ago 2026 (pedido de Alejo): nunca dar la dirección en el chat, ni al
-    # cerrar la cita — el siguiente paso es contacto por WhatsApp.
+def _seccion(p: str, titulo: str, largo: int = 900) -> str:
+    idx = p.find(titulo)
+    assert idx != -1, f"falta la sección {titulo!r}"
+    return p[idx:idx + largo]
+
+
+# ── Decisiones de oct 2026 ────────────────────────────────────────────────────
+
+def test_apertura_hace_una_pregunta_antes_del_precio():
+    p = _marketplace_voice(CAR_CON_RANGO)
+    apertura = _seccion(p, "1. APERTURA", 1400)
+    assert "¿Lo buscas para ya o estás mirando opciones?" in apertura
+    assert "NO des el precio todavía" in apertura
+
+
+def test_apertura_no_pregunta_lo_que_el_cliente_ya_contesto():
+    apertura = _seccion(_marketplace_voice(CAR_CON_RANGO), "1. APERTURA", 1400)
+    assert "Excepciones" in apertura
+    assert "enganche" in apertura          # "¿es el total o el enganche?" se contesta de una
+    assert "no le preguntes lo que ya contestó" in apertura
+
+
+def test_precio_sale_en_el_siguiente_mensaje_sin_segundo_gate():
+    paso2 = _seccion(_marketplace_voice(CAR_CON_RANGO), "2. PRECIO", 700)
+    assert "dalo ya" in paso2
+    assert "Nunca preguntes financiar/cash como paso obligatorio" in paso2
+
+
+def test_ya_no_pregunta_financiar_o_cash():
+    for car in (CAR_CON_RANGO, CAR_UN_SOLO_TRIM, CAR_SIN_PRECIO):
+        p = _marketplace_voice(car).lower()
+        assert "¿lo estás viendo para financiar o cash?" not in p
+        assert "are you looking to finance or pay cash" not in p
+
+
+def test_despues_del_precio_la_pregunta_empuja_a_la_cita():
+    cierre = _seccion(_marketplace_voice(CAR_CON_RANGO), "3. CIERRE TRAS PRECIO", 700)
+    assert "¿Te gustaría pasar a verlo esta semana?" in cierre
+    assert "hoy en la tarde o mañana en la mañana" in cierre
+
+
+def test_acepta_llamadas_y_nunca_da_un_numero_nuestro():
+    p = _marketplace_voice(CAR_CON_RANGO)
+    llamadas = _seccion(p, "LLAMADAS / HABLAR CON ALGUIEN", 500)
+    assert "¿a qué número te llamamos?" in llamadas
+    assert "NUNCA des un número nuestro" in llamadas
+    assert "don't take calls" not in p.lower()
+
+
+def test_si_preguntan_si_es_bot_ofrece_la_llamada():
+    bot = _seccion(_marketplace_voice(CAR_CON_RANGO), "SI PREGUNTA SI ERES BOT", 300)
+    assert "LLAMADAS" in bot
+
+
+def test_numero_a_cambio_de_fotos_e_info():
+    p = _marketplace_voice(CAR_CON_RANGO)
+    assert "¿A qué número te mando más fotos y la info completa?" in p
+
+
+def test_no_promete_inmediatez_que_nadie_cumple():
+    p = _marketplace_voice(CAR_CON_RANGO)
+    cierre = _seccion(p, "5. CIERRE TRAS NÚMERO", 700)
+    assert "Listo, un asesor te contacta hoy." in cierre
+    assert "8:00pm hora de Florida" in cierre
+    assert "mañana temprano" in cierre
+    assert "[HOT LEAD]" in cierre
+    voz = _seccion(p, "VOZ:", 900)
+    assert "ahorita mismo" in voz and "NUNCA prometas inmediatez" in voz
+
+
+def test_textos_cortos_una_pregunta():
+    voz = _seccion(_marketplace_voice(CAR_CON_RANGO), "VOZ:", 600)
+    assert "Máximo 2 frases cortas" in voz
+    assert "35 es el tope absoluto" in voz
+    assert "UNA sola pregunta por mensaje" in voz
+
+
+def test_formulario_facredit_solo_si_no_quiere_dar_el_numero():
+    mens = _seccion(_marketplace_voice(CAR_CON_RANGO), "MENSUALIDAD", 700)
+    assert "SOLO si insiste en la cuota Y de plano no quiere dar su número" in mens
+    assert "?lang=en" in mens
+
+
+def test_despedida_intenta_quedarse_con_el_numero_una_vez():
+    p = _marketplace_voice(CAR_CON_RANGO)
+    cierre = _seccion(p, "CIERRE DE CONVERSACIÓN:", 700)
+    assert "UN intento suave" in cierre
+    assert "fotos" in cierre
+    assert "es el 2do rechazo" in cierre      # tras el 2do rechazo ya no se insiste
+
+
+# ── Precio y enganche ─────────────────────────────────────────────────────────
+
+def test_el_numero_del_anuncio_es_el_enganche_nunca_el_total():
+    # Bug cazado al reproducir conversaciones reales (oct 2026): sin esta línea
+    # el bot le decía al cliente que el número del anuncio era el precio total.
+    p = _marketplace_voice(dict(CAR_CON_RANGO, down_payment=2000))
+    assert "El anuncio muestra $2,000: ese número es el ENGANCHE estimado, nunca el precio total." in p
+    p = _marketplace_voice(CAR_CON_RANGO)
+    assert "es el ENGANCHE estimado, nunca el precio total" in p
+
+
+def test_rango_y_trim_unico():
+    assert "desde $28,000 hasta $35,000" in _marketplace_voice(CAR_CON_RANGO)
+    assert "(único trim en stock)" in _marketplace_voice(CAR_UN_SOLO_TRIM)
+
+
+def test_sin_precio_nunca_inventa_y_pide_el_numero():
+    p = _marketplace_voice(CAR_SIN_PRECIO)
+    assert "PROHIBIDO inventar un número" in p
+    assert "pide el número para mandarle el precio y fotos" in p
+
+
+def test_negociacion_nunca_se_cierra_por_chat():
+    assert "nunca cierres un número por chat" in _marketplace_voice(CAR_CON_RANGO)
+
+
+def test_alt_options_ausente_por_defecto_y_presente_con_texto():
+    assert "SI ESTE CARRO NO LE CUADRA" not in _marketplace_voice(CAR_CON_RANGO)
+    car = dict(CAR_CON_RANGO, alt_options_text="- 2018 Corolla LE: $12,000\n- 2019 Camry LE: $15,500")
+    bloque = _seccion(_marketplace_voice(car), "SI ESTE CARRO NO LE CUADRA", 700)
+    assert "2018 Corolla LE: $12,000" in bloque and "2019 Camry LE: $15,500" in bloque
+    assert "sin inventar datos" in bloque
+
+
+# ── Reglas viejas que siguen vigentes ─────────────────────────────────────────
+
+def test_nunca_da_la_direccion_en_el_chat():
     p = _marketplace_voice(CAR_CON_RANGO)
     assert "2200 n state rd" not in p.lower()
-    idx = p.find("Con día + número")
-    assert idx != -1
-    cierre = p[idx:idx + 300]
-    assert "whatsapp" in cierre.lower()
-    assert "nunca des la dirección" in cierre.lower()
+    assert "Nunca nombre del asesor, del dealer, ni dirección en el chat." in p
 
 
-def test_credito_bajo_pregunta_por_down_payment():
+def test_credito_bajo_pregunta_por_enganche():
+    credito = _seccion(_marketplace_voice(CAR_CON_RANGO), "CRÉDITO BAJO", 500)
+    assert "crédito malo" in credito and "enganche" in credito
+
+
+def test_usados_nunca_dan_precio_en_el_chat():
+    usados = _seccion(_marketplace_voice(CAR_CON_RANGO), "USADOS / EL LISTING NO ES LO QUE BUSCA", 900)
+    assert "NUNCA des precios ni disponibilidad de usados en el chat" in usados
+    assert "NÚMERO A CAMBIO DE FOTOS/INFO" in usados
+
+
+def test_carfax_nunca_inventa():
+    carfax = _seccion(_marketplace_voice(CAR_CON_RANGO), "CARFAX / HISTORIAL", 500)
+    assert "NUNCA inventes si tuvo accidentes o dueños anteriores" in carfax
+
+
+def test_decisor_ausente():
+    dec = _seccion(_marketplace_voice(CAR_CON_RANGO), "DECISOR AUSENTE", 500)
+    assert "tráelo(a) también" in dec
+    assert "RECHAZO" in dec          # si viene con despedida no es señal de compra
+
+
+def test_rechazos_segundo_rechazo_cierra():
+    rech = _seccion(_marketplace_voice(CAR_CON_RANGO), "RECHAZOS:", 300)
+    assert "2do rechazo, no insistas más" in rech
+    assert "[SHOWROOM_DECLINED]" in rech
+
+
+def test_horario_propuesto_por_el_cliente_manda():
+    hor = _seccion(_marketplace_voice(CAR_CON_RANGO), "HORARIO PROPUESTO POR EL CLIENTE — por encima", 700)
+    assert "nunca le ofrezcas \"hoy o mañana\"" in hor
+
+
+def test_realismo_de_horario():
+    real = _seccion(_marketplace_voice(CAR_CON_RANGO), "REALISMO DE HORARIO:", 600)
+    assert "Pasadas las 5:00pm hora de Florida" in real
+    assert "lejos del Sur de Florida" in real
+    assert "acéptalo con calidez" in real
+
+
+def test_luisa():
+    luisa = _seccion(_marketplace_voice(CAR_CON_RANGO), "SI PREGUNTAN POR LUISA", 800)
+    assert "nunca digas que eres ella" in luisa
+    assert "Luisa te llama" in luisa
+
+
+def test_idioma_y_marcadores_silenciosos():
     p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("CRÉDITO BAJO")
-    assert idx != -1
-    seccion = p[idx:idx + 500].lower()
-    assert "mal crédito" in seccion
-    assert "enganche" in seccion or "down payment" in seccion
-
-
-def test_ofrece_dos_horarios_concretos_no_pregunta_abierta():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    assert "Tengo espacio hoy en la tarde o mañana en la mañana" in p
-    assert "¿Para cuándo te queda fácil venir?" not in p
-    assert "para cuándo te queda fácil venir" not in p.lower()
-
-
-def test_insistencia_numero_exacto_usa_horarios_concretos():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    # El sub-caso de "insiste en el número EXACTO" debe usar el mismo patrón
-    # de horarios concretos que el resto de la función, no una pregunta abierta.
-    idx = p.find("Si insiste en el número EXACTO")
-    assert idx != -1
-    sub_caso = p[idx:idx + 250]
-    assert "Tengo espacio hoy en la tarde o mañana en la mañana" in sub_caso
-    assert "te queda fácil venir" not in sub_caso.lower()
-
-
-def test_precio_no_hace_dos_preguntas_en_un_mismo_mensaje():
-    # A pedido de Alejo (jul 24 2026): ahora hay DOS preguntas de calificación
-    # antes del precio (financiar/cash + "para cuándo"), pero cada una debe
-    # vivir en su propio paso/mensaje — nunca combinadas en un solo texto.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("PRECIO — es señal de compra")
-    assert idx != -1
-    seccion_precio = p[idx:idx + 1200]
-
-    idx_paso1 = seccion_precio.find("1. Financiar o cash")
-    idx_paso2 = seccion_precio.find("2. Para cuándo lo necesita")
-    idx_paso3 = seccion_precio.find("3. Con AMBAS respuestas")
-    assert idx_paso1 != -1 and idx_paso2 != -1 and idx_paso3 != -1
-    assert idx_paso1 < idx_paso2 < idx_paso3
-
-    paso1 = seccion_precio[idx_paso1:idx_paso2]
-    paso2 = seccion_precio[idx_paso2:idx_paso3]
-    paso3 = seccion_precio[idx_paso3:idx_paso3 + 400]
-
-    # Paso 1 pregunta SOLO financiar/cash, sin mencionar la segunda pregunta.
-    assert "¿lo estás viendo para financiar o cash?" in paso1.lower()
-    assert "para cuándo" not in paso1.lower()
-
-    # Paso 2 pregunta SOLO la segunda calificación, sin repetir financiar/cash.
-    assert "¿para cuándo la estarías necesitando?" in paso2.lower()
-    assert "financiar o cash?" not in paso2.lower()
-
-    # Paso 3 (donde por fin se da el precio) ya no lleva ninguna pregunta de
-    # calificación — el pivot a horarios queda para el FLUJO DE AGENDAMIENTO.
-    assert "financiar o cash?" not in paso3.lower()
-    assert "¿para cuándo la estarías necesitando?" not in paso3.lower()
-    assert "sin pregunta de calificación" in paso3.lower()
-    assert "Tengo espacio hoy en la tarde o mañana en la mañana" not in paso3
-
-
-def test_precio_agrega_segunda_pregunta_de_calificacion_antes_de_cotizar():
-    # Punto central del pedido de Alejo: no basta con financiar/cash, debe
-    # haber una SEGUNDA pregunta de calificación real (timeline) antes de dar
-    # cualquier número.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    assert "¿para cuándo la estarías necesitando?" in p.lower()
-    idx = p.find("PRECIO — es señal de compra")
-    assert idx != -1
-    seccion_precio = p[idx:idx + 1200]
-    assert "dos preguntas rápidas" in seccion_precio.lower()
-    assert "no la repitas" in seccion_precio.lower() or "no repitas" in seccion_precio.lower()
-
-
-def test_precio_no_gatea_el_rango_detras_del_numero_de_telefono():
-    # El rango/ancla de precio se gatea SOLO con las 2 preguntas de
-    # calificación (financiar/cash + para cuándo) — nunca con pedir el
-    # teléfono. El teléfono sigue siendo parte aparte del FLUJO DE AGENDAMIENTO.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("PRECIO — es señal de compra")
-    assert idx != -1
-    idx_fin = p.find("MENSUALIDAD — solo si pregunta")
-    assert idx_fin != -1
-    seccion_precio = p[idx:idx_fin]
-    assert "número de teléfono" in seccion_precio.lower()
-    assert "eso es aparte" in seccion_precio.lower()
-    # Los pasos que preguntan (1 y 2) no deben pedir el teléfono como
-    # condición para llegar al precio.
-    idx_paso1 = seccion_precio.find("1. Financiar o cash")
-    idx_paso3 = seccion_precio.find("3. Con AMBAS respuestas")
-    pasos_1_2 = seccion_precio[idx_paso1:idx_paso3]
-    assert "dame tu número" not in pasos_1_2.lower()
-    assert "me dejas tu número" not in pasos_1_2.lower()
-
-
-def test_precio_insistencia_sin_contestar_no_se_estonewallea():
-    # Si el cliente reinsiste en el número sin contestar la calificación, el
-    # bot debe ceder tras 1-2 reinsistencias — nunca un stonewall total.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("PRECIO — es señal de compra")
-    assert idx != -1
-    seccion_precio = p[idx:idx + 1800]
-    assert "reinsiste en el número sin contestar" in seccion_precio.lower()
-    assert "no lo estonewalles" in seccion_precio.lower()
-    assert "segunda reinsistencia dale el número" in seccion_precio.lower()
-
-
-def test_precio_numero_exacto_sigue_requiriendo_visita():
-    # El gate del número EXACTO / mensualidad (requiere pasar por el dealer)
-    # es un comportamiento ya existente que NO debe tocarse con este cambio.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("Si insiste en el número EXACTO")
-    assert idx != -1
-    sub_caso = p[idx:idx + 300]
-    assert "se valida en minutos en persona" in sub_caso
-    assert "Tengo espacio hoy en la tarde o mañana en la mañana" in sub_caso
-
-
-def test_cierre_exige_un_intento_de_agendar_antes_de_despedirse():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    assert "UN intento obligatorio de cierre suave" in p
-
-
-def test_tiene_rama_para_decisor_ausente():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    assert "DECISOR AUSENTE" in p
-    assert "tráelo(a) también" in p
-
-
-def test_decisor_ausente_cierra_con_horarios_concretos_no_pregunta_abierta():
-    # Alineado con BOT_VOICE (commit b554137): la rama DECISOR AUSENTE debe
-    # cerrar con el pivot de horarios concretos, no con una pregunta abierta
-    # tipo "¿qué día les queda bien?".
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("DECISOR AUSENTE")
-    assert idx != -1
-    seccion = p[idx:idx + 700]
-    assert "Tengo espacio hoy en la tarde o mañana en la mañana" in seccion
-    assert "¿qué día les queda bien" not in seccion.lower()
-
-
-def test_decisor_ausente_no_aplica_si_hay_despedida_o_rechazo():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("DECISOR AUSENTE")
-    assert idx != -1
-    seccion = p[idx:idx + 1000]
-    assert "RECHAZOS" in seccion
-    assert "CIERRE DE CONVERSACIÓN" in seccion
-    assert "salida educada" in seccion or "NO es señal de compra" in seccion
-
-
-def test_tiene_rama_para_carfax_historial():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    assert "HISTORIAL / CARFAX" in p
-
-
-def test_carfax_no_es_deflexion_pura():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("HISTORIAL / CARFAX")
-    assert idx != -1
-    seccion = p[idx:idx + 500]
-    # Debe nombrar puntualmente lo que el cliente pidió (accidentes, dueños,
-    # título), no solo decir "te lo mostramos cuando vengas".
-    assert "accidentes" in seccion.lower()
-    assert "dueños" in seccion.lower()
-    assert "NUNCA inventes" in seccion
-
-
-def test_rechazo_2_no_pide_numero_como_disfraz_de_insistencia():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("RECHAZOS:")
-    assert idx != -1
-    seccion = p[idx:idx + 400]
-    assert "pide número antes de despedirte" not in seccion
-    assert "NO pidas el número" in seccion
-    assert "CIERRE DE CONVERSACIÓN" in seccion
-
-
-def test_un_solo_trim_aclara_que_no_hay_rango():
-    p = _marketplace_voice(CAR_UN_SOLO_TRIM)
-    assert "no hay rango porque solo tenemos esta versión" in p
-
-
-def test_usados_da_valor_antes_de_pedir_whatsapp():
-    p = _marketplace_voice(CAR_CON_RANGO)
-    assert "Sí manejamos usados en ese rango" in p
-
-
-def test_flujo_agendamiento_paso2_no_incluye_disponibilidad_de_usados():
-    # Revisión final (jul 24 2026): FLUJO DE AGENDAMIENTO paso 2 y CARROS
-    # USADOS daban órdenes contradictorias para "disponibilidad de usados"
-    # (horarios concretos en el chat vs. handoff exclusivo por WhatsApp).
-    # El trigger list de paso 2 ya solo debe cubrir precio/mensualidad/
-    # crédito/Carfax — nunca disponibilidad de usados.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("FLUJO DE AGENDAMIENTO — el número")
-    assert idx != -1
-    idx_paso3 = p.find("3. Cuando confirme uno de los dos horarios", idx)
-    assert idx_paso3 != -1
-    seccion_flujo = p[idx:idx_paso3]
-
-    # El trigger que dispara "cierra este mismo mensaje con horarios" ya no
-    # agrupa Carfax con disponibilidad de usados — solo Carfax/historial.
-    assert "Carfax/historial" in seccion_flujo
-    assert "Carfax/historial o disponibilidad de usados" not in p
-
-    idx_trigger_carfax = seccion_flujo.find("Si la respuesta es de Carfax/historial")
-    assert idx_trigger_carfax != -1
-    idx_siguiente_bullet = seccion_flujo.find("\n   - ", idx_trigger_carfax + 1)
-    trigger_carfax = seccion_flujo[idx_trigger_carfax:idx_siguiente_bullet if idx_siguiente_bullet != -1 else None]
-    assert "disponibilidad de usados" not in trigger_carfax.lower()
-
-    # Debe dejar explícito que esa pregunta se resuelve exclusivamente en
-    # CARROS USADOS, para que no quede ambigüedad sobre cuál rama gana.
-    assert "CARROS USADOS" in seccion_flujo
-    assert "exclusivamente" in seccion_flujo.lower()
-
-
-def test_carros_usados_sigue_siendo_el_unico_camino_para_disponibilidad():
-    # La sección CARROS USADOS conserva intacto el handoff por WhatsApp y
-    # sigue prohibiendo dar disponibilidad/precios de usados en el chat.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("CARROS USADOS / EL LISTING NO ES LO QUE BUSCA")
-    assert idx != -1
-    idx_fin = p.find("HISTORIAL / CARFAX")
-    assert idx_fin != -1
-    seccion_usados = p[idx:idx_fin]
-
-    assert "NUNCA des precios ni inventes disponibilidad de usados en el chat" in seccion_usados
-    assert "te las mando por WhatsApp" in seccion_usados
-    assert "nombre, número de WhatsApp" in seccion_usados.lower() or "número de whatsapp" in seccion_usados.lower()
-    assert "[HOT LEAD]" in seccion_usados
-    # No debe ofrecer horarios de visita para este listing como salida de
-    # disponibilidad de usados — ese camino es exclusivo de FLUJO DE AGENDAMIENTO.
-    assert "Tengo espacio hoy en la tarde o mañana en la mañana" not in seccion_usados
-
-
-def test_alt_options_bloque_ausente_por_defecto():
-    # Sin alt_options_text en el car dict (caso normal, sin match del scanner),
-    # el bloque de opciones alternativas no debe aparecer en el prompt.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    assert "OPCIONES REALES DISPONIBLES" not in p
-
-
-def test_alt_options_bloque_presente_con_alt_options_text():
-    car = dict(CAR_CON_RANGO)
-    car["alt_options_text"] = "- 2018 Corolla LE: $12,000\n- 2019 Camry LE: $15,500"
-    p = _marketplace_voice(car)
-    idx = p.find("OPCIONES REALES DISPONIBLES")
-    assert idx != -1
-    seccion = p[idx:idx + 700]
-    assert "2018 Corolla LE: $12,000" in seccion
-    assert "2019 Camry LE: $15,500" in seccion
-    assert "nunca inventes año, modelo o precio fuera de esta lista" in seccion.lower()
-    assert "una sola pregunta" in seccion.lower()
-    assert "nunca dos preguntas en el mismo mensaje" in seccion.lower()
-
-
-def test_direccion_solo_tras_horario_y_numero_confirmados():
-    # Alineado con BOT_VOICE: el gate de nombre/dirección del dealer requiere
-    # AMBOS (horario confirmado Y número dado) — no basta con uno de los dos.
-    # Debe matchear el AND de FLUJO DE AGENDAMIENTO paso 4 ("Con día + número").
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("NUNCA menciones el nombre del asesor")
-    assert idx != -1
-    seccion = p[idx:idx + 200]
-    assert "confirmado una cita y dado su número" in seccion
-    assert "confirmado una cita o dado su número" not in seccion
-
-
-def test_realismo_horario_no_ofrece_hoy_despues_de_las_5pm():
-    # Fix sep 2026 (reporte de Alejo): el bot ofrecía "hoy" sin dimensionar
-    # si ya era tarde. Corte explícito a las 5pm hora de Florida.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("REALISMO DEL HORARIO")
-    assert idx != -1
-    seccion = p[idx:idx + 900]
-    assert "5:00pm hora de florida" in seccion.lower()
-    assert "no ofrezcas \"hoy\"" in seccion.lower()
-    assert "mañana en la mañana o mañana en la tarde" in seccion.lower()
-
-
-def test_realismo_horario_zona_lejos_del_sur_de_florida():
-    # Fix sep 2026: si el cliente dice que está lejos del sur de FL, no se le
-    # ofrece hoy/mañana — se le pregunta qué día de la semana le queda mejor.
-    # Aplica SOLO cuando el cliente lo manifiesta explícitamente (decisión de
-    # Alejo: el bot nunca pregunta proactivamente de dónde viene).
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("REALISMO DEL HORARIO")
-    assert idx != -1
-    seccion = p[idx:idx + 900].lower()
-    assert "lejos del sur de la florida" in seccion
-    assert "no ofrezcas \"hoy\" ni \"mañana\"" in seccion
-    assert "qué día de esta semana le queda mejor" in seccion
-
-
-def test_realismo_horario_si_cliente_insiste_no_se_le_contradice():
-    # Ninguno de los dos cortes (hora/zona) es un rechazo: si el cliente
-    # insiste en venir hoy igual, el bot lo acepta y sigue el flujo normal.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("REALISMO DEL HORARIO")
-    assert idx != -1
-    seccion = p[idx:idx + 900].lower()
-    assert "ninguno de los dos cortes es un rechazo" in seccion
-    assert "no se lo cuestiones" in seccion
-
-
-def test_cierre_despues_de_las_8pm_no_confirma_avisa_dia_siguiente():
-    # Fix sep 2026 (Alejo): después de las 8pm, el bot sigue indagando y
-    # agendando igual — SOLO cambia la frase final de cierre, que ya no dice
-    # "quedas agendado" sino que avisa que se contacta al día siguiente.
-    p = _marketplace_voice(CAR_CON_RANGO)
-    idx = p.find("Con día + número")
-    assert idx != -1
-    seccion = p[idx:idx + 900]
-    assert "8:00pm hora de Florida" in seccion
-    assert "mañana a primera hora te contactamos" in seccion
-    # el resto del paso (WhatsApp, nunca dar dirección, HOT LEAD) sigue intacto
-    assert "nunca des la dirección" in seccion.lower()
-    assert "[HOT LEAD]" in seccion
+    assert "IDIOMA" in p
+    assert "[HOT LEAD] siempre que el cliente dé su número" in p
+    assert "nunca mencionados al cliente" in p
