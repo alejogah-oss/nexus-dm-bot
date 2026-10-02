@@ -328,6 +328,7 @@ def _apply_scanner_pricing(car: dict) -> dict:
 
 
 from listing_card import build_card
+from listing_voice import DOWN_PAYMENT_THRESHOLD
 from appointments import _parse_date
 
 
@@ -345,10 +346,16 @@ def _crm_extra(car: dict | None, lang: str | None, appt: dict | None, inventory:
     listing = inventory.get(vin) or {}
     card = build_card(listing.get("description") or "")
     extra.update({"vehicle_vin": vin, "vehicle_card_es": card["es"], "vehicle_card_en": card["en"]})
+    # El "price" del anuncio es el ENGANCHE solo por debajo de DOWN_PAYMENT_THRESHOLD; por
+    # encima es el precio completo publicado (ej. Tundra $59,516), que Leo sí puede decir si
+    # el scanner no tiene internal_price. El precio interno siempre gana.
+    publicado = int(listing.get("price") or 0)
     if int(car.get("price") or 0) > 0:
         extra["vehicle_price"] = int(car["price"])
-    if int(listing.get("price") or 0) > 0:
-        extra["vehicle_down_payment"] = int(listing["price"])
+    elif publicado >= DOWN_PAYMENT_THRESHOLD:
+        extra["vehicle_price"] = publicado
+    if 0 < publicado < DOWN_PAYMENT_THRESHOLD:
+        extra["vehicle_down_payment"] = publicado
     if appt:
         d, h, m = _parse_date(appt.get("date_preference") or "", appt.get("time_preference") or "")
         if d:

@@ -423,3 +423,19 @@ def test_crm_extra_cita_sin_fecha_resoluble():
 
 def test_crm_extra_sin_carro():
     assert mib._crm_extra(None, "es", None, _INV) == {"language": "es"}
+
+
+def test_crm_extra_precio_completo_del_anuncio_no_es_enganche():
+    # Anuncio con precio completo (≥ $10.000, DOWN_PAYMENT_THRESHOLD): no es enganche. Si el
+    # scanner no tiene internal_price, ese precio público es el que se puede decir.
+    inv = {"VIN1": {"description": "Gancho.\n✅ 2026 Toyota Tundra\n✅ Price: $59,516", "price": 59516}}
+    x = mib._crm_extra({"yr": "2026", "make": "Toyota", "model": "Tundra", "vin": "VIN1", "price": 0}, "en", None, inv)
+    assert "vehicle_down_payment" not in x
+    assert x["vehicle_price"] == 59516
+
+
+def test_crm_extra_precio_interno_gana_al_publico():
+    inv = {"VIN1": {"description": "", "price": 59516}}
+    x = mib._crm_extra({"yr": "2026", "make": "Toyota", "model": "Tundra", "vin": "VIN1", "price": 57000}, "en", None, inv)
+    assert x["vehicle_price"] == 57000
+    assert "vehicle_down_payment" not in x
