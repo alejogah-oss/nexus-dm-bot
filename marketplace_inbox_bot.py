@@ -6,7 +6,7 @@ y responde con la misma IA de dm_bot. Corre en loop localmente.
 Uso:
     venv/bin/python3 marketplace_inbox_bot.py
 """
-import sys, os, random
+import sys, os, random, re
 print(f"[MIB] STARTED pid={os.getpid()} python={sys.executable}", flush=True)
 
 import asyncio
@@ -16,6 +16,8 @@ import json
 import time
 from pathlib import Path
 
+import requests
+
 print("[MIB] stdlib ok", flush=True)
 
 from playwright.async_api import async_playwright, Page
@@ -24,6 +26,7 @@ print("[MIB] playwright imported", flush=True)
 from dotenv import load_dotenv
 
 from dm_bot import _claude_create, _marketplace_voice, push_hot_lead, log_event
+from crm_client import _clean_sender_name
 print("[MIB] dm_bot imported", flush=True)
 from marketplace_analytics import track_message, track_hot_lead, track_declined
 print("[MIB] marketplace_analytics imported", flush=True)
@@ -48,7 +51,12 @@ ACTIVE_WINDOW  = 1800  # segundos en modo activo tras responder (30 min — conv
 
 _active_until: float = 0.0              # timestamp hasta cuando está en modo activo
 _active_threads: dict[str, float] = {}  # {thread_id: expires_at}
-MAX_THREADS  = 3         # solo los 3 más recientes por ciclo (más humano, menos detección)
+MAX_THREADS  = 3         # solo se ABREN/responden 3 por ciclo (más humano, menos detección) — sin cambios
+SCAN_WINDOW  = 12        # pero se LEE el preview de más filas del sidebar (sin abrir nada, cero
+                         # riesgo de detección) para poder priorizar threads viejos sin responder
+                         # que ya no están entre los 3 más recientes — bug real ago 2026: un cliente
+                         # preguntando por un Nissan Altima quedó mudo porque su thread nunca volvió
+                         # a estar en el top-3 tras el mensaje de otros clientes más nuevos.
 
 ACTIVE_HOURS = (8, 22)   # horario humano: responder solo 8am-10pm
 _last_full_load: float = 0.0  # último goto/reload real del inbox (el sidebar vive por WebSocket)
@@ -97,7 +105,6 @@ def _get_inventory() -> list:
     now = time.time()
     if now - _inventory_cache["ts"] > 600 or not _inventory_cache["vehicles"]:
         try:
-            import requests
             r = requests.get(INVENTORY_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
             _inventory_cache["vehicles"] = r.json().get("vehicles", [])
             _inventory_cache["ts"] = now
@@ -152,8 +159,290 @@ def _enrich_car(car: dict) -> dict:
         car["vin"] = best.get("vin", "")
     return car
 
+
+# ── Inventario local del scanner (precio real privado + alternativas) ──────────
+# Mismo directorio que scanner_api.py y marketplace_poster.py, acceso directo por
+# filesystem (sin API nueva). internal_price/alt_price_low/alt_price_high nunca
+# salen de este archivo — solo se usan para armar el prompt del bot.
+
+INVENTORY_DIR = os.environ.get("INVENTORY_DIR", str(Path(__file__).parent / "inventario"))
+_scanner_inv_cache: dict = {"ts": 0.0, "by_vin": {}}
+
+
+def _get_scanner_inventory() -> dict:
+    """{vin: listing.json dict} del inventario local del scanner. Caché 10 min."""
+    now = time.time()
+    if now - _scanner_inv_cache["ts"] > 600 or not _scanner_inv_cache["by_vin"]:
+        by_vin = {}
+        try:
+            root = Path(INVENTORY_DIR)
+            if root.exists():
+                for d in root.iterdir():
+                    lj = d / "listing.json"
+                    if not lj.is_file():
+                        continue
+                    try:
+                        data = json.loads(lj.read_text())
+                    except (ValueError, OSError):
+                        continue
+                    vin = data.get("vin")
+                    if vin:
+                        by_vin[vin] = data
+        except Exception as e:
+            print(f"  [BOT] Error leyendo inventario scanner: {e}", flush=True)
+        _scanner_inv_cache["by_vin"] = by_vin
+        _scanner_inv_cache["ts"] = now
+    return _scanner_inv_cache["by_vin"]
+
+
+def _to_number(v) -> float:
+    try:
+        return float(v) if v not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _alt_options_text(low: float, high: float, exclude_vin: str = "", limit: int = 4) -> str:
+    """Texto corto (estilo _price_table de dm_bot) con hasta `limit` opciones reales
+    del inventario público dentro de [low, high], sin el VIN actual, dedupe por
+    (yr, modelo, trim). Nunca inventa nada fuera de esta lista."""
+    if low <= 0 or high <= 0:
+        return ""
+    vehicles = sorted(_get_inventory(), key=lambda v: v.get("price") or 0)
+    seen = set()
+    lines = []
+    for v in vehicles:
+        price = v.get("price") or 0
+        if not (low <= price <= high):
+            continue
+        if exclude_vin and v.get("vin") == exclude_vin:
+            continue
+        key = (v.get("yr"), _norm_model(v.get("model", "")), _norm_model(v.get("trim", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        trim = v.get("trim", "")
+        label = f"{v.get('yr')} {v.get('model')} {trim}".replace("  ", " ").strip()
+        lines.append(f"- {label}: ${price:,.0f}")
+        if len(lines) >= limit:
+            break
+    return "\n".join(lines)
+
+
+def _model_key(model: str) -> str:
+    """Raíz del modelo: primer token normalizado sin los dígitos finales. Une
+    nombres que comparten raíz pero difieren de forma ('GLS-Class' vs 'GLS450',
+    'RX' vs 'RX350'). Vacío si no hay token."""
+    tokens = _norm_model(model).split()
+    if not tokens:
+        return ""
+    return re.sub(r"\d+$", "", tokens[0])
+
+
+def _resolve_scanner_by_spec(car: dict, scanner_by_vin: dict) -> dict | None:
+    """Resuelve el carro del thread (año+modelo del header de Marketplace, SIN
+    VIN) contra el inventario local del scanner. Necesario para usados: no están
+    en el API público, así que _enrich_car no les resuelve el VIN y Marketplace
+    tampoco lo muestra. Devuelve la unidad si hay UNA sola que matchea año+modelo;
+    None si no hay ninguna o si hay varias (ambiguo — no arriesgar el precio
+    equivocado). El año del header viene int y el del scanner string: se
+    normalizan a texto para comparar."""
+    yr = str(car.get("yr") or "").strip()
+    model_l = _norm_model(car.get("model", ""))
+    key = _model_key(car.get("model", ""))
+    if not yr or not model_l:
+        return None
+    # Match por contención en ambos sentidos (el modelo del scanner "RX" suele
+    # estar contenido en el del header "RX 350 F Sport"), o por raíz del modelo
+    # cuando el nombre difiere de forma ("GLS-Class" del scanner vs "GLS450" del
+    # header). El año siempre debe coincidir.
+    cands = [v for v in scanner_by_vin.values()
+             if str(v.get("yr") or "").strip() == yr
+             and (_norm_model(v.get("model", "")) in model_l
+                  or model_l in _norm_model(v.get("model", ""))
+                  or (key and _model_key(v.get("model", "")) == key))]
+    if len(cands) != 1:
+        return None
+    return cands[0]
+
+
+def _apply_scanner_pricing(car: dict) -> dict:
+    """Si el carro matchea una unidad del inventario local del scanner, usa su
+    internal_price (precio real) como ancla en vez del enganche que trae el
+    inventario público — y arma alt_options_text si hay rango de alternativas
+    cargado. Resuelve por VIN (nuevos) o por año+modelo (usados sin VIN). Sin
+    match, el car dict no se toca (carro normal, no scanner)."""
+    scanner_by_vin = _get_scanner_inventory()
+    if not scanner_by_vin:
+        return car
+    vin = car.get("vin")
+    scanner_car = scanner_by_vin.get(vin) if vin else None
+    if not scanner_car and not vin:
+        # Sin VIN del inventario público (típico de usados: no están en el API
+        # del sitio) — resolver la unidad por año+modelo contra el scanner local.
+        # Si es única, adoptar su VIN. Solo cuando NO hay VIN: un carro nuevo ya
+        # trae VIN + precio del público y no debe resolverse por spec (evita
+        # pisarle el precio con una unidad homónima del scanner).
+        scanner_car = _resolve_scanner_by_spec(car, scanner_by_vin)
+        if scanner_car:
+            vin = scanner_car.get("vin", "")
+            car["vin"] = vin
+    if not scanner_car:
+        return car
+
+    # Guard de ambigüedad: el VIN resuelto viene de un match aproximado por
+    # año+modelo+trim contra el inventario público (Marketplace nunca muestra
+    # VIN) — si hay MÁS de un carro del scanner con la misma especificación en
+    # vivo, no hay forma de saber cuál es la unidad real de la que habla el
+    # cliente. Más seguro no dar ningún número que arriesgarse a dar el precio
+    # real de otra unidad.
+    yr = scanner_car.get("yr")
+    model_n = _norm_model(scanner_car.get("model", ""))
+    trim_n = _norm_model(scanner_car.get("trim", ""))
+    same_spec = [v for v in scanner_by_vin.values()
+                 if v.get("yr") == yr and _norm_model(v.get("model", "")) == model_n
+                 and _norm_model(v.get("trim", "")) == trim_n]
+    ambiguous = len(same_spec) > 1
+
+    internal_price = _to_number(scanner_car.get("internal_price"))
+    if internal_price > 0 and not ambiguous:
+        # Único trim conocido con precio real — misma rama que un carro nuevo
+        # del que solo hay una versión en stock.
+        car["price"] = internal_price
+        car["price_hi"] = 0
+    else:
+        # Fix de seguridad: sin internal_price cargado (o match ambiguo entre
+        # varias unidades del scanner con la misma especificación), nunca
+        # mostrar el enganche (price del scanner, <$10k) como si fuera el
+        # precio total.
+        car["price"] = 0
+        car["price_hi"] = 0
+
+    low = _to_number(scanner_car.get("alt_price_low"))
+    high = _to_number(scanner_car.get("alt_price_high"))
+    if low > 0 and high > 0:
+        text = _alt_options_text(low, high, exclude_vin=vin)
+        if text:
+            car["alt_options_text"] = text
+    return car
+
+
 # Historial de conversaciones en memoria {thread_id: [messages]}
 _conversations: dict[str, list] = {}
+
+
+# ── Idioma de la conversación ─────────────────────────────────────────────────
+# El idioma lo fija el código, no el modelo. Antes solo había una regla en el
+# prompt ("mantén el idioma del primer mensaje") y el bot se pasaba a español
+# en ~5% de los chats en inglés (20 de 432, log de sep 2026): siempre justo
+# después de un mensaje sin señal de idioma (un teléfono, un nombre, "Ok") —
+# ahí el modelo copiaba al pie de la letra los guiones en español del prompt
+# ("Listo, quedas agendado para el...").
+
+_ES_WORDS = {
+    "hola", "sigue", "disponible", "todavía", "todavia", "precio", "cuánto", "cuanto",
+    "cuál", "cual", "dónde", "donde", "está", "esta", "es", "el", "la", "los", "las",
+    "que", "qué", "de", "del", "para", "por", "con", "una", "un", "tiene", "tienes",
+    "quiero", "puedo", "gracias", "buenas", "buenos", "tardes", "días", "noches",
+    "carro", "enganche", "financiar", "crédito", "credito", "mañana", "sí", "ubicación",
+    "ubicacion", "millaje", "millas", "aún", "aun", "mi", "yo", "usted", "son", "esos",
+    "cuesta", "pago", "pagos", "financiamiento", "busco", "necesito",
+}
+_EN_WORDS = {
+    "hi", "hello", "hey", "is", "this", "still", "available", "item", "price", "how",
+    "much", "what", "what's", "where", "why", "so", "the", "an", "and", "for", "with", "you", "your", "do",
+    "does", "can", "i", "im", "i'm", "it", "are", "good", "morning", "afternoon",
+    "evening", "thanks", "thank", "yes", "car", "down", "payment", "finance", "miles",
+    "mileage", "located", "location", "want", "need", "looking", "my", "sorry",
+    "full", "call", "text", "payments", "financing", "terms", "cheap", "inexpensive", "interested",
+}
+# Artefactos del scraping (burbujas sin texto: foto, sticker) — no son del cliente
+_SCRAPE_NOISE = re.compile(r"(^|\b)(enter, )?message sent .* by ", re.I)
+
+
+def _detect_lang(text: str) -> str | None:
+    """'es', 'en' o None si el mensaje no trae señal clara (número, nombre, 'ok')."""
+    if not text or _SCRAPE_NOISE.search(text):
+        return None
+    t = text.lower()
+    words = re.findall(r"[a-záéíóúüñ']+", t)
+    es = sum(w in _ES_WORDS for w in words) + (2 if re.search(r"[¿¡ñáéíóú]", t) else 0)
+    en = sum(w in _EN_WORDS for w in words)
+    if es > en and (es >= 2 or en == 0):
+        return "es"
+    if en > es and (en >= 2 or es == 0):
+        return "en"
+    return None
+
+
+def _phrase_lang(text: str) -> str | None:
+    """Idioma de una FRASE (3+ palabras con señal clara). Un "sí", "no", "ok" o
+    una palabra suelta no cuenta: eso no es cambiar de idioma."""
+    if not text or _SCRAPE_NOISE.search(text):
+        return None
+    t = text.lower()
+    words = re.findall(r"[a-záéíóúüñ']+", t)
+    if len(words) < 3:
+        return None
+    es = sum(w in _ES_WORDS for w in words) + (1 if re.search(r"[¿¡ñáéíóú]", t) else 0)
+    en = sum(w in _EN_WORDS for w in words)
+    if es >= 2 and es > en:
+        return "es"
+    if en >= 2 and en > es:
+        return "en"
+    return None
+
+
+def _asked_lang(text: str) -> str | None:
+    """El cliente pide explícitamente el otro idioma."""
+    t = (text or "").lower()
+    if re.search(r"\b(speak|habla\w*|in|en)\s+(spanish|español|espanol)\b", t):
+        return "es"
+    if re.search(r"\b(speak|habla\w*|in|en)\s+(english|inglés|ingles)\b", t):
+        return "en"
+    return None
+
+
+def _thread_lang(state: dict, thread_id: str, messages: list[dict]) -> str | None:
+    """Idioma del thread: arranca con el del primer mensaje del cliente con señal
+    clara y se guarda en el estado (sobrevive reinicios y el recorte del historial
+    a 16 mensajes). Solo cambia si el cliente pide el otro idioma o escribe una
+    FRASE en él — nunca por un "sí", "ok", un número o un nombre (regla de Alejo,
+    28 sep 2026)."""
+    last = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+    switch = _asked_lang(last) or _phrase_lang(last)
+    if switch:
+        state[f"lang_{thread_id}"] = switch
+        return switch
+    saved = state.get(f"lang_{thread_id}")
+    if saved in ("es", "en"):
+        return saved
+    for m in messages:
+        if m["role"] == "user":
+            lang = _detect_lang(m["content"])
+            if lang:
+                state[f"lang_{thread_id}"] = lang
+                return lang
+    return None
+
+
+def _lang_directive(lang: str | None) -> str:
+    if lang == "en":
+        return (
+            "\n\nIDIOMA DE ESTA CONVERSACIÓN — FIJADO POR EL SISTEMA: INGLÉS.\n"
+            "Escribe TODA tu respuesta en inglés, aunque el último mensaje del cliente sea solo "
+            "un número, un nombre, \"ok\" o una palabra suelta. Las frases de ejemplo en español "
+            "de este prompt son guía de CONTENIDO: tradúcelas al inglés, nunca las copies en "
+            "español. Esta línea manda sobre cualquier otra instrucción de idioma."
+        )
+    if lang == "es":
+        return (
+            "\n\nIDIOMA DE ESTA CONVERSACIÓN — FIJADO POR EL SISTEMA: ESPAÑOL.\n"
+            "Escribe TODA tu respuesta en español, aunque el último mensaje del cliente sea solo "
+            "un número, un nombre, \"ok\" o una palabra suelta en inglés. Esta línea manda sobre "
+            "cualquier otra instrucción de idioma."
+        )
+    return ""
 
 
 # ── Estado persistente ────────────────────────────────────────────────────────
@@ -276,6 +565,28 @@ async def _extract_messages(page: Page) -> list[dict]:
     return messages
 
 
+def _parse_car_from_text(text: str) -> dict | None:
+    """Extrae {yr, make, model} de un texto tipo '2022 Lexus RX350' o
+    'Benito · 2026 Toyota rav4 plug-in hybrid' — CUALQUIER marca, no solo
+    Toyota (Alejo también scanea/publica trade-ins de otras marcas). Antes
+    este patrón exigía la palabra "Toyota" literal y esas conversaciones
+    quedaban sin respuesta — ver spec del fix de precio real (ago 2026)."""
+    # El separador de cola exige espacios alrededor del guion (" - ") para no
+    # confundirlo con un guion interno del modelo (GLE-Class, plug-in, etc.)
+    m = re.search(r"(\d{4})\s+([\w\-]+)\s+([\w\s\-/.]+?)(?:\s+-\s|\s*[·|]|$)", text)
+    if not m:
+        return None
+    return {
+        "yr": int(m.group(1)),
+        "make": m.group(2).strip(),
+        "model": m.group(3).strip(),
+        "trim": "",
+        "color": "",
+        "down_payment": 0,
+        "vin": "",
+    }
+
+
 async def _get_car_context(page: Page) -> dict | None:
     """
     Intenta extraer el contexto del vehículo desde el header del thread de Marketplace.
@@ -284,18 +595,7 @@ async def _get_car_context(page: Page) -> dict | None:
     try:
         header = await page.locator('[data-testid="messenger-header"] span').all_inner_texts()
         header_text = " ".join(header)
-        # Busca patrón "2026 Toyota RAV4" en el header
-        import re
-        m = re.search(r"(\d{4})\s+Toyota\s+([\w\s]+?)(?:\s*[-·|]|$)", header_text)
-        if m:
-            return {
-                "yr": int(m.group(1)),
-                "model": m.group(2).strip(),
-                "trim": "",
-                "color": "",
-                "down_payment": 0,
-                "vin": "",
-            }
+        return _parse_car_from_text(header_text)
     except Exception:
         pass
     return None
@@ -327,31 +627,65 @@ async def _open_thread(page: Page, thread_id: str) -> bool:
         return False
 
 
-async def process_thread(page: Page, state: dict, thread_url: str, sender_name: str):
-    """Abre un thread, lee mensajes y responde si hay uno nuevo sin responder."""
+def _resolve_sender_name(state: dict, thread_id: str, sender_name: str) -> str:
+    """Devuelve el nombre del thread, cacheándolo por thread en el state.
+
+    El modo activo (`check_inbox(quick=True)`) no lee el sidebar, así que llama a
+    `process_thread` con `sender_name=""` — y el cliente da su teléfono JUSTO ahí,
+    en medio de la conversación, que es el momento que dispara [HOT LEAD]. Sin
+    nombre, `push_hot_lead` descartaba el lead aunque tuviera teléfono y el CRM
+    quedaba vacío mientras el WhatsApp de aviso sí salía (bug real, sep 2026:
+    "Buck" — 2025 Malibu, cita confirmada el viernes — nunca entró al CRM).
+
+    Es el mismo patrón que ya salvaba el contexto del carro en
+    `state[f"car_{thread_id}"]`; a esa mitad del arreglo (jul 2026) le faltaba
+    esta. Se guarda el string CRUDO del sidebar ("Buck · 2025 Chevrolet Malibu")
+    porque el fallback de identificación del carro también lo parsea.
+
+    Un sidebar que devuelve el ID numérico en vez del nombre no se cachea ni
+    pisa un nombre bueno ya guardado — `_clean_sender_name` (la misma función
+    que usa el CRM, para que no puedan divergir) es quien decide si sirve.
+    """
+    if _clean_sender_name(sender_name):
+        state[f"name_{thread_id}"] = sender_name
+        return sender_name
+    cached = state.get(f"name_{thread_id}")
+    return cached if isinstance(cached, str) else ""
+
+
+async def process_thread(page: Page, state: dict, thread_url: str, sender_name: str) -> bool:
+    """Abre un thread, lee mensajes y responde si hay uno nuevo sin responder.
+    Retorna True si quedó resuelto (respondido, o genuinamente no había nada
+    que hacer) y False si falló/se saltó y debe reintentarse en el próximo
+    ciclo — el caller usa esto para decidir si puede marcar el preview como
+    visto (bug real: antes se marcaba SIEMPRE, así que un thread que fallaba
+    en identificar el carro (ver SEGURIDAD abajo) quedaba mudo para siempre
+    salvo que el cliente volviera a escribir — así se perdió a un cliente
+    real preguntando por un Nissan Altima, ago 2026)."""
 
     thread_id = thread_url.split("/t/")[-1].split("/")[0].split("?")[0]
+    sender_name = _resolve_sender_name(state, thread_id, sender_name)
 
     print(f"  [BOT] Revisando: {sender_name} ({thread_id})")
 
     if not await _open_thread(page, thread_id):
-        return
+        return False
 
     messages = await _extract_messages(page)
 
     if not messages:
         print(f"  [BOT] Sin mensajes legibles en {thread_id}")
-        return
+        return False
 
     # Solo responde si el último mensaje es del cliente
     if messages[-1]["role"] != "user":
-        return
+        return True
 
     last_msg = messages[-1]["content"]
     msg_hash = hashlib.md5(last_msg.strip().encode()).hexdigest()
 
     if state.get(thread_id) == msg_hash:
-        return  # Ya respondimos a este mensaje
+        return True  # Ya respondimos a este mensaje
 
     print(f"  [BOT] Nuevo mensaje de {sender_name}: \"{last_msg[:70]}\"")
 
@@ -367,13 +701,9 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     # Obtener contexto del carro desde el nombre del thread (ej: "Benito · 2026 Toyota rav4 plug-in hybrid")
     car = await _get_car_context(page)
-    # Fallback: parsear desde sender_name si header falla
+    # Fallback: parsear desde sender_name si header falla — cualquier marca.
     if not car:
-        import re
-        m = re.search(r"(\d{4})\s+Toyota\s+([\w\s\-]+)", sender_name)
-        if m:
-            car = {"yr": int(m.group(1)), "model": m.group(2).strip(),
-                   "trim": "", "color": "", "down_payment": 0, "vin": ""}
+        car = _parse_car_from_text(sender_name)
 
     # Fallback 2: caché persistente — el thread ya fue identificado como listing
     # en un ciclo anterior (el modo activo pasa sender_name vacío y el header
@@ -400,13 +730,16 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         # (sin esto el thread queda mudo hasta la recarga horaria)
         global _last_full_load
         _last_full_load = 0.0
-        return
+        return False
     _car_resolution_failures.pop(f"{thread_id}:{msg_hash}", None)
 
     # Completar precio/trim/vin desde el inventario real — el header solo da año+modelo
     car = _enrich_car(car)
+    # Cruzar el VIN resuelto contra el inventario local del scanner: si matchea,
+    # el precio real (internal_price) reemplaza al enganche público como ancla.
+    car = _apply_scanner_pricing(car)
     state[f"car_{thread_id}"] = {
-        "yr": car["yr"], "model": car["model"], "trim": car.get("trim", ""),
+        "yr": car["yr"], "make": car.get("make", ""), "model": car["model"], "trim": car.get("trim", ""),
         "color": car.get("color", ""), "down_payment": car.get("down_payment", 0),
         "vin": car.get("vin", ""),
     }
@@ -424,14 +757,27 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     system = _marketplace_voice(car) if car else _marketplace_voice(
         {"yr": "2026", "model": "Toyota", "trim": "", "color": "", "down_payment": 0, "vin": ""}
     )
+    lang = _thread_lang(state, thread_id, messages)
+    system += _lang_directive(lang)
     try:
         raw_reply = _claude_create(
             "claude-sonnet-4-6", 200, system,
             history + [{"role": "user", "content": last_msg}]
         )
+        # Red de seguridad: el modelo a veces copia literal un guion en español
+        # del prompt aunque la conversación esté fijada en inglés. Un reintento.
+        wrong = _detect_lang(raw_reply)
+        if lang and wrong and wrong != lang:
+            print(f"  [BOT] Respuesta salió en {wrong}, conversación en {lang} — regenerando", flush=True)
+            raw_reply = _claude_create(
+                "claude-sonnet-4-6", 200,
+                system + f"\n\nTu borrador anterior salió en el idioma equivocado: \"{raw_reply}\". "
+                         f"Reescríbelo completo en {'inglés' if lang == 'en' else 'español'}.",
+                history + [{"role": "user", "content": last_msg}]
+            )
     except Exception as e:
         print(f"  [BOT] Error generando respuesta: {e}")
-        return
+        return False
 
     is_hot      = "[HOT LEAD]" in raw_reply
     is_declined = "[SHOWROOM_DECLINED]" in raw_reply
@@ -448,7 +794,7 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         _active_threads[thread_id] = time.time() + ACTIVE_WINDOW
     except Exception as e:
         print(f"  [BOT] Error enviando respuesta: {e}")
-        return
+        return False
 
     # Actualizar historial (16 mensajes = 8 exchanges, igual que dm_bot)
     _conversations[thread_id] = (history + [
@@ -495,6 +841,8 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     if car:
         track_message(car)
+
+    return True
 
 
 # ── Loop principal ────────────────────────────────────────────────────────────
@@ -823,6 +1171,18 @@ async def _ensure_messenger_logged_in(page: Page) -> bool:
     return True
 
 
+def _prioritize_threads(to_process: list, state: dict, max_threads: int) -> list:
+    """Prioriza threads que NUNCA recibieron respuesta (state.get(thread_id)
+    is None) sobre los que ya se respondieron antes y ahora tienen un mensaje
+    nuevo — dentro de SCAN_WINDOW puede haber más "con cambios" que el cupo
+    real de max_threads, y un cliente que sigue sin ninguna respuesta importa
+    más que un follow-up de alguien ya atendido. Trunca acá, no antes, para no
+    abrir más de max_threads threads por ciclo (el límite de detección no
+    cambia). `to_process` es una lista de tuplas (href, name, thread_id, ...)."""
+    ordered = sorted(to_process, key=lambda t: state.get(t[2]) is not None)
+    return ordered[:max_threads]
+
+
 async def check_inbox(page: Page, state: dict, quick: bool = False):
     """Escanea el inbox de Marketplace. quick=True solo revisa threads activos."""
     now = time.time()
@@ -934,8 +1294,10 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
 
     seen_ids  = set()
     threads   = []
-    # Recolectar threads con preview de último mensaje para saltar los sin cambios
-    for link in links[:MAX_THREADS]:
+    # Recolectar threads con preview de último mensaje para saltar los sin cambios.
+    # SCAN_WINDOW (lectura, no abre nada) es más ancho que MAX_THREADS (lo que
+    # realmente se abre/responde) — ver comentario de las constantes.
+    for link in links[:SCAN_WINDOW]:
         try:
             href = await link.get_attribute("href")
             if not href or "/t/" not in href:
@@ -978,6 +1340,8 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
         if not preview or preview_hash != state.get(f"preview_{thread_id}"):
             to_process.append((href, name, thread_id, preview_hash))
 
+    to_process = _prioritize_threads(to_process, state, MAX_THREADS)
+
     skipped = len(threads) - len(to_process)
     print(f"[BOT] {len(threads)} threads — {len(to_process)} con cambios, {skipped} sin cambios")
 
@@ -989,9 +1353,13 @@ async def check_inbox(page: Page, state: dict, quick: bool = False):
         print(f"  [BOT] Esperando {delay:.0f}s antes de abrir {name[:30]} (humano)...", flush=True)
         await asyncio.sleep(delay)
 
-        await process_thread(page, state, href, name)
-        # Guardar preview hash para evitar recargar en próximo ciclo
-        if preview_hash:
+        resolved = await process_thread(page, state, href, name)
+        # Guardar preview hash SOLO si quedó resuelto — si falló (ej. no se
+        # pudo identificar el carro), NO lo marques como visto: el preview no
+        # cambia sin un mensaje nuevo del cliente, así que marcarlo aquí lo
+        # dejaba mudo para siempre. Bug real, ago 2026: así se perdió a un
+        # cliente preguntando por un Nissan Altima.
+        if preview_hash and resolved:
             state[f"preview_{thread_id}"] = preview_hash
         # En LOCAL el sidebar sigue vivo — no hace falta navegar entre threads
         if not LOCAL_MODE and idx < len(to_process) - 1:
