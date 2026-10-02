@@ -383,3 +383,43 @@ def test_prioritize_threads_preserva_orden_relativo_dentro_de_cada_grupo():
     ids = [t[2] for t in out]
     assert ids.index("nunca1") < ids.index("resp1")
     assert ids.index("nunca2") < ids.index("resp2")
+
+
+# al final de tests/test_marketplace_inbox_bot.py
+from datetime import date
+import marketplace_inbox_bot as mib
+
+_INV = {"5TDCZRAH9NS134683": {"description": "Gancho.\n✅ 2022 Toyota Highlander L\n✅ 93,514 miles\n📍 Hollywood, Florida.", "price": 3000}}
+_CAR = {"yr": "2022", "make": "Toyota", "model": "Highlander", "vin": "5TDCZRAH9NS134683", "price": 27988}
+
+
+def test_crm_extra_completo():
+    appt = {"date_preference": "2026-10-03", "time_preference": "4pm"}
+    x = mib._crm_extra(_CAR, "en", appt, _INV)
+    assert x["vehicle_vin"] == "5TDCZRAH9NS134683"
+    assert x["vehicle_card_en"].startswith("🚙 2022 Toyota Highlander L")
+    assert x["vehicle_card_es"] == ""
+    assert x["vehicle_price"] == 27988
+    assert x["vehicle_down_payment"] == 3000
+    assert x["language"] == "en"
+    assert x["appointment_date"] == "2026-10-03" and x["appointment_time"] == "16:00"
+
+
+def test_crm_extra_sin_vin_en_inventario_no_inventa_ficha():
+    x = mib._crm_extra(dict(_CAR, vin="NOEXISTE"), "es", None, _INV)
+    assert x["vehicle_card_es"] == "" and x["vehicle_card_en"] == ""
+    assert "appointment_date" not in x
+
+
+def test_crm_extra_precio_cero_no_se_manda():
+    x = mib._crm_extra(dict(_CAR, price=0), "es", None, _INV)
+    assert "vehicle_price" not in x
+
+
+def test_crm_extra_cita_sin_fecha_resoluble():
+    x = mib._crm_extra(_CAR, "es", {"date_preference": "cuando pueda", "time_preference": ""}, _INV)
+    assert "appointment_date" not in x and "appointment_time" not in x
+
+
+def test_crm_extra_sin_carro():
+    assert mib._crm_extra(None, "es", None, _INV) == {"language": "es"}

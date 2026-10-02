@@ -327,6 +327,37 @@ def _apply_scanner_pricing(car: dict) -> dict:
     return car
 
 
+from listing_card import build_card
+from appointments import _parse_date
+
+
+def _crm_extra(car: dict | None, lang: str | None, appt: dict | None, inventory: dict) -> dict:
+    """Lo que Leo necesita para escribir primero (spec 2026-10-01): ficha, precio,
+    enganche, VIN, idioma y la cita si quedó acordada en este chat.
+    car["price"] es el precio interno solo cuando _apply_scanner_pricing lo dejó
+    (match no ambiguo); si es 0, no se manda precio."""
+    extra: dict = {}
+    if lang in ("es", "en"):
+        extra["language"] = lang
+    if not car:
+        return extra
+    vin = car.get("vin") or ""
+    listing = inventory.get(vin) or {}
+    card = build_card(listing.get("description") or "")
+    extra.update({"vehicle_vin": vin, "vehicle_card_es": card["es"], "vehicle_card_en": card["en"]})
+    if int(car.get("price") or 0) > 0:
+        extra["vehicle_price"] = int(car["price"])
+    if int(listing.get("price") or 0) > 0:
+        extra["vehicle_down_payment"] = int(listing["price"])
+    if appt:
+        d, h, m = _parse_date(appt.get("date_preference") or "", appt.get("time_preference") or "")
+        if d:
+            extra["appointment_date"] = d.isoformat()
+            if (appt.get("time_preference") or "").strip():
+                extra["appointment_time"] = f"{h:02d}:{m:02d}"
+    return extra
+
+
 # Historial de conversaciones en memoria {thread_id: [messages]}
 _conversations: dict[str, list] = {}
 
@@ -806,23 +837,23 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
 
     full_history = _conversations[thread_id]
 
+    # La cita se extrae ANTES del push: si el cliente da teléfono y hora en el
+    # mismo turno, la cita tiene que viajar con el lead para que Leo la confirme
+    # (spec 2026-10-01). _has_open_appointment() sigue evitando duplicados.
+    appt = extract_appointment_from_conversation(full_history, car, thread_id, "marketplace") if car else None
+
     # HOT LEAD — igual que dm_bot.handle_marketplace_message
     if is_hot:
         print(f"  [BOT] 🔥 HOT LEAD — {sender_name}")
         try:
-            push_hot_lead(thread_id, "marketplace_personal", full_history, car=car, sender_name=sender_name)
+            extra = _crm_extra(car, state.get(f"lang_{thread_id}"), appt, _get_scanner_inventory())
+            push_hot_lead(thread_id, "marketplace_personal", full_history, car=car,
+                          sender_name=sender_name, extra=extra)
         except Exception as e:
             print(f"  [BOT] Error CRM HOT LEAD: {e}")
         log_event("HOT_LEAD", f"Marketplace personal | {sender_name} | {last_msg[:80]}", "marketplace")
         if car:
             track_hot_lead(car)
-
-    # Se intenta extraer la cita en CADA respuesta, no solo cuando el modelo marcó
-    # [HOT LEAD] en ese mensaje exacto — el cliente puede confirmar la fecha en un
-    # turno posterior sin que el modelo repita la etiqueta. _has_open_appointment()
-    # evita crear duplicados si ya hay una cita pending/confirmed para este thread.
-    if car:
-        extract_appointment_from_conversation(full_history, car, thread_id, "marketplace")
 
     # SHOWROOM_DECLINED — igual que dm_bot.handle_marketplace_message
     if is_declined:
