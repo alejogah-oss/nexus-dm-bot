@@ -276,4 +276,33 @@ def inventory_photo(slug, n):
     p = folder / "photos" / f"{n:02d}.jpg"
     if not p.is_file():
         return _bad("no existe", 404)
-    return send_file(p, mimetype="image/jpeg")
+    w = request.args.get("w", type=int)
+    if w in PHOTO_WIDTHS:
+        p = _resized_photo(p, folder, n, w)
+    return send_file(p, mimetype="image/jpeg", max_age=3600)
+
+# Las fotos del iPhone pesan ~3.6 MB (4032x3024): el panel /admin bajaba 48 de
+# esas (~170 MB) para pintar miniaturas de 96 px. ?w=400 (listas) y ?w=1200
+# (galería) sirven una copia reducida, cacheada en INVENTORY_DIR/.photo_cache/
+# y regenerada solo si la original es más nueva. La caché NO va dentro de la
+# carpeta del carro: crear algo ahí le cambia el mtime, y las listas ordenan
+# por ese mtime — el carro saltaría al primer lugar solo por verlo. Sin ?w= sigue la original
+# (marketplace_poster y site_publisher leen del disco, no de acá).
+PHOTO_WIDTHS = (400, 1200)
+
+def _resized_photo(src: Path, folder: Path, n: int, w: int) -> Path:
+    out = Path(INVENTORY_DIR) / ".photo_cache" / folder.name / f"{n:02d}-{w}.jpg"
+    try:
+        if out.is_file() and out.stat().st_mtime >= src.stat().st_mtime:
+            return out
+        from PIL import Image, ImageOps
+        out.parent.mkdir(parents=True, exist_ok=True)
+        img = ImageOps.exif_transpose(Image.open(src)).convert("RGB")
+        img.thumbnail((w, w))
+        tmp = out.with_suffix(".tmp")
+        img.save(tmp, format="JPEG", quality=80, optimize=True)
+        tmp.replace(out)  # atómico: dos pedidos a la vez no ven un archivo a medias
+        return out
+    except Exception:
+        traceback.print_exc()
+        return src  # si falla la reducción, al menos se ve la original

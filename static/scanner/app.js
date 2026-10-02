@@ -483,7 +483,8 @@ $("pendBtn").addEventListener("click", async () => {
       btn.type = "button";
       btn.className = "pend-item";
       const img = document.createElement("img");
-      img.src = "/api/scanner/inventory/" + it.slug + "/photo/1?key=" + encodeURIComponent(getKey());
+      img.loading = "lazy";
+      img.src = "/api/scanner/inventory/" + it.slug + "/photo/1?w=400&key=" + encodeURIComponent(getKey());
       img.alt = "";
       const info = document.createElement("div");
       info.className = "pend-info";
@@ -527,7 +528,8 @@ async function openPendiente(slug) {
     grid.innerHTML = "";
     for (let i = 1; i <= res.photos; i++) {
       const img = document.createElement("img");
-      img.src = "/api/scanner/inventory/" + slug + "/photo/" + i + "?key=" + encodeURIComponent(getKey());
+      img.loading = "lazy";
+      img.src = "/api/scanner/inventory/" + slug + "/photo/" + i + "?w=1200&key=" + encodeURIComponent(getKey());
       grid.appendChild(img);
     }
     $("pendList").classList.add("hidden");

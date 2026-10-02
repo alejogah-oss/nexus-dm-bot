@@ -258,3 +258,23 @@ def test_build_payload_nunca_incluye_precio_interno_ni_alternativas(tmp_path):
     assert "internal_price" not in payload
     assert "alt_price_low" not in payload
     assert "alt_price_high" not in payload
+
+# ── Fotos reducidas para listas/galería (2 oct 2026) ───────────────────────
+
+def test_foto_reducida_w400_y_no_toca_carpeta_del_carro(tmp_path):
+    import io
+    from PIL import Image
+    scanner_api.INVENTORY_DIR = str(tmp_path)
+    folder = tmp_path / "2024-Corolla-012345"
+    (folder / "photos").mkdir(parents=True)
+    (folder / "listing.json").write_text("{}")
+    Image.new("RGB", (4032, 3024), (200, 0, 0)).save(folder / "photos" / "01.jpg")
+    os.utime(folder, (1000, 1000))
+    r = c.get("/api/scanner/inventory/2024-Corolla-012345/photo/1?w=400&key=" + os.environ["SCANNER_KEY"])
+    assert r.status_code == 200
+    assert max(Image.open(io.BytesIO(r.data)).size) == 400
+    assert folder.stat().st_mtime == 1000  # el orden de la lista no cambia
+    assert (tmp_path / ".photo_cache" / "2024-Corolla-012345" / "01-400.jpg").is_file()
+    # w no permitido → original
+    r2 = c.get("/api/scanner/inventory/2024-Corolla-012345/photo/1?w=999&key=" + os.environ["SCANNER_KEY"])
+    assert Image.open(io.BytesIO(r2.data)).size == (4032, 3024)

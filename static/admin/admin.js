@@ -176,7 +176,9 @@ function buildCarCard(item, publishing) {
   const photo = document.createElement("div");
   photo.className = "car-photo";
   const img = document.createElement("img");
-  img.src = "/api/scanner/inventory/" + item.slug + "/photo/1?key=" + encodeURIComponent(getKey());
+  img.loading = "lazy";
+  img.decoding = "async";
+  img.src = "/api/scanner/inventory/" + item.slug + "/photo/1?w=400&key=" + encodeURIComponent(getKey());
   img.alt = "";
   photo.appendChild(img);
   card.appendChild(photo);
