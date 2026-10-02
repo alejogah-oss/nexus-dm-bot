@@ -329,3 +329,152 @@ main#cars {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+
+/* ── Buscador + filtro de estado ───────────────────────────────── */
+.toolbar {
+  max-width: 900px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.toolbar input[type="search"] {
+  width: 100%;
+  min-height: var(--tap);
+  background: var(--panel-2);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 14px;
+  outline: none;
+  font-size: 16px; /* 16px evita el zoom de iOS al enfocar */
+}
+
+.toolbar input[type="search"]:focus { border-color: var(--red); }
+
+/* En el celular el encabezado con buscador es alto: que se vaya con el scroll
+   en vez de tapar un tercio de la pantalla. */
+@media (max-width: 719px) {
+  header { position: static; }
+}
+
+.toolbar-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.seg {
+  display: inline-flex;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.seg button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.seg button b { font-weight: 700; margin-left: 2px; }
+.seg button.on { background: var(--red); color: #fff; }
+
+/* ── Inactivo ───────────────────────────────────────────────────── */
+.badge.inactive { background: rgba(179, 179, 179, 0.15); color: var(--text-dim); }
+.car-card.is-inactive .car-photo img { filter: grayscale(1); opacity: 0.5; }
+.car-card.is-inactive .car-title { color: var(--text-dim); }
+
+.btn-danger,
+.ghost.danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 16px;
+}
+
+.btn-danger { background: var(--red); color: #fff; border: none; }
+.btn-danger:disabled { opacity: 0.4; pointer-events: none; }
+.ghost.danger { color: var(--red); border-color: rgba(235, 10, 30, 0.5); }
+
+.overlay .card .modal-car { color: var(--text); font-weight: 700; font-size: 16px; }
+
+.checklist {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-dim);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.checklist b, .overlay .card p b { color: var(--text); }
+
+.overlay .card p.warn {
+  background: rgba(255, 176, 32, 0.12);
+  border: 1.5px solid var(--amber);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--amber);
+}
+
+/* ── Lista de "Cuadrar con el lote" ────────────────────────────── */
+.lot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.overlay .card .lot-item {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.overlay .card .lot-item input {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--red);
+}
+
+.lot-item .lot-vin {
+  display: block;
+  color: var(--text-dim);
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 12px;
+}
+
+.overlay .card .lot-item.done { border-color: var(--green); color: var(--text-dim); }
+.lot-item .lot-ok { color: var(--green); font-weight: 700; }
+.lot-item.err { border-color: var(--red); }
+
+.overlay .card p.hint-left { font-size: 13px; overflow-wrap: anywhere; }

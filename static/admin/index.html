@@ -19,6 +19,17 @@
 <header>
   <h1>ADMINISTRADOR <span>Tu Carro con Alejo</span></h1>
   <p id="publishingBanner" class="banner hidden"></p>
+  <div class="toolbar">
+    <input type="search" id="searchInput" placeholder="Buscar por VIN (o últimos 6) o modelo" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    <div class="toolbar-row">
+      <div class="seg" id="statusSeg">
+        <button type="button" data-f="active" class="on">Activos <b id="cntActive">0</b></button>
+        <button type="button" data-f="inactive">Inactivos <b id="cntInactive">0</b></button>
+        <button type="button" data-f="all">Todos</button>
+      </div>
+      <button type="button" id="lotBtn" class="ghost">Cuadrar con el lote</button>
+    </div>
+  </div>
 </header>
 <main id="cars"><p class="hint">Cargando…</p></main>
 
@@ -44,6 +55,42 @@
     </div>
     <button id="eSaveBtn" class="btn-primary">Guardar cambios</button>
     <button id="eCancelBtn" class="ghost">Cancelar</button>
+  </div>
+</div>
+<div id="inactModal" class="overlay hidden">
+  <div class="card">
+    <h2>Inactivar carro</h2>
+    <p class="modal-car" id="iCar"></p>
+    <ul class="checklist">
+      <li>Se quita de <b>tucarroconalejo.com</b></li>
+      <li>Los bots dejan de ofrecerlo (en máx. 10 min)</li>
+      <li>Queda en <b>Inactivos</b> — se puede reactivar</li>
+    </ul>
+    <p class="warn">Facebook no se toca: márcalo como vendido en Marketplace tú mismo.</p>
+    <button id="iOkBtn" class="btn-danger">Sí, inactivar</button>
+    <button id="iCancelBtn" class="ghost">Cancelar</button>
+  </div>
+</div>
+
+<div id="lotModal" class="overlay hidden">
+  <div class="card">
+    <h2>Cuadrar con el lote</h2>
+    <div id="lotStep1">
+      <p>Pega los VINs de los carros que <b>sí tienes hoy</b> — completos o los últimos 6, uno por línea o como vengan.</p>
+      <textarea id="lotText" rows="8" placeholder="JTDBCMFE1R3012345&#10;999888&#10;…" spellcheck="false" autocapitalize="characters"></textarea>
+      <button id="lotCompareBtn" class="btn-primary">Comparar</button>
+    </div>
+    <div id="lotStep2" class="hidden">
+      <p id="lotSummary"></p>
+      <div id="lotList" class="lot-list"></div>
+      <p id="lotBackInLot" class="warn hidden"></p>
+      <p id="lotNotScanned" class="hint-left hidden"></p>
+      <p id="lotProgress" class="hint-left hidden"></p>
+      <p class="warn">Facebook no se toca: márcalos como vendidos en Marketplace tú mismo.</p>
+      <button id="lotGoBtn" class="btn-danger">Inactivar seleccionados</button>
+      <button id="lotBackBtn" class="ghost">Volver</button>
+    </div>
+    <button id="lotCloseBtn" class="ghost">Cerrar</button>
   </div>
 </div>
 <script src="/static/admin/admin.js"></script>

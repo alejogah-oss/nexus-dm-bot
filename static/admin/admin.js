@@ -85,7 +85,9 @@ async function load() {
   try {
     const res = await api("/api/admin/inventory", { method: "GET" });
     renderPublishingBanner(res.publishing);
-    renderCars(res.items || [], res.publishing);
+    allItems = res.items || [];
+    currentPublishing = res.publishing;
+    renderCars();
   } catch (err) {
     cars.innerHTML = '<p class="hint">Error: ' + err.message + "</p>";
   }
@@ -102,6 +104,9 @@ function renderPublishingBanner(publishing) {
 }
 
 function statusBadge(item) {
+  if (item.inactive) {
+    return { cls: "inactive", label: "⚫ Inactivo " + (item.inactive_at || "") };
+  }
   if (item.published) {
     return { cls: "published", label: "🟢 Publicado " + (item.published_at || "") };
   }
@@ -111,19 +116,56 @@ function statusBadge(item) {
   return { cls: "pending", label: "🟡 Sin publicar" };
 }
 
-function renderCars(items, publishing) {
+// ── Buscador por VIN + filtro de estado ─────────────────────────────
+let allItems = [];
+let currentPublishing = null;
+let statusFilter = "active";
+
+function matchesSearch(item, q) {
+  if (!q) return true;
+  const vin = (item.vin || "").toUpperCase();
+  const qVin = q.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (qVin && vin.includes(qVin)) return true;
+  const title = [item.yr, item.make, item.model, item.title].join(" ").toLowerCase();
+  return title.includes(q.toLowerCase());
+}
+
+function renderCars() {
   const cars = $("cars");
   cars.innerHTML = "";
-  if (!items.length) {
+  const nInactive = allItems.filter((i) => i.inactive).length;
+  $("cntActive").textContent = allItems.length - nInactive;
+  $("cntInactive").textContent = nInactive;
+  if (!allItems.length) {
     cars.innerHTML = '<p class="hint">No hay carros guardados todavía.</p>';
     return;
   }
-  items.forEach((item) => cars.appendChild(buildCarCard(item, publishing)));
+  const q = $("searchInput").value.trim();
+  const items = allItems.filter((i) =>
+    (statusFilter === "all" || (statusFilter === "inactive") === !!i.inactive) &&
+    matchesSearch(i, q));
+  if (!items.length) {
+    cars.innerHTML = '<p class="hint">' +
+      (q ? "Ningún carro coincide con “" + q.replace(/[<>&]/g, "") + "”." : "No hay carros en esta lista.") +
+      "</p>";
+    return;
+  }
+  items.forEach((item) => cars.appendChild(buildCarCard(item, currentPublishing)));
 }
+
+$("searchInput").addEventListener("input", renderCars);
+
+document.querySelectorAll("#statusSeg button").forEach((b) => {
+  b.addEventListener("click", () => {
+    statusFilter = b.dataset.f;
+    document.querySelectorAll("#statusSeg button").forEach((x) => x.classList.toggle("on", x === b));
+    renderCars();
+  });
+});
 
 function buildCarCard(item, publishing) {
   const card = document.createElement("div");
-  card.className = "car-card";
+  card.className = "car-card" + (item.inactive ? " is-inactive" : "");
   card.dataset.slug = item.slug;
 
   const badge = statusBadge(item);
@@ -169,6 +211,18 @@ function buildCarCard(item, publishing) {
   const actions = document.createElement("div");
   actions.className = "car-actions";
 
+  if (item.inactive) {
+    const reBtn = document.createElement("button");
+    reBtn.type = "button";
+    reBtn.className = "ghost";
+    reBtn.textContent = "Reactivar";
+    reBtn.addEventListener("click", () => reactivateCar(item));
+    actions.appendChild(reBtn);
+    info.appendChild(actions);
+    card.appendChild(info);
+    return card;
+  }
+
   const editBtn = document.createElement("button");
   editBtn.type = "button";
   editBtn.className = "ghost";
@@ -195,10 +249,194 @@ function buildCarCard(item, publishing) {
     }
   }
 
+  const inBtn = document.createElement("button");
+  inBtn.type = "button";
+  inBtn.className = "ghost danger";
+  inBtn.textContent = "Inactivar";
+  inBtn.disabled = publishing === item.slug;
+  inBtn.addEventListener("click", () => openInactivate(item));
+  actions.appendChild(inBtn);
+
   info.appendChild(actions);
   card.appendChild(info);
   return card;
 }
+
+function carLabel(item) {
+  return [item.yr, item.make, item.model].filter(Boolean).join(" ") || item.title || item.slug;
+}
+
+// ── Inactivar / reactivar ────────────────────────────────────────────
+// Quita el carro de tucarroconalejo.com (de ahí leen los bots) y lo deja en
+// Inactivos. Facebook lo marca Alejo a mano en Marketplace.
+let inactItem = null;
+
+function openInactivate(item) {
+  inactItem = item;
+  $("iCar").textContent = carLabel(item) + (item.vin ? " · VIN " + item.vin : "");
+  $("iOkBtn").disabled = false;
+  $("iOkBtn").textContent = "Sí, inactivar";
+  $("inactModal").classList.remove("hidden");
+}
+
+function closeInactivate() {
+  inactItem = null;
+  $("inactModal").classList.add("hidden");
+}
+
+$("iCancelBtn").addEventListener("click", closeInactivate);
+
+$("iOkBtn").addEventListener("click", async () => {
+  if (!inactItem) return;
+  const btn = $("iOkBtn");
+  btn.disabled = true;
+  btn.textContent = "Inactivando…";
+  try {
+    await api("/api/admin/inactivate/" + inactItem.slug, { method: "POST" });
+    closeInactivate();
+    load();
+  } catch (err) {
+    alert("No se pudo inactivar: " + err.message);
+    btn.disabled = false;
+    btn.textContent = "Sí, inactivar";
+  }
+});
+
+async function reactivateCar(item) {
+  if (!confirm("¿Reactivar " + carLabel(item) + "?\n\nVuelve a subirse a tucarroconalejo.com como PENDIENTE: apruébalo en admin.html para que se vea.")) return;
+  try {
+    await api("/api/admin/reactivate/" + item.slug, { method: "POST" });
+  } catch (err) {
+    alert("No se pudo reactivar: " + err.message);
+  } finally {
+    load();
+  }
+}
+
+// ── Cuadrar con el lote ───────────────────────────────────────────────
+// Alejo pega los VINs que tiene hoy; el panel muestra los que sobran y los
+// inactiva uno por uno con pausa (ráfagas al sitio activan el anti-bots de Hostinger).
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let lotRunning = false;
+
+function showLotStep(n) {
+  $("lotStep1").classList.toggle("hidden", n !== 1);
+  $("lotStep2").classList.toggle("hidden", n !== 2);
+}
+
+$("lotBtn").addEventListener("click", () => {
+  showLotStep(1);
+  $("lotModal").classList.remove("hidden");
+  $("lotText").focus();
+});
+
+$("lotCloseBtn").addEventListener("click", () => {
+  if (lotRunning) return;
+  $("lotModal").classList.add("hidden");
+  load();
+});
+
+$("lotBackBtn").addEventListener("click", () => { if (!lotRunning) showLotStep(1); });
+
+$("lotCompareBtn").addEventListener("click", async () => {
+  const btn = $("lotCompareBtn");
+  btn.disabled = true;
+  btn.textContent = "Comparando…";
+  try {
+    const res = await api("/api/admin/reconcile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vins: $("lotText").value }),
+    });
+    renderLotResult(res);
+    showLotStep(2);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Comparar";
+  }
+});
+
+function renderLotResult(res) {
+  const list = $("lotList");
+  list.innerHTML = "";
+  const missing = res.missing || [];
+  $("lotSummary").innerHTML = "Pegaste <b>" + res.pasted + "</b> VINs · coinciden <b>" + res.matched +
+    "</b> carros del scanner. " + (missing.length
+      ? "<b>" + missing.length + "</b> " + (missing.length === 1 ? "carro activo NO está" : "carros activos NO están") + " en tu lista:"
+      : "Todos los carros activos están en tu lista. ✓");
+  missing.forEach((m) => {
+    const row = document.createElement("label");
+    row.className = "lot-item";
+    row.dataset.slug = m.slug;
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = true;
+    const txt = document.createElement("span");
+    txt.textContent = (m.title || m.slug) + (m.on_site ? "" : " · no está en la web");
+    const vin = document.createElement("span");
+    vin.className = "lot-vin";
+    vin.textContent = m.vin;
+    txt.appendChild(vin);
+    row.appendChild(cb);
+    row.appendChild(txt);
+    list.appendChild(row);
+  });
+  const back = res.back_in_lot || [];
+  $("lotBackInLot").textContent = back.length
+    ? "Ojo: " + back.length + " " + (back.length === 1 ? "carro está inactivo" : "carros están inactivos") +
+      " pero sigue" + (back.length === 1 ? "" : "n") + " en tu lista — si volvió, reactívalo en Inactivos: " +
+      back.map((b) => (b.title || b.slug) + " (" + b.vin.slice(-6) + ")").join(", ")
+    : "";
+  $("lotBackInLot").classList.toggle("hidden", !back.length);
+  const ns = res.not_scanned || [];
+  $("lotNotScanned").textContent = ns.length
+    ? "En tu lista pero nunca pasaron por el scanner (" + ns.length + "): " + ns.join(", ")
+    : "";
+  $("lotNotScanned").classList.toggle("hidden", !ns.length);
+  $("lotProgress").classList.add("hidden");
+  $("lotGoBtn").classList.toggle("hidden", !missing.length);
+  $("lotGoBtn").disabled = false;
+  $("lotGoBtn").textContent = "Inactivar seleccionados";
+}
+
+$("lotGoBtn").addEventListener("click", async () => {
+  const rows = [...document.querySelectorAll("#lotList .lot-item")]
+    .filter((r) => r.querySelector("input").checked && !r.classList.contains("done"));
+  if (!rows.length) return;
+  if (!confirm("¿Inactivar " + rows.length + " carros? Se quitan de la web y los bots dejan de ofrecerlos.")) return;
+  lotRunning = true;
+  const go = $("lotGoBtn");
+  go.disabled = true;
+  const prog = $("lotProgress");
+  prog.classList.remove("hidden");
+  let ok = 0, fail = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    prog.textContent = "Inactivando " + (i + 1) + " de " + rows.length + "…";
+    r.classList.remove("err");
+    try {
+      await api("/api/admin/inactivate/" + r.dataset.slug, { method: "POST" });
+      r.classList.add("done");
+      r.querySelector("input").disabled = true;
+      const okTag = document.createElement("span");
+      okTag.className = "lot-ok";
+      okTag.textContent = " · inactivado ✓";
+      r.querySelector("span").insertBefore(okTag, r.querySelector(".lot-vin"));
+      ok++;
+    } catch (err) {
+      r.classList.add("err");
+      r.title = err.message;
+      fail++;
+    }
+    if (i < rows.length - 1) await sleep(1500);
+  }
+  lotRunning = false;
+  prog.textContent = "Listo: " + ok + " inactivados" + (fail ? " · " + fail + " fallaron (en rojo) — reintenta" : "") + ".";
+  go.disabled = !fail;
+  go.textContent = fail ? "Reintentar los que fallaron" : "Inactivar seleccionados";
+});
 
 // ── Publicar / marcar publicado ──────────────────────────────────────
 async function publishCar(slug) {

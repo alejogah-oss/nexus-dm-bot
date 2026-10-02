@@ -258,7 +258,9 @@ def update_inventory_item(slug):
     data["title"] = str(data.get("title", ""))[:100]
     (folder / "listing.json").write_text(json.dumps(data, indent=2, ensure_ascii=False))
     (folder / "copy.md").write_text(f"# {data['title']}\n\n{data['description']}\n")
-    if needs_site_sync:
+    # Inactivo = ya no está en el lote y se quitó de la web: re-sincronizar lo
+    # volvería a crear allá (ver admin_api.admin_inactivate).
+    if needs_site_sync and not data.get("inactive"):
         _sync_to_site_bg(folder)  # re-sincroniza cambios (no toca 'active' si ya fue aprobado)
     return jsonify({"ok": True, "data": data})
 

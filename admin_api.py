@@ -3,10 +3,12 @@
 Opera SOLO sobre el inventario del scanner (scanner_api.INVENTORY_DIR).
 Auth: misma SCANNER_KEY que el scanner (require_key). El bot corre en el Mac Pro.
 """
-import json, os, subprocess, sys, threading, time
+import json, os, re, subprocess, sys, threading, time
 from pathlib import Path
-from flask import Blueprint, jsonify
+import requests
+from flask import Blueprint, jsonify, request
 import scanner_api
+import site_publisher
 from scanner_api import require_key
 from vin_utils import decode_vin
 
@@ -34,6 +36,12 @@ def read_status(folder: Path) -> dict:
         "published_at": data.get("published_at"),
         "last_error": data.get("last_error"),
     }
+
+def is_inactive(folder: Path) -> bool:
+    try:
+        return bool(json.loads((folder / "listing.json").read_text()).get("inactive"))
+    except Exception:
+        return False
 
 def set_status(folder: Path, **fields) -> dict:
     lj = folder / "listing.json"
@@ -116,6 +124,9 @@ def admin_inventory():
                 "alt_price_high": data.get("alt_price_high") or 0,
                 "updated_at": time.strftime("%d/%m %H:%M", time.localtime(lj.stat().st_mtime)),
                 "photos": len(list(photos_dir.glob("*.jpg"))) if photos_dir.exists() else 0,
+                "inactive": bool(data.get("inactive")),
+                "inactive_at": data.get("inactive_at"),
+                "on_site": bool(data.get("site_id")),
                 **read_status(d),
             })
     lock = _current_lock()
@@ -127,6 +138,8 @@ def admin_publish(slug):
     folder = scanner_api._folder_for(slug)
     if not folder:
         return jsonify({"error": "no existe"}), 404
+    if is_inactive(folder):
+        return jsonify({"error": "el carro está inactivo — reactívalo antes de publicar"}), 409
     with _PUBLISH_MUTEX:
         lock = _current_lock()
         if lock:
@@ -183,3 +196,128 @@ def admin_mark(slug):
     if lock and lock.get("slug") == slug:
         _lock_file().unlink(missing_ok=True)
     return jsonify({"ok": True, **st})
+
+# ── Inactivar / reactivar ────────────────────────────────────────────
+# Un carro que ya no está en el lote. Facebook lo marca Alejo a mano (decisión
+# del 2 oct 2026: nada de automatizar Marketplace para no arriesgar la cuenta).
+# Acá solo: se borra de tucarroconalejo.com — de donde leen el inventario el bot
+# de Marketplace y el DM bot, así que dejan de ofrecerlo — y queda marcado
+# inactivo en listing.json. Se BORRA del sitio en vez de poner active=0 porque
+# active=0 es "Pendiente de aprobar" en admin.html y alguien lo re-aprobaría.
+
+def _delete_from_site(site_id: int) -> None:
+    if not site_publisher.SITE_ADMIN_PASSWORD:
+        raise RuntimeError("falta SITE_ADMIN_PASSWORD en el entorno")
+    resp = requests.post(
+        f"{site_publisher.SITE_API_URL}?action=delete",
+        json={"id": int(site_id)},
+        headers={"X-Admin-Password": site_publisher.SITE_ADMIN_PASSWORD},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    if not resp.json().get("ok"):
+        raise RuntimeError(resp.json().get("error") or "respuesta sin 'ok'")
+
+@admin_bp.route("/api/admin/inactivate/<slug>", methods=["POST"])
+@require_key
+def admin_inactivate(slug):
+    folder = scanner_api._folder_for(slug)
+    if not folder:
+        return jsonify({"error": "no existe"}), 404
+    lock = _current_lock()
+    if lock and lock.get("slug") == slug:
+        return jsonify({"error": "se está publicando ahora mismo — espera a que termine"}), 409
+    lj = folder / "listing.json"
+    data = json.loads(lj.read_text())
+    if data.get("inactive"):
+        return jsonify({"ok": True, "inactive": True, "inactive_at": data.get("inactive_at")})
+    site_id = data.get("site_id")
+    if site_id:
+        # Si el sitio falla, NO se marca inactivo: seguiría a la venta en la web
+        # y el bot lo seguiría ofreciendo. Mejor que Alejo vea el error y reintente.
+        try:
+            _delete_from_site(site_id)
+        except Exception as e:
+            return jsonify({"error": f"no se pudo quitar de la web: {e}"}), 502
+    data["inactive"] = True
+    data["inactive_at"] = time.strftime("%Y-%m-%d %H:%M")
+    data["site_id_removed"] = site_id
+    for k in ("site_id", "site_synced", "site_synced_at", "site_error"):
+        data.pop(k, None)
+    lj.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    return jsonify({"ok": True, "inactive": True, "inactive_at": data["inactive_at"],
+                    "removed_from_site": bool(site_id)})
+
+@admin_bp.route("/api/admin/reactivate/<slug>", methods=["POST"])
+@require_key
+def admin_reactivate(slug):
+    folder = scanner_api._folder_for(slug)
+    if not folder:
+        return jsonify({"error": "no existe"}), 404
+    lj = folder / "listing.json"
+    data = json.loads(lj.read_text())
+    for k in ("inactive", "inactive_at", "site_id_removed"):
+        data.pop(k, None)
+    lj.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    # Sin site_id, el sync lo crea de nuevo como PENDIENTE (active=0): vuelve a
+    # la web solo cuando Alejo lo aprueba en admin.html, igual que un carro nuevo.
+    scanner_api._sync_to_site_bg(folder)
+    return jsonify({"ok": True, "inactive": False})
+
+# ── Cuadrar contra el lote ───────────────────────────────────────────
+# Alejo pega los VINs que SÍ tiene hoy (completos o los últimos 6). Devuelve
+# los carros activos del inventario que no aparecen. Solo lee: inactivar
+# es un paso aparte, carro por carro, que Alejo aprueba en el panel.
+
+_VIN_TOKEN = re.compile(r"[A-HJ-NPR-Z0-9]{6,17}")
+
+def parse_vins(text: str) -> tuple[set, set]:
+    full, tails = set(), set()
+    for tok in _VIN_TOKEN.findall((text or "").upper()):
+        if not any(c.isdigit() for c in tok):
+            continue  # "TUNDRA", "SIENNA": palabras, no VINs
+        (full if len(tok) == 17 else tails).add(tok)
+    return full, tails
+
+def _in_lot(vin: str, full: set, tails: set) -> bool:
+    vin = (vin or "").upper()
+    return vin in full or any(vin.endswith(t) for t in tails)
+
+@admin_bp.route("/api/admin/reconcile", methods=["POST"])
+@require_key
+def admin_reconcile():
+    body = request.get_json(silent=True) or {}
+    full, tails = parse_vins(body.get("vins", ""))
+    if not full and not tails:
+        return jsonify({"error": "no encontré ningún VIN en el texto (mínimo los últimos 6)"}), 400
+    root = _inv_dir()
+    missing, back_in_lot, matched_vins = [], [], set()
+    if root.exists():
+        for d in sorted(root.iterdir()):
+            lj = d / "listing.json"
+            if not lj.is_file():
+                continue
+            try:
+                data = json.loads(lj.read_text())
+            except ValueError:
+                continue
+            vin = str(data.get("vin", "")).upper()
+            title = " ".join(str(x) for x in (data.get("yr"), data.get("make"), data.get("model")) if x)
+            if _in_lot(vin, full, tails):
+                matched_vins.add(vin)
+                if data.get("inactive"):
+                    back_in_lot.append({"slug": d.name, "vin": vin, "title": title})
+            elif not data.get("inactive"):
+                missing.append({
+                    "slug": d.name, "vin": vin,
+                    "title": title,
+                    "on_site": bool(data.get("site_id")),
+                })
+    # VINs pegados que no corresponden a ningún carro escaneado (para que Alejo
+    # sepa que hay carros en el lote que nunca pasaron por el scanner).
+    not_scanned = sorted(
+        [v for v in full if v not in matched_vins] +
+        [t for t in tails if not any(v.endswith(t) for v in matched_vins)]
+    )
+    return jsonify({"missing": missing, "not_scanned": not_scanned, "back_in_lot": back_in_lot,
+                    "pasted": len(full) + len(tails), "matched": len(matched_vins)})
