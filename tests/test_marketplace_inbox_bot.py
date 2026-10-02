@@ -434,8 +434,29 @@ def test_crm_extra_precio_completo_del_anuncio_no_es_enganche():
     assert x["vehicle_price"] == 59516
 
 
-def test_crm_extra_precio_interno_gana_al_publico():
+def test_crm_extra_interno_y_publico_distintos_da_el_alto():
+    # Antes ganaba el interno; Alejo (2 oct): con dudas, el número alto.
     inv = {"VIN1": {"description": "", "price": 59516}}
     x = mib._crm_extra({"yr": "2026", "make": "Toyota", "model": "Tundra", "vin": "VIN1", "price": 57000}, "en", None, inv)
-    assert x["vehicle_price"] == 57000
+    assert x["vehicle_price"] == 59516
     assert "vehicle_down_payment" not in x
+
+
+def test_crm_extra_precio_con_dudas_da_el_numero_alto():
+    # Regla de Alejo (2 oct): si los precios del carro no coinciden (campo price del anuncio vs el
+    # "Price: $X" del texto), se usa el número ALTO. Caso real: Tundra 59,516 en el texto, 59,517 en price.
+    inv = {"VIN1": {"description": "Gancho.\n✅ 2026 Toyota Tundra\n✅ Price: $59,518\n📍 Hollywood", "price": 59517}}
+    x = mib._crm_extra({"yr": "2026", "make": "Toyota", "model": "Tundra", "vin": "VIN1", "price": 0}, "en", None, inv)
+    assert x["vehicle_price"] == 59518
+
+
+def test_crm_extra_precio_interno_menor_que_el_publicado_da_el_alto():
+    inv = {"VIN1": {"description": "✅ 2026 Toyota Tundra\n✅ Precio: $60,000", "price": 60000}}
+    x = mib._crm_extra({"yr": "2026", "make": "Toyota", "model": "Tundra", "vin": "VIN1", "price": 57000}, "es", None, inv)
+    assert x["vehicle_price"] == 60000
+
+
+def test_crm_extra_enganche_del_texto_no_cuenta_como_precio():
+    inv = {"VIN1": {"description": "✅ 2022 Toyota Highlander L\nEnganche desde $3,000", "price": 3000}}
+    x = mib._crm_extra({"yr": "2022", "make": "Toyota", "model": "Highlander", "vin": "VIN1", "price": 27988}, "es", None, inv)
+    assert x["vehicle_price"] == 27988 and x["vehicle_down_payment"] == 3000

@@ -350,10 +350,17 @@ def _crm_extra(car: dict | None, lang: str | None, appt: dict | None, inventory:
     # encima es el precio completo publicado (ej. Tundra $59,516), que Leo sí puede decir si
     # el scanner no tiene internal_price. El precio interno siempre gana.
     publicado = int(listing.get("price") or 0)
-    if int(car.get("price") or 0) > 0:
-        extra["vehicle_price"] = int(car["price"])
-    elif publicado >= DOWN_PAYMENT_THRESHOLD:
-        extra["vehicle_price"] = publicado
+    # Regla de Alejo (2 oct): si los precios del carro no coinciden (interno, campo price del
+    # anuncio y el "Price/Precio: $X" del texto), se da el número ALTO.
+    candidatos = [int(car.get("price") or 0)]
+    if publicado >= DOWN_PAYMENT_THRESHOLD:
+        candidatos.append(publicado)
+    for m in re.finditer(r"(?:price|precio)\s*:?\s*\$\s*([\d,]+)", listing.get("description") or "", re.I):
+        n = int(m.group(1).replace(",", ""))
+        if n >= DOWN_PAYMENT_THRESHOLD:
+            candidatos.append(n)
+    if max(candidatos) > 0:
+        extra["vehicle_price"] = max(candidatos)
     if 0 < publicado < DOWN_PAYMENT_THRESHOLD:
         extra["vehicle_down_payment"] = publicado
     if appt:
