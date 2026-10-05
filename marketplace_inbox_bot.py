@@ -403,11 +403,21 @@ _EN_WORDS = {
 }
 # Artefactos del scraping (burbujas sin texto: foto, sticker) — no son del cliente
 _SCRAPE_NOISE = re.compile(r"(^|\b)(enter, )?message sent .* by ", re.I)
+_SCRAPE_NOISE_LINE = re.compile(r"(enter, )?message sent .* by .*$", re.I | re.M)
+
+
+def _strip_noise(text: str) -> str:
+    """Quita la basura del scraping y deja lo que escribió el cliente. Antes el
+    mensaje entero se descartaba: "Price full price\nEnter, Message sent 7:50 PM
+    by Champagne" no marcaba idioma, y así llegaba casi la mitad de los mensajes
+    (985 de 2.122, log al 5 oct 2026) — la ficha quedaba sin idioma."""
+    return _SCRAPE_NOISE_LINE.sub("", text or "").strip()
 
 
 def _detect_lang(text: str) -> str | None:
     """'es', 'en' o None si el mensaje no trae señal clara (número, nombre, 'ok')."""
-    if not text or _SCRAPE_NOISE.search(text):
+    text = _strip_noise(text)
+    if not text:
         return None
     t = text.lower()
     words = re.findall(r"[a-záéíóúüñ']+", t)
@@ -423,7 +433,8 @@ def _detect_lang(text: str) -> str | None:
 def _phrase_lang(text: str) -> str | None:
     """Idioma de una FRASE (3+ palabras con señal clara). Un "sí", "no", "ok" o
     una palabra suelta no cuenta: eso no es cambiar de idioma."""
-    if not text or _SCRAPE_NOISE.search(text):
+    text = _strip_noise(text)
+    if not text:
         return None
     t = text.lower()
     words = re.findall(r"[a-záéíóúüñ']+", t)
@@ -469,6 +480,25 @@ def _thread_lang(state: dict, thread_id: str, messages: list[dict]) -> str | Non
                 state[f"lang_{thread_id}"] = lang
                 return lang
     return None
+
+
+def _reply_wrong_lang(reply: str, lang: str | None) -> bool:
+    """True si ALGUNA frase de la respuesta está en el otro idioma. Mirar la
+    respuesta entera no sirve: "...plus taxes and fees. ¿Te gustaría pasar a
+    verlo esta semana?" sale como inglés en el conteo total. Las tildes no
+    cuentan (un nombre como José no es español); ¿ y ¡ sí."""
+    if lang not in ("es", "en"):
+        return False
+    for frase in re.split(r"(?<=[.!?])\s+", reply or ""):
+        t = frase.lower()
+        words = re.findall(r"[a-záéíóúüñ']+", t)
+        es = sum(w in _ES_WORDS for w in words) + (2 if re.search(r"[¿¡]", t) else 0)
+        en = sum(w in _EN_WORDS for w in words)
+        if lang == "en" and es >= 2 and es > en:
+            return True
+        if lang == "es" and en >= 2 and en > es:
+            return True
+    return False
 
 
 def _lang_directive(lang: str | None) -> str:
@@ -811,9 +841,8 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
         )
         # Red de seguridad: el modelo a veces copia literal un guion en español
         # del prompt aunque la conversación esté fijada en inglés. Un reintento.
-        wrong = _detect_lang(raw_reply)
-        if lang and wrong and wrong != lang:
-            print(f"  [BOT] Respuesta salió en {wrong}, conversación en {lang} — regenerando", flush=True)
+        if _reply_wrong_lang(raw_reply, lang):
+            print(f"  [BOT] Respuesta salió mezclada o en otro idioma, conversación en {lang} — regenerando", flush=True)
             raw_reply = _claude_create(
                 "claude-sonnet-4-6", 200,
                 system + f"\n\nTu borrador anterior salió en el idioma equivocado: \"{raw_reply}\". "
@@ -823,6 +852,12 @@ async def process_thread(page: Page, state: dict, thread_url: str, sender_name: 
     except Exception as e:
         print(f"  [BOT] Error generando respuesta: {e}")
         return False
+    # La ficha nunca queda sin idioma: si el cliente aún no dio señal, se fija
+    # con el de esta respuesta y el resto del chat sigue en ese.
+    if not lang:
+        lang = _detect_lang(raw_reply)
+        if lang:
+            state[f"lang_{thread_id}"] = lang
 
     is_hot      = "[HOT LEAD]" in raw_reply
     is_declined = "[SHOWROOM_DECLINED]" in raw_reply
