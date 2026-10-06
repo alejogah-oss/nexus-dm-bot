@@ -305,6 +305,38 @@ def _voice_with_prices(channel: str = "sitio web", customer_name: str | None = N
     return base
 
 
+_SALDO_FLAG = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".alerta_saldo_anthropic")
+_SALDO_CADA = 2 * 3600  # mientras siga sin saldo, recordar cada 2 h
+
+
+def _avisar_sin_saldo():
+    """Avisa a Alejo por WhatsApp que se acabó el crédito de Anthropic.
+
+    Sin esto el bot deja de contestar en silencio (pasó el 15 sep y el 6 oct).
+    La hora del último aviso queda en disco para no mandar uno por mensaje.
+    """
+    try:
+        with open(_SALDO_FLAG) as f:
+            ultimo = float(f.read().strip() or 0)
+    except (OSError, ValueError):
+        ultimo = 0.0
+    if time.time() - ultimo < _SALDO_CADA:
+        return
+    try:
+        with open(_SALDO_FLAG, "w") as f:
+            f.write(str(time.time()))
+    except OSError:
+        pass
+    donde = "DMs de Facebook/Instagram (Render)" if os.getenv("RENDER") else "Marketplace (Mac Pro)"
+    try:
+        pulse_notify("SIN SALDO ANTHROPIC",
+                     f"El bot de {donde} no está contestando: se acabó el crédito de Anthropic.\n"
+                     "Recarga en console.anthropic.com → Plans & Billing. "
+                     "Al entrar el saldo contesta solo lo pendiente.")
+    except Exception as e:
+        print(f"[BOT] No se pudo avisar la falta de saldo: {e}")
+
+
 def _claude_create(model: str, max_tokens: int, system: str, messages: list, retries: int = 3) -> str:
     """Calls Claude API with retry on 529 overload."""
     for attempt in range(retries):
@@ -312,8 +344,12 @@ def _claude_create(model: str, max_tokens: int, system: str, messages: list, ret
             response = client.messages.create(
                 model=model, max_tokens=max_tokens, system=system, messages=messages
             )
+            if os.path.exists(_SALDO_FLAG):
+                os.remove(_SALDO_FLAG)  # volvió el saldo: el próximo corte avisa de una
             return response.content[0].text
         except anthropic.APIStatusError as e:
+            if "credit balance" in str(e).lower():
+                _avisar_sin_saldo()
             if e.status_code == 529 and attempt < retries - 1:
                 wait = 10 * (attempt + 1)
                 print(f"[BOT] Anthropic sobrecargado — reintento en {wait}s")
